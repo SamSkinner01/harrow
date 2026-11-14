@@ -67,7 +67,7 @@ def export_weapon(weapon, out_dir):
     bpy.ops.wm.read_factory_settings(use_empty=True)
     create_materials()
     build_objects(weapon, bpy.context.scene.collection)
-    path = os.path.join(out_dir, f"{weapon.name}.glb")
+    path = os.path.join(out_dir, f"{weapon.name}_blockout.glb")
     bpy.ops.export_scene.gltf(
         filepath=path,
         export_format="GLB",

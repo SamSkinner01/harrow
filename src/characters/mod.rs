@@ -28,7 +28,8 @@ use bevy::{gltf::GltfAssetLabel, prelude::*, world_serialization::WorldAssetRoot
 
 pub use animation::CharacterAnim;
 pub use library::Operator;
-pub use setup::CharacterParts;
+pub use setup::{CharacterMaterials, CharacterParts};
+pub(crate) use setup::add_mip_chain;
 
 pub struct CharactersPlugin;
 

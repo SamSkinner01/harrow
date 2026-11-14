@@ -20,6 +20,9 @@
 //! automated checks (`--weapon-test`) and screenshot helpers.
 
 // Synthesised sounds; not in the dedicated-server build (no audio).
+// First-person arms; client only (rendering assets).
+#[cfg(feature = "client")]
+mod arms;
 #[cfg(feature = "client")]
 mod audio;
 mod ballistics;
@@ -30,6 +33,7 @@ mod hud;
 mod input;
 mod materials;
 mod testing;
+mod third_person;
 mod view;
 mod viewmodel;
 
@@ -59,9 +63,14 @@ impl Plugin for WeaponsPlugin {
                 effects::ImpactEffectsPlugin,
                 hud::WeaponHudPlugin,
                 testing::WeaponTestPlugin,
+                third_person::ThirdPersonCheckPlugin,
             ));
         #[cfg(feature = "client")]
-        app.add_plugins((crate::audio::GameAudioPlugin, audio::WeaponAudioPlugin));
+        app.add_plugins((
+            crate::audio::GameAudioPlugin,
+            audio::WeaponAudioPlugin,
+            arms::ArmsPlugin,
+        ));
     }
 }
 
@@ -328,4 +337,24 @@ fn arm_character(add: On<Add<Player>>, mut commands: Commands, tuning: Res<Tunin
         MoveSpeedScale::default(),
         AimView::default(),
     ));
+}
+
+/// Where a weapon's model sits on a third-person character: the model's
+/// transform relative to the `weapon_r` bone (tuning: `model.third_person`
+/// and `model.scale`). Spawn the weapon's glTF scene as a child of the bone
+/// with this transform, e.g.
+/// `(WorldAssetRoot(..def.model.path..), third_person_transform(def), ChildOf(weapon_r))`.
+pub fn third_person_transform(def: &WeaponDef) -> Transform {
+    let m = &def.model;
+    let (yaw, pitch, roll) = m.third_person.rotation;
+    Transform {
+        translation: Vec3::from(m.third_person.offset),
+        rotation: Quat::from_euler(
+            EulerRot::YXZ,
+            yaw.to_radians(),
+            pitch.to_radians(),
+            roll.to_radians(),
+        ),
+        scale: Vec3::splat(m.scale.max(1e-4)),
+    }
 }

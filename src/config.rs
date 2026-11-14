@@ -175,6 +175,30 @@ pub struct WeaponModelTuning {
     /// Nodes animated by reloads and shots (optional).
     pub magazine_node: Option<String>,
     pub slide_node: Option<String>,
+    /// How the model sits on a third-person character (see
+    /// [`ThirdPersonAttach`]).
+    pub third_person: ThirdPersonAttach,
+    /// First-person arms holding this model: the clip prefix in
+    /// `assets/models/characters/arms_*.glb` (`<arms>_hold`,
+    /// `<arms>_reload`, `<arms>_reload_empty`; built for the model's grip,
+    /// so use the model they were posed on). None = no arms.
+    pub arms: Option<String>,
+}
+
+/// The weapon model's transform relative to a character's `weapon_r` bone
+/// (child of `hand_r`). The bone's frame: origin where the web of the right
+/// hand sits on the grip, +Y along the barrel, +Z up, +X to the right. Our
+/// weapon models use the same origin but point the barrel down -Z with +Y
+/// up, so `rotation` is (0, 90, 0) for them. Used by the third-person
+/// bodies (bots, remote players) and the `--lineup` check.
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct ThirdPersonAttach {
+    /// Metres, in the bone's frame (x right, y forward along the barrel, z up).
+    pub offset: (f32, f32, f32),
+    /// (yaw, pitch, roll) in degrees, applied to the model like
+    /// `model.rotation` (Y, then X, then Z).
+    pub rotation: (f32, f32, f32),
 }
 
 /// Where the weapon sits in front of the camera, metres.

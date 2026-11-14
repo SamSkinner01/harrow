@@ -230,7 +230,10 @@
             // these (no code needed); `pose` below places it on screen.
             model: (
                 // glTF file under assets/. Path changes need a restart;
-                // the rest applies on save.
+                // the rest applies on save. tamarisk.glb is the realistic
+                // model (built by tools/scripts/import_weapons.sh from a
+                // CC0 source); tamarisk_blockout.glb is the scripted
+                // blockout, kept as a fallback.
                 path: "models/weapons/tamarisk.glb",
                 // Uniform scale (0.01 for a model made in centimetres).
                 scale: 1.0,
@@ -248,6 +251,16 @@
                 // Parts animated by reloads / shots: Some("node name") or None.
                 magazine_node: Some("MAGAZINE"),
                 slide_node: None,
+                // Third person: the model's place on a character's weapon_r
+                // bone (origin where the web of the right hand grips, +Y
+                // along the barrel, +Z up). offset in metres (right,
+                // forward, up); rotation (yaw, pitch, roll) turns the model
+                // (barrel -Z, +Y up) into the bone's axes.
+                third_person: (offset: (0.0, 0.0, 0.0), rotation: (0.0, 90.0, 0.0)),
+                // First-person arms posed on this model (clip prefix in
+                // models/characters/arms_*.glb, built by build_arms.sh), or
+                // None. The blockouts have no arms.
+                arms: Some("tamarisk"),
             ),
             // Damage per bullet before the body-region multiplier.
             damage: 42.0,
@@ -325,8 +338,9 @@
                 // hip: (right, up, forward). Aiming lines the sight point up
                 // with the eye instead.
                 hip: (0.15, -0.2, 0.42),
-                // Eye to the sight point when aiming.
-                ads_distance: 0.2,
+                // Eye to the sight point (the front sight) when aiming. The
+                // rear sight is 0.38 m behind it on the real rifle.
+                ads_distance: 0.62,
                 // Visual kick per shot: backwards (metres) and upwards (degrees).
                 kick_back: 0.025,
                 kick_up: 2.5,
@@ -336,6 +350,7 @@
         sidearm: (
             name: "ACACIA",
             model: (
+                // Realistic model; acacia_blockout.glb is the fallback.
                 path: "models/weapons/acacia.glb",
                 scale: 1.0,
                 rotation: (0.0, 0.0, 0.0),
@@ -345,6 +360,8 @@
                 muzzle_node: "MUZZLE",
                 magazine_node: Some("MAGAZINE"),
                 slide_node: Some("SLIDE"),
+                third_person: (offset: (0.0, 0.0, 0.0), rotation: (0.0, 90.0, 0.0)),
+                arms: Some("acacia"),
             ),
             damage: 48.0,
             falloff_start: 12.0,
@@ -385,7 +402,7 @@
             ),
             pose: (
                 hip: (0.13, -0.15, 0.34),
-                ads_distance: 0.3,
+                ads_distance: 0.45,
                 kick_back: 0.03,
                 kick_up: 6.0,
             ),
