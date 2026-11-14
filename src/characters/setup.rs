@@ -5,9 +5,7 @@
 use std::collections::{HashMap, HashSet};
 
 use bevy::{
-    gltf::GltfMaterialName,
-    prelude::*,
-    render::render_resource::TextureFormat,
+    gltf::GltfMaterialName, prelude::*, render::render_resource::TextureFormat,
     world_serialization::WorldInstanceReady,
 };
 
@@ -74,7 +72,13 @@ fn prepare_character(
             bones.entry(name.as_str().to_string()).or_insert(entity);
         }
         if let Ok((material_name, material)) = mesh_materials.get(entity) {
-            prepare_material(&material_name.0, &material.0, &mut materials, &mut images, &mut prepared);
+            prepare_material(
+                &material_name.0,
+                &material.0,
+                &mut materials,
+                &mut images,
+                &mut prepared,
+            );
         }
     }
     let Some(player) = player else {

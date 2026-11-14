@@ -72,5 +72,7 @@ pub fn spawn_character(
     operator: Operator,
     transform: Transform,
 ) -> Entity {
-    commands.spawn((character(assets, operator), transform)).id()
+    commands
+        .spawn((character(assets, operator), transform))
+        .id()
 }

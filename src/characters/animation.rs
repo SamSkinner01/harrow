@@ -22,9 +22,8 @@
 use bevy::{animation::RepeatAnimation, prelude::*};
 
 use super::{
-    CharacterParts,
+    Character, CharacterParts,
     library::{CharacterLibrary, Clip, OperatorRig},
-    Character,
 };
 use crate::player::Stance;
 
@@ -139,7 +138,11 @@ fn drive_animation(
         }
         approach(&mut blend.speed, anim.speed.max(0.0), SPEED_TIME);
         approach(&mut blend.lean, anim.lean.clamp(-1.0, 1.0), LEAN_TIME);
-        approach(&mut blend.aim, f32::from(anim.aiming || anim.firing), ARMS_TIME);
+        approach(
+            &mut blend.aim,
+            f32::from(anim.aiming || anim.firing),
+            ARMS_TIME,
+        );
         approach(&mut blend.reload, f32::from(anim.reloading), ARMS_TIME);
 
         let weights = clip_weights(&blend, rig);
@@ -160,7 +163,10 @@ fn drive_animation(
             }
         }
         if anim.reloading && !blend.reloading {
-            player.start(rig.node(Clip::Reload)).set_repeat(RepeatAnimation::Never).resume();
+            player
+                .start(rig.node(Clip::Reload))
+                .set_repeat(RepeatAnimation::Never)
+                .resume();
         }
         blend.reloading = anim.reloading;
     }

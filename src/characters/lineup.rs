@@ -13,7 +13,7 @@ use std::f32::consts::PI;
 
 use bevy::prelude::*;
 
-use super::{spawn_character, CharacterAnim, CharacterParts, Operator};
+use super::{CharacterAnim, CharacterParts, Operator, spawn_character};
 use crate::player::Stance;
 
 pub(super) struct LineupPlugin;
@@ -77,13 +77,29 @@ const STATES: [State; 12] = [
     state("idle", Stance::Stand, 0.0),
     state("walk", Stance::Stand, 3.4),
     state("run", Stance::Stand, 5.6),
-    State { lean: -1.0, ..state("lean_left", Stance::Stand, 0.0) },
-    State { aiming: true, ..state("aim", Stance::Stand, 0.0) },
-    State { firing: true, ..state("fire", Stance::Stand, 0.0) },
-    State { reloading: true, ..state("reload", Stance::Stand, 0.0) },
+    State {
+        lean: -1.0,
+        ..state("lean_left", Stance::Stand, 0.0)
+    },
+    State {
+        aiming: true,
+        ..state("aim", Stance::Stand, 0.0)
+    },
+    State {
+        firing: true,
+        ..state("fire", Stance::Stand, 0.0)
+    },
+    State {
+        reloading: true,
+        ..state("reload", Stance::Stand, 0.0)
+    },
     state("crouch", Stance::Crouch, 0.0),
     state("crouch_walk", Stance::Crouch, 1.9),
-    State { lean: 1.0, aiming: true, ..state("crouch_lean_right", Stance::Crouch, 0.0) },
+    State {
+        lean: 1.0,
+        aiming: true,
+        ..state("crouch_lean_right", Stance::Crouch, 0.0)
+    },
     state("prone", Stance::Prone, 0.0),
     state("crawl", Stance::Prone, 0.8),
 ];
@@ -106,7 +122,11 @@ fn spawn_lineup(mut commands: Commands, assets: Res<AssetServer>, lineup: Res<Li
         for (slot, (&operator, x)) in Operator::ALL.iter().zip(SLOTS).enumerate() {
             let transform = Transform::from_xyz(x, 0.0, z).with_rotation(Quat::from_rotation_y(PI));
             if row == 0 {
-                info!("lineup: {} ({:?}) at x = {x}", operator.name(), operator.team());
+                info!(
+                    "lineup: {} ({:?}) at x = {x}",
+                    operator.name(),
+                    operator.team()
+                );
             }
             let entity = spawn_character(&mut commands, &assets, operator, transform);
             commands.entity(entity).insert(LineupSlot {

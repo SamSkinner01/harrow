@@ -285,7 +285,9 @@ fn build_rig(
         }
     }
     if bones < 50 {
-        return Err(format!("only {bones} nodes found; is this a character .glb?"));
+        return Err(format!(
+            "only {bones} nodes found; is this a character .glb?"
+        ));
     }
 
     let mut speeds = Clip::ALL.map(Clip::default_speed);
