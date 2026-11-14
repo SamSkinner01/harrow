@@ -9,6 +9,9 @@
 //!   body, so for a hit collider look it up through `ColliderOf::body`.
 //! - [`SurfaceImpact`] when something strikes the world (bullet, melee,
 //!   explosion). Destruction consumes these to open holes.
+//! - [`Armour`] scales damage taken (operators' armour rating, M6).
+//! - [`Noise`] for sounds other than footsteps that gameplay can hear
+//!   (detection gadgets, bots).
 //!
 //! All of this runs on the fixed simulation tick. Write messages in
 //! `FixedUpdate`; damage is applied in `FixedPostUpdate`.
@@ -28,6 +31,7 @@ impl Plugin for CombatPlugin {
         app.add_message::<DamageMessage>()
             .add_message::<Died>()
             .add_message::<SurfaceImpact>()
+            .add_message::<Noise>()
             .add_systems(FixedPostUpdate, apply_damage);
     }
 }
@@ -48,6 +52,15 @@ impl Health {
     pub fn new(max: f32) -> Self {
         Self { current: max, max }
     }
+}
+
+/// Body armour. Rule: every [`DamageMessage`] aimed at this entity is
+/// multiplied by `damage_scale` (1.0 = no protection) when it is applied,
+/// after the sender's zone multipliers, for every damage kind. The round
+/// module sets it from the operator's armour rating (M6).
+#[derive(Component, Clone, Copy, Debug, PartialEq)]
+pub struct Armour {
+    pub damage_scale: f32,
 }
 
 /// Added when health reaches zero.
@@ -110,20 +123,54 @@ pub struct SurfaceImpact {
     pub source: Option<Entity>,
 }
 
+/// What kind of sound a [`Noise`] is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NoiseKind {
+    Reload,
+    /// Deploying, throwing or firing a gadget.
+    Gadget,
+    Door,
+    Gunfire,
+    Explosion,
+    /// Breaching tools (e.g. a ring cutter at work).
+    Breach,
+    Other,
+}
+
+/// A sound that gameplay can hear: detection gadgets (Lark's darts listen
+/// for these, loud ones saturate Fathom's stakes) and, later, bots.
+/// Footsteps have their own message (`player::Footstep`).
+///
+/// `source` is the character responsible (its `Team` decides who can be
+/// revealed by it), or `None` for world sounds.
+///
+/// Loudness uses the footstep scale: 1.0 = a sprinting footstep (walk 0.5,
+/// crouch-walk 0.12). Suggested values: gadget deploy 0.5, reload 0.6,
+/// door 0.6, gunshot 3.0, ring cutter 5.0 (repeat while cutting),
+/// explosion 6.0.
+#[derive(Message, Clone, Debug)]
+pub struct Noise {
+    pub source: Option<Entity>,
+    pub position: Vec3,
+    pub loudness: f32,
+    pub kind: NoiseKind,
+}
+
 fn apply_damage(
     mut damage: MessageReader<DamageMessage>,
-    mut targets: Query<&mut Health, Without<Dead>>,
+    mut targets: Query<(&mut Health, Option<&Armour>), Without<Dead>>,
     mut died: MessageWriter<Died>,
     mut commands: Commands,
 ) {
     for hit in damage.read() {
-        let Ok(mut health) = targets.get_mut(hit.target) else {
+        let Ok((mut health, armour)) = targets.get_mut(hit.target) else {
             continue;
         };
         if health.current <= 0.0 {
             continue;
         }
-        health.current = (health.current - hit.amount).max(0.0);
+        let amount = hit.amount * armour.map_or(1.0, |a| a.damage_scale);
+        health.current = (health.current - amount).max(0.0);
         if health.current <= 0.0 {
             commands.entity(hit.target).insert(Dead);
             died.write(Died {
