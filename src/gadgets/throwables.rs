@@ -47,7 +47,7 @@ impl Plugin for ThrowablesPlugin {
             (detonate_grenades, age_smoke).chain().in_set(GadgetStage::Simulate),
         )
         .add_systems(Startup, create_smoke_assets)
-        .add_systems(Update, (dress_grenades, (spawn_puffs, animate_puffs).chain()));
+        .add_systems(Update, (dress_grenades, detonation_looks, (spawn_puffs, animate_puffs).chain()));
     }
 }
 
@@ -55,10 +55,12 @@ impl Plugin for ThrowablesPlugin {
 /// never block characters, and bullets don't see them.
 pub const PROJECTILE_LAYER: LayerMask = LayerMask(1 << 8);
 
-/// A thrown grenade in flight or rolling around.
-#[derive(Component, Clone, Debug)]
+/// A thrown grenade in flight or rolling around. Replicated to clients
+/// with an interpolated `Transform` (`net/gadget_sync.rs`).
+#[derive(Component, Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Grenade {
     pub kind: SecondaryGadget,
+    #[entities]
     pub owner: Entity,
     /// Seconds until it goes off (`None`: on contact).
     pub fuse: Option<f32>,
@@ -66,8 +68,8 @@ pub struct Grenade {
 }
 
 /// A smoke screen. `centre` is about chest height above where the canister
-/// landed.
-#[derive(Component, Clone, Debug)]
+/// landed. Replicated; clients pour out their own puffs from it.
+#[derive(Component, Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct SmokeCloud {
     pub centre: Vec3,
     pub age: f32,
@@ -187,7 +189,6 @@ fn detonate_grenades(
     mut explosions: MessageWriter<Explosion>,
     mut noise: MessageWriter<Noise>,
     mut events: MessageWriter<GadgetEvent>,
-    mut bursts: MessageWriter<Burst>,
     mut commands: Commands,
 ) {
     let g = &tuning.round.gadgets;
@@ -241,7 +242,6 @@ fn detonate_grenades(
                     source,
                     attached_to: None,
                 });
-                blast_look(&mut bursts, &mut commands, at, 1.0);
             }
             SecondaryGadget::ImpactCharge => {
                 explosions.write(Explosion {
@@ -252,7 +252,6 @@ fn detonate_grenades(
                     source,
                     attached_to: None,
                 });
-                blast_look(&mut bursts, &mut commands, at, 0.6);
             }
             SecondaryGadget::Flashbang => {
                 let t = &g.flashbang;
@@ -262,8 +261,6 @@ fn detonate_grenades(
                     loudness: t.loudness,
                     kind: NoiseKind::Explosion,
                 });
-                bursts.write(Burst::new(ParticleKind::Flash, at + Vec3::Y * 0.1).count(3).size(0.8, 3.0).life(0.18));
-                commands.spawn((LightFlash::new(3.0e8, 0.25), Transform::from_translation(at + Vec3::Y * 0.2)));
                 let bang = at + Vec3::Y * 0.08;
                 for (person, feet, state, input, flashed) in &mut people {
                     let (eye, look) = eye_and_look(feet, state, input, &tuning.body, tuning.lean.offset);
@@ -322,6 +319,25 @@ fn detonate_grenades(
                     Transform::from_translation(Vec3::new(at.x, floor + 1.1, at.z)),
                     Visibility::default(),
                 ));
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Flashes, smoke and sparks when a grenade goes off (presentation, from
+/// the event, so clients show them too).
+fn detonation_looks(mut events: MessageReader<GadgetEvent>, mut bursts: MessageWriter<Burst>, mut commands: Commands) {
+    for event in events.read() {
+        let &GadgetEvent::Detonated { kind, position: at } = event else {
+            continue;
+        };
+        match kind {
+            SecondaryGadget::Frag => blast_look(&mut bursts, &mut commands, at, 1.0),
+            SecondaryGadget::ImpactCharge => blast_look(&mut bursts, &mut commands, at, 0.6),
+            SecondaryGadget::Flashbang => {
+                bursts.write(Burst::new(ParticleKind::Flash, at + Vec3::Y * 0.1).count(3).size(0.8, 3.0).life(0.18));
+                commands.spawn((LightFlash::new(3.0e8, 0.25), Transform::from_translation(at + Vec3::Y * 0.2)));
             }
             _ => {}
         }

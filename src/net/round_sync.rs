@@ -86,7 +86,7 @@ fn apply_round(sync: Query<Ref<RoundSync>>, mut round: ResMut<Round>) {
 
 /// Server: objective and gadget entities are replicated to everyone. Their
 /// mesh children are local (clients build their own).
-fn replicate_spawned<C: Component>(
+pub(super) fn replicate_spawned<C: Component>(
     trigger: On<Add<C>>,
     mode: Res<NetMode>,
     mut commands: Commands,

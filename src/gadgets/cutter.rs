@@ -55,7 +55,7 @@ impl Plugin for CutterPlugin {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum CutterState {
     /// Clamped on, waiting for Auger to start it (tap 3).
     Ready,
@@ -66,11 +66,13 @@ pub enum CutterState {
 
 /// A clamped ring cutter. Its `Transform` sits at the cut centre on the
 /// near face, local +Z out of the surface (towards Auger's side), local X
-/// and Y along the face.
-#[derive(Component, Clone, Debug)]
+/// and Y along the face. Replicated to clients (`net/gadget_sync.rs`).
+#[derive(Component, Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct RingCutter {
+    #[entities]
     pub owner: Entity,
-    /// Root of the wall or hatch it is clamped to.
+    /// Root of the wall or hatch it is clamped to (server only).
+    #[serde(skip, default = "super::server_only_entity")]
     pub surface: Entity,
     pub state: CutterState,
     /// 0..1.
@@ -109,8 +111,9 @@ impl RingCutter {
 }
 
 /// The exposed blade on the far side: shoot it to jam the cutter.
-#[derive(Component, Clone, Copy, Debug)]
+#[derive(Component, Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
 pub struct CutterBlade {
+    #[entities]
     pub cutter: Entity,
 }
 
@@ -413,7 +416,6 @@ fn run_cutters(
     mut breaches: MessageWriter<HardBreach>,
     mut damage: MessageWriter<DamageMessage>,
     mut events: MessageWriter<GadgetEvent>,
-    mut bursts: MessageWriter<Burst>,
     mut commands: Commands,
 ) {
     let t = &tuning.round.gadgets.ring_cutter;
@@ -493,15 +495,7 @@ fn run_cutters(
                 });
             }
         }
-        bursts.write(
-            Burst::new(ParticleKind::Dust, cutter.far + behind * 0.3)
-                .toward(behind, 0.8)
-                .count(24)
-                .speed(1.5)
-                .size(0.4, 1.6)
-                .life(2.5)
-                .jitter(cutter.radius),
-        );
+        // (The dust burst comes with the plug's model, `dress_cutters`.)
         commands.spawn((
             Name::new("Cut plug"),
             FallingPlug {
@@ -625,6 +619,7 @@ fn dress_cutters(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut look: Local<Option<CutterLook>>,
+    mut bursts: MessageWriter<Burst>,
     mut commands: Commands,
 ) {
     if new_cutters.is_empty() && new_blades.is_empty() && new_plugs.is_empty() {
@@ -779,6 +774,17 @@ fn dress_cutters(
         });
     }
     for (entity, plug) in &new_plugs {
+        // The cut comes through: a cloud of dust on the far side.
+        let behind = -plug.normal;
+        bursts.write(
+            Burst::new(ParticleKind::Dust, plug.far + behind * 0.3)
+                .toward(behind, 0.8)
+                .count(24)
+                .speed(1.5)
+                .size(0.4, 1.6)
+                .life(2.5)
+                .jitter(plug.radius),
+        );
         let material = if plug.metal { look.plug_metal.clone() } else { look.plug_plaster.clone() };
         commands.entity(entity).with_children(|p| {
             p.spawn((
@@ -896,7 +902,8 @@ fn animate_cutters(
 }
 
 /// The cut-out plug falling away from the wall (or through the hatch).
-#[derive(Component, Clone, Debug)]
+/// Clients get it once (`replicate_once`) and animate it themselves.
+#[derive(Component, Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct FallingPlug {
     normal: Vec3,
     axis_u: Vec3,
@@ -907,6 +914,7 @@ pub struct FallingPlug {
     thickness: f32,
     hatch: bool,
     metal: bool,
+    #[serde(skip)]
     age: f32,
 }
 

@@ -137,6 +137,7 @@ tools/scripts/build_characters.sh --setup        # once: install MPFB 2.0.18 + M
 tools/scripts/build_characters.sh                # Blender -> assets/models/characters/*.glb
 tools/scripts/build_characters.sh --only lark    # rebuild one operator
 tools/scripts/build_characters.sh --preview DIR  # also render each operator and some poses to DIR
+tools/scripts/build_characters.sh --mocap DIR    # where the CMU BVH clips are (see below)
 python3 tools/scripts/fetch_character_textures.py  # re-download CC0 cloth/leather detail maps
 tools/scripts/build_sky.sh kiara_5_noon_4k.hdr   # HDRI -> assets/sky/kiara_5_noon.ktx2 (sky cubemap; prints the haze colour)
 ```
@@ -145,21 +146,52 @@ On Windows use `tools/scripts/build_kit.ps1`. Kit conventions are documented
 at the top of `tools/blender/kit/pieces.py`; the piece list is in DESIGN.md.
 
 ```sh
-tools/scripts/build_weapons.sh                     # Blender -> assets/models/weapons/*.glb
-tools/scripts/build_weapons.sh --only tamarisk     # rebuild one weapon
-tools/scripts/build_weapons.sh --preview sheet.png # render the weapons to an image
+tools/scripts/import_weapons.sh                    # staged CC0 guns -> assets/models/weapons/{tamarisk,acacia}.glb
+                                                   # (and cleaned CC0 frag grenade / C4 -> assets/models/gadgets/)
+tools/scripts/import_weapons.sh --only acacia      # one weapon
+tools/scripts/import_weapons.sh --preview DIR      # render them instead of exporting
+tools/scripts/build_weapons.sh                     # scripted blockouts -> assets/models/weapons/*_blockout.glb
+tools/scripts/build_weapons.sh --preview sheet.png # render the blockouts to an image
+tools/scripts/build_arms.sh                        # first-person arms -> assets/models/characters/arms_*.glb
+tools/scripts/build_arms.sh --only defenders --preview DIR  # one team, plus first-person renders per weapon
 ```
 
-(`build_weapons.ps1` on Windows.) Weapon conventions (axes, origin at the
-grip, `SIGHT`/`MUZZLE` empties, `MAGAZINE`/`SLIDE` nodes) are at the top of
-`tools/blender/weapons/models.py`. To use a different weapon model, change
-its `model` block in the tuning file (path, scale, rotation, sight and muzzle
-points or node names, magazine/slide node names) and its `pose`; no code.
+The realistic weapon models are made from CC0 downloads that are not in the
+repository: `import_weapons.sh` reads them from the asset staging folder
+(`$HARROW_ASSET_STAGING`, default `~/harrow-assets-staging`); see ASSETS.md.
+The blockouts are kept as fallbacks (`build_weapons.ps1` on Windows).
+Weapon conventions (axes, origin at the grip, `SIGHT`/`MUZZLE` empties,
+`MAGAZINE`/`SLIDE` nodes) are at the top of
+`tools/blender/weapons/models.py` and `import_models.py`. To use a different
+weapon model, change its `model` block in the tuning file (path, scale,
+rotation, sight and muzzle points or node names, magazine/slide node names,
+the third-person attach transform, the arms clips) and its `pose`; no code.
+The first-person arms are posed on the realistic models (rebuild them with
+`build_arms.sh` after changing a model or a weapon's `hip` pose a lot; it
+needs MPFB, see `--setup` below).
 
 Characters: one config per operator in `tools/blender/characters/operators/`
 (body, face, skin, gear; commented). `--setup` changes only your Blender user
 configuration (the MPFB extension and its asset folder). On Windows use
 `tools/scripts/build_characters.ps1`. See DESIGN.md, "M5 characters".
+The locomotion clips are retargeted from CMU motion capture, which is not
+in the repository: the build reads `cmu_mocap_bvh_selection/source/*.bvh`
+from the asset staging folder (`--mocap DIR`, default `$HARROW_MOCAP`, else
+`~/harrow-assets-staging/mocap`). See DESIGN.md, "Realism pass: character
+animation", and ASSETS.md, "Motion capture".
+
+Sound effects (`assets/audio/**/*.ogg`) are cut, layered and encoded from
+CC0/CC-BY packs with Blender's bundled Python (no ffmpeg needed):
+
+```sh
+blender --background --factory-startup --python tools/audio/build_audio.py -- \
+    --staging /path/to/harrow-assets-staging/audio --out assets/audio
+```
+
+It prints a table of every file (duration, peak, RMS, channels, rate). Slice
+times and layers are fixed in the script; the packs and licences are in
+ASSETS.md ("Audio"), credits in CREDITS.md. If a bank's variant count
+changes, update `BANKS` in `src/audio/mod.rs`.
 
 ## Multiplayer
 
@@ -200,10 +232,12 @@ cargo run -- --connect my-pc --name Alice  # name shown to the server
 cargo run -- --server          # dedicated server, headless, UDP 5888 (or --server 6000)
 cargo run -- --server --config assets/config/server.ron   # with a config file
 cargo run -- --solo            # straight into solo (skip the menu)
+cargo run -- --key 'secret' --connect my-vps   # a server with a shared secret (or HARROW_KEY=...)
+cargo run -- --version         # print the build id and exit
 ```
 
 Any other flag (`--map`, `--no-round`, `--round-test`, `--screenshot`...)
-also skips the menu and works in every mode (`--menu` forces the menu).
+except `--key` also skips the menu and works in every mode (`--menu` forces the menu).
 Join late and you watch (dead) until the next round starts; players are
 put on the smaller squad as they join.
 
@@ -223,9 +257,40 @@ cargo build --release --no-default-features --features dedicated
 ./target/release/harrow --server --config assets/config/server.ron
 ```
 
-It needs the `assets/` folder (the map's collision comes from the kit
-models): run it from the repository, or set `BEVY_ASSET_ROOT` to the
-folder that contains `assets/`.
+It needs the `assets/` folder (the map's collision comes from the kit and
+prop models): run it from the repository, or set `BEVY_ASSET_ROOT` to the
+folder that contains `assets/`. A server never loads real textures: every
+image (texture files and the pictures inside `.glb` models) is served as
+a 1x1 stand-in, so it needs no `textures/` folder and little memory
+(`tools/scripts/server_memory.sh` measures it).
+
+`harrow --version` prints the build (version + git commit): players and
+server must match.
+
+### On a VPS (Linux server on the internet)
+
+```sh
+tools/scripts/package_server.sh                 # dist/harrow-server-<build>-linux-x86_64.tar.gz
+tools/scripts/deploy_server.sh you@your-vps     # copy, install, start, show the log
+tools/scripts/deploy_server.sh you@your-vps --port 6000
+```
+
+`package_server.sh` builds the lean server inside an Ubuntu 22.04
+container (podman or docker; your own Rust toolchain and crates are
+mounted, so it builds offline), so the binary runs on Ubuntu 22.04+,
+Debian 12+ and newer (glibc 2.35+), and packs it with the assets the
+server loads, the example settings, a systemd unit, `install.sh` and
+[README-VPS.md](deploy/README-VPS.md) (settings, logs, firewall, keys,
+security). `deploy_server.sh` copies it over your SSH access, runs
+`sudo ./install.sh` there (system user `harrow`, `/opt/harrow-server`,
+settings in `/etc/harrow-server/server.ron`, kept on updates; service
+`harrow-server`, started at boot) and prints the firewall commands. A
+container image is the other option: `deploy/Dockerfile`.
+
+No container tool? Build on the VPS itself (install Rust with rustup,
+plus `gcc`), from a checkout of the same commit:
+`cargo build --release --no-default-features --features dedicated`, then
+`HARROW_BUILD_COMMIT=<commit> ...` if the checkout has no `.git`.
 
 ### Firewall and router
 
@@ -251,10 +316,15 @@ changes) put everyone on the same virtual LAN with
 [Tailscale](https://tailscale.com) or [ZeroTier](https://www.zerotier.com)
 and join with the host's Tailscale/ZeroTier IP or name.
 
-**Security note:** connections use a fixed development key built into
-the game. It keeps other programs' packets out but is not a password:
-only run servers for people you trust, and don't expose one to the whole
-internet for long.
+**Keys:** by default connections use a development key built into the
+game: it keeps other programs' packets out but anyone with the game can
+join. Give a server a shared secret and only players who know it can
+join: `key: Some("...")` in the server's config (or `--key` /
+`HARROW_KEY` on the server), and players start the game with
+`HARROW_KEY='...'` (the menu's Join uses it) or
+`--key '...' --connect host`. A wrong key looks like an unreachable
+server ("Server not responding"). There are no accounts and no
+anti-cheat: play with people you trust (README-VPS.md, "Security").
 
 ### Testing on one machine
 
@@ -262,6 +332,7 @@ internet for long.
 tools/scripts/net_test.sh                              # dedicated server + 2 clients, free play
 tools/scripts/net_test.sh --latency 80 --jitter 10 --loss 2   # with a bad network
 tools/scripts/net_test.sh --round                      # round loop: phases stay in sync
+tools/scripts/net_test.sh --gadgets frag               # gadgets: frag smoke flash drone wire cutter (or all)
 ```
 
 Two game windows open for about 20 s. Logs and screenshots go to
@@ -272,10 +343,18 @@ joined and left, the lag-compensation test shots, what each client sees
 
 Network test flags: `--net-latency MS --net-jitter MS --net-loss PCT`
 (simulated on everything that instance receives), `--net-trace` (log
-state once a second), `--net-shoot-test` (server fires lag-compensated
-test rays between players and logs rewound vs live results), `--look
-yaw[,pitch]`, `--auto-fire SECONDS`, `--screenshot-secs S`,
-`--exit-after S`.
+state once a second; on clients it also counts other players' private
+gadget state, which must stay 0; on a dedicated server a memory
+footprint line every 10 s), `--net-shoot-test` (server fires
+lag-compensated test rays between players and logs rewound vs live
+results), `--look yaw[,pitch]`, `--auto-fire SECONDS`,
+`--screenshot-secs S`, `--exit-after S`.
+
+Gadget scenarios (`--gadgets NAME`, on section A): the server sets them
+up with `--net-script` (`equip`, `tp`, `reinforce`, `log` by player
+name: `src/net/test_script.rs`); each client presses keys with its own
+`--gadget-test` script, which goes to the server as real input, and logs
+what it sees. Screenshots: `$OUT/<scenario>-*.png`.
 
 ## Developer flags
 
@@ -308,17 +387,22 @@ cargo run -- --weapon sidearm --ads            # hold a weapon / aim down sights
 cargo run -- --hold-fire                       # hold the trigger
 cargo run -- --fire-at 90 --reload-at 120      # pull the trigger / press reload at a fixed tick (64 per second)
 cargo run -- --screenshot-on-hit out.png --dummies --fire-at 90  # screenshot just after your first hit, then quit
-cargo run -- --dump-weapon-sounds sounds/      # also write the synthesised weapon sounds as .wav files
+cargo run -- --log-sounds                      # log every sound: event, file, surface, 2D/3D, distance, volume
+cargo run -- --log-sounds --no-round --spawn 8,0,18,0,0 --m4 "0.5 move 0 1; 5 quit"
+                                               # walk from the desert sand onto the courtyard stone, logging steps
+cargo run -- --play-sounds --m4 "..."          # play sounds in an automated run too (to listen to a scripted scene)
 cargo run -- --no-viewmodel                    # don't draw the weapon in your hands (look/performance comparisons)
 cargo run -- --lineup                          # the four operators in the courtyard, cycling animations
 cargo run -- --lineup-state crouch_walk        # ... all holding one state (names in src/characters/lineup.rs)
 cargo run -- --lineup-crowd --no-vsync         # 12 operators, for checking what a full match costs
+cargo run -- --lineup --lineup-weapons         # ... holding the real rifle (or `--lineup-weapons sidearm`)
 ```
 
 Used for automated checks: e.g. spawn at the stairs, auto-move forward, and
 screenshot/log where the player ends up. Automated runs (`--screenshot`,
-`--weapon-test`, `--screenshot-on-hit`) don't grab the mouse and don't play
-player or weapon sounds.
+`--weapon-test`, `--screenshot-on-hit`, `--m4`, `--round-script`) don't
+grab the mouse and play no sounds; add `--log-sounds` to see which sounds
+would have played (that's how audio is checked in automated runs).
 
 Maps: `--map keep` (default) is the full Harrow Keep; `--map section_a` the
 small M2 section; `--map greybox` the movement test area (no round loop).
@@ -368,5 +452,6 @@ cargo run -- --no-round --operator lark --gadget-test "1.5 g; 3 drive 0 1; 4.5 d
 ```
 src/        game code, one module (and Bevy plugin) per area
 assets/     models, textures, audio, shaders loaded by the game
-tools/      Blender Python scripts and build helpers
+tools/      Blender Python scripts and build helpers (net tests, server packaging and deploy)
+deploy/     dedicated server on a VPS: systemd unit, install script, guide, Dockerfile
 ```

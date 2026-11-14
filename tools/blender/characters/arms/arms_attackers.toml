@@ -1,0 +1,23 @@
+# First-person arms, attackers: olive shirt sleeves, coyote gloves.
+# Only the forearms, hands and lower upper arms are kept (see arms.py).
+# Rebuild with tools/scripts/build_arms.sh
+
+id = "arms_attackers"
+name = "Arms (attackers)"
+team = "attackers"
+
+[body]
+gender = 1.0
+age = 0.55
+muscle = 0.62
+weight = 0.55
+height_m = 1.78
+race = { african = 0.10, asian = 0.10, caucasian = 0.80 }
+
+[skin]
+texture = "middleage_caucasian_male"
+tint = [1.0, 0.95, 0.9]
+
+[gear]
+gloves = "full"
+sleeves = "long"

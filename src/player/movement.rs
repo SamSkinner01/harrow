@@ -8,7 +8,10 @@ use avian3d::prelude::*;
 use bevy::prelude::*;
 
 use super::{CharacterState, Footstep, Lean, Player, PlayerInput, Stance};
-use crate::{config::Tuning, net::Replay, physics::GameLayer, round::MovementLock, weapons::MoveSpeedScale};
+use crate::{
+    config::Tuning, gadgets::GadgetSpeedScale, net::Replay, physics::GameLayer, round::MovementLock,
+    weapons::MoveSpeedScale,
+};
 
 pub struct MovementPlugin;
 
@@ -27,7 +30,8 @@ const HEAD_CLEARANCE: f32 = 0.14;
 /// Everything this reads must be the same on the server and on a client
 /// predicting its own character: input, `CharacterState`, `Transform`,
 /// `LinearVelocity` (all networked, see `src/net/`), `MovementLock`
-/// (replicated) and the movement tuning (sent by the server).
+/// (replicated), `GadgetSpeedScale` (predicted: razor wire) and the
+/// movement tuning (sent by the server).
 #[allow(clippy::too_many_arguments)]
 pub(super) fn move_characters(
     mut characters: Query<
@@ -39,6 +43,7 @@ pub(super) fn move_characters(
             &mut LinearVelocity,
             Has<MovementLock>,
             Option<&MoveSpeedScale>,
+            Option<&GadgetSpeedScale>,
         ),
         With<Player>,
     >,
@@ -53,7 +58,9 @@ pub(super) fn move_characters(
     let max_slope = m.max_slope.to_radians();
     let spatial = &move_and_slide.spatial_query;
 
-    for (entity, input, mut state, mut transform, mut velocity, locked, speed_scale) in &mut characters {
+    for (entity, input, mut state, mut transform, mut velocity, locked, speed_scale, gadget_scale) in &mut characters {
+        // Razor wire (gadgets): slower, and no sprinting while in it.
+        let gadget_scale = gadget_scale.map_or(1.0, |s| s.0);
         state.prev_height = state.height;
         state.prev_lean = state.lean;
         // Locked (planting, dead, choosing an operator...): look and stance
@@ -120,6 +127,7 @@ pub(super) fn move_characters(
 
         // --- Horizontal: accelerate toward the wished-for velocity ---------
         state.sprinting = sprint
+            && gadget_scale >= 1.0
             && move_axis.y > 0.5
             && input.lean == Lean::Center
             && state.stance == Stance::Stand
@@ -128,7 +136,8 @@ pub(super) fn move_characters(
             m.sprint_speed
         } else {
             speed_for_height(state.height, &tuning)
-        } * speed_scale.map_or(1.0, |s| s.0); // e.g. slower while aiming (weapons)
+        } * speed_scale.map_or(1.0, |s| s.0) // e.g. slower while aiming (weapons)
+            * gadget_scale;
         let wish = facing * Vec3::new(move_axis.x, 0.0, -move_axis.y);
         let target = wish * speed;
         let horizontal = Vec3::new(velocity.x, 0.0, velocity.z);

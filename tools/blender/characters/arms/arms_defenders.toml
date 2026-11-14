@@ -1,0 +1,22 @@
+# First-person arms, defenders: slate shirt sleeves, near-black gloves.
+# Only the forearms, hands and lower upper arms are kept (see arms.py).
+# Rebuild with tools/scripts/build_arms.sh
+
+id = "arms_defenders"
+name = "Arms (defenders)"
+team = "defenders"
+
+[body]
+gender = 1.0
+age = 0.6
+muscle = 0.62
+weight = 0.55
+height_m = 1.78
+race = { african = 0.70, asian = 0.10, caucasian = 0.20 }
+
+[skin]
+texture = "mindfront_skin_male_african_middleage"
+
+[gear]
+gloves = "full"
+sleeves = "long"

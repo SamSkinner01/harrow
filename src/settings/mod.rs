@@ -8,7 +8,8 @@
 //! Settings sit on top of the tuning file: control values left at "tuning"
 //! (`None`) follow `assets/config/tuning.ron`; set ones replace the tuning
 //! value at runtime (the file is never written). Volumes multiply the
-//! tuning volumes. Graphics settings choose the per-camera effects and
+//! tuning file's `audio.master` and `audio.effects` (and the round/gadget
+//! sound volume). Graphics settings choose the per-camera effects and
 //! shadow quality ([`crate::map::GraphicsOptions`]).
 //!
 //! Automated runs (`--screenshot`, `--weapon-test`, scripts...) ignore the
@@ -19,7 +20,6 @@
 use std::path::PathBuf;
 
 use bevy::{
-    audio::{GlobalVolume, Volume},
     dev_tools::fps_overlay::FpsOverlayConfig,
     prelude::*,
     window::{MonitorSelection, PresentMode, PrimaryWindow, WindowMode},
@@ -47,7 +47,7 @@ impl Plugin for SettingsPlugin {
                     apply_to_tuning
                         .after(TuningSystems)
                         .run_if(resource_changed::<PlayerSettings>.or_eager(resource_changed::<Tuning>)),
-                    (apply_graphics, apply_audio, apply_display)
+                    (apply_graphics, apply_display)
                         .run_if(resource_changed::<PlayerSettings>),
                 ),
             );
@@ -224,9 +224,10 @@ pub struct PlayerSettings {
     pub crouch: Option<Press>,
     pub lean: Option<Press>,
     pub aim: Option<Press>,
-    /// 0..1, every sound.
+    /// 0..1, every sound (times the tuning's `audio.master`).
     pub master_volume: f32,
-    /// 0..1, weapons, gadgets, round sounds (not footsteps).
+    /// 0..1, weapons, impacts, destruction, explosions, gadget and round
+    /// sounds (times `audio.effects`); not footsteps.
     pub effects_volume: f32,
     pub quality: Quality,
     pub graphics: Graphics,
@@ -392,7 +393,8 @@ struct Controlled {
     crouch: ButtonMode,
     lean: ButtonMode,
     aim: ButtonMode,
-    weapons_volume: f32,
+    master_volume: f32,
+    effects_volume: f32,
     round_volume: f32,
 }
 
@@ -406,7 +408,8 @@ impl Controlled {
             crouch: t.controls.crouch,
             lean: t.controls.lean,
             aim: t.weapons.ads_mode,
-            weapons_volume: t.weapons.effects.volume,
+            master_volume: t.audio.master,
+            effects_volume: t.audio.effects,
             round_volume: t.round.volume,
         }
     }
@@ -419,7 +422,8 @@ impl Controlled {
         t.controls.crouch = self.crouch;
         t.controls.lean = self.lean;
         t.weapons.ads_mode = self.aim;
-        t.weapons.effects.volume = self.weapons_volume;
+        t.audio.master = self.master_volume;
+        t.audio.effects = self.effects_volume;
         t.round.volume = self.round_volume;
     }
 
@@ -434,7 +438,8 @@ impl Controlled {
             crouch: mode(s.crouch, self.crouch),
             lean: mode(s.lean, self.lean),
             aim: mode(s.aim, self.aim),
-            weapons_volume: self.weapons_volume * s.effects_volume,
+            master_volume: self.master_volume * s.master_volume,
+            effects_volume: self.effects_volume * s.effects_volume,
             round_volume: self.round_volume * s.effects_volume,
         }
     }
@@ -446,12 +451,6 @@ fn apply_graphics(settings: Res<PlayerSettings>, options: Option<ResMut<Graphics
         if *options != wanted {
             *options = wanted;
         }
-    }
-}
-
-fn apply_audio(settings: Res<PlayerSettings>, global: Option<ResMut<GlobalVolume>>) {
-    if let Some(mut global) = global {
-        global.volume = Volume::Linear(settings.master_volume.clamp(0.0, 1.0));
     }
 }
 

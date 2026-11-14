@@ -77,12 +77,14 @@ impl CctvLayout {
 }
 
 /// A CCTV camera. Its `Transform` is the lens; the view rests at
-/// `yaw`/`pitch` and the viewer pans it within limits.
-#[derive(Component, Clone, Debug)]
+/// `yaw`/`pitch` and the viewer pans it within limits. The server's cameras
+/// are replicated; clients drop their own (`net/gadget_sync.rs`).
+#[derive(Component, Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct CctvCamera {
     /// Index into [`CctvLayout::spots`].
     pub index: usize,
-    pub name: &'static str,
+    /// A `Cow` so it can be sent over the network.
+    pub name: std::borrow::Cow<'static, str>,
     /// Resting direction, radians.
     pub yaw: f32,
     pub pitch: f32,
@@ -103,13 +105,15 @@ fn wrap(a: f32) -> f32 {
     (a + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI
 }
 
-fn spawn_all(commands: &mut Commands, layout: &CctvLayout, tuning: &Tuning) {
+/// Every camera of `layout`, as new (round start; a client back from a
+/// networked session, which used the server's cameras).
+pub(crate) fn spawn_cctv_cameras(commands: &mut Commands, layout: &CctvLayout, tuning: &Tuning) {
     for (index, spot) in layout.spots.iter().enumerate() {
         commands.spawn((
             Name::new(format!("CCTV {}", spot.name)),
             CctvCamera {
                 index,
-                name: spot.name,
+                name: spot.name.into(),
                 yaw: spot.yaw.to_radians(),
                 pitch: spot.pitch.to_radians(),
             },
@@ -135,7 +139,7 @@ fn spawn_all(commands: &mut Commands, layout: &CctvLayout, tuning: &Tuning) {
 }
 
 fn spawn_cameras(mut commands: Commands, layout: Res<CctvLayout>, tuning: Res<Tuning>) {
-    spawn_all(&mut commands, &layout, &tuning);
+    spawn_cctv_cameras(&mut commands, &layout, &tuning);
 }
 
 /// Shot-out cameras come back every round.
@@ -152,7 +156,7 @@ fn respawn_on_reset(
     for camera in &cameras {
         commands.entity(camera).despawn();
     }
-    spawn_all(&mut commands, &layout, &tuning);
+    spawn_cctv_cameras(&mut commands, &layout, &tuning);
 }
 
 /// A housing on a wall bracket, a lens and a red recording light.

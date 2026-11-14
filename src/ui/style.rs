@@ -9,6 +9,9 @@
 //! - Colour: warm off-white text on warm near-black translucent panels,
 //!   sand/ochre accent; attackers ochre, defenders a muted sky blue.
 
+// The menus (client build only) use some of these.
+#![cfg_attr(not(feature = "client"), allow(dead_code))]
+
 use bevy::{asset::uuid_handle, prelude::*};
 
 /// Colours. Text alphas are baked in; panels are translucent.
@@ -110,6 +113,8 @@ impl Plugin for UiStylePlugin {
         // A dedicated server draws nothing; its build doesn't carry the fonts.
         #[cfg(feature = "client")]
         app.add_systems(PreStartup, insert_fonts);
+        #[cfg(not(feature = "client"))]
+        let _ = app;
     }
 }
 

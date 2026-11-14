@@ -38,7 +38,7 @@ use crate::{
     config::Tuning,
     destruction::DestructionIntent,
     player::{CharacterState, LocalPlayer, Player, PlayerInput},
-    round::{MovementLock, Round, RoundIntent, RoundPhase, RoundReset, RoundSystems},
+    round::{Round, RoundIntent, RoundPhase, RoundReset, RoundSystems},
     weapons::WeaponInput,
 };
 
@@ -53,12 +53,15 @@ impl Plugin for RemoteViewPlugin {
                 FixedUpdate,
                 (
                     use_recon.in_set(GadgetStage::Use),
-                    lock_viewers.after(RoundSystems::Locks),
                     // Right after respawning, before the next frozen-input
                     // restore could undo the new spawn's facing.
-                    end_views_on_reset.after(RoundSystems::Reactions),
+                    end_views_on_reset
+                        .after(RoundSystems::Reactions)
+                        .run_if(crate::session::simulating),
                 ),
             )
+            .add_observer(freeze_networked_view)
+            .add_observer(thaw_networked_view)
             .add_systems(
                 RunFixedMainLoop,
                 freeze_viewers
@@ -77,16 +80,17 @@ impl Plugin for RemoteViewPlugin {
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct FreezeViewers;
 
-/// What a character is looking through.
+/// What a character is looking through. Replicated to the viewer
+/// (`net/protocol.rs`), whose client then switches cameras.
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum RemoteView {
-    Drone(Entity),
-    Camera(Entity),
+    Drone(#[entities] Entity),
+    Camera(#[entities] Entity),
 }
 
 /// The character's intents when the view started; reapplied every frame.
 #[derive(Component, Clone)]
-struct FrozenInput {
+pub(crate) struct FrozenInput {
     input: PlayerInput,
     weapon: Option<WeaponInput>,
 }
@@ -335,17 +339,34 @@ fn end_views_on_reset(
     }
 }
 
-/// Viewers keep the round's movement lock (re-applied after the round's own
-/// lock bookkeeping every tick).
-fn lock_viewers(viewers: Query<Entity, (With<RemoteView>, With<Player>)>, mut commands: Commands) {
-    for viewer in &viewers {
-        commands.entity(viewer).insert(MovementLock);
+/// A view that arrived from the server (a client's own character): freeze
+/// the body here too, so the predicted character and the input sent to the
+/// server stay put. (The server inserts `FrozenInput` with the view.)
+fn freeze_networked_view(
+    add: On<Add<RemoteView>>,
+    viewers: Query<(&PlayerInput, Option<&WeaponInput>), Without<FrozenInput>>,
+    mut commands: Commands,
+) {
+    if let Ok((input, weapon)) = viewers.get(add.entity) {
+        commands.entity(add.entity).insert(FrozenInput {
+            input: input.clone(),
+            weapon: weapon.cloned(),
+        });
+    }
+}
+
+/// The view ended (removed by the server, or replicated away): unfreeze.
+fn thaw_networked_view(remove: On<Remove<RemoteView>>, mut commands: Commands) {
+    if let Ok(mut entity) = commands.get_entity(remove.entity) {
+        entity.try_remove::<FrozenInput>();
     }
 }
 
 /// The body stands still while viewing: its intents stay as they were.
+/// Also run by the server right after it applies a client's input
+/// (`net/input.rs`), which would otherwise undo the freeze.
 #[allow(clippy::type_complexity)]
-fn freeze_viewers(
+pub(crate) fn freeze_viewers(
     mut viewers: Query<
         (
             &FrozenInput,

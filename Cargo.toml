@@ -12,7 +12,8 @@ publish = false
 # Bevy's features are split between the two builds (see [features] below).
 # This shared set has no window system, audio or gamepad backend, so the
 # dedicated server links none of them; the `client` feature adds Bevy's
-# defaults back. jpeg: textures. serialize: networked components.
+# defaults back (and the dev tools: they depend on Bevy's audio, which
+# needs ALSA). jpeg: textures. serialize: networked components.
 bevy = { version = "=0.20.1", default-features = false, features = [
     "std",
     "default_app",
@@ -22,8 +23,6 @@ bevy = { version = "=0.20.1", default-features = false, features = [
     "ui_bevy_render",
     "scene",
     "picking",
-    "bevy_dev_tools",
-    "render_dev_tools",
     "jpeg",
     "serialize",
 ] }
@@ -47,6 +46,16 @@ lightyear = { version = "=0.31.0", default-features = false, features = [
     "avian3d",
     "input_native",
 ] }
+# Lightyear's replication layer, already in the tree through Lightyear (same
+# version and features): its component-level visibility filters keep
+# per-player state (gadget stock, flashbang effect) private to that player.
+bevy_replicon = { version = "=0.45.5", default-features = false, features = ["client", "server"] }
+# Turns a server's shared secret into its netcode key. The version Bevy's
+# asset hashing already uses.
+blake3 = { version = "=1.8.7", default-features = false }
+# The dedicated server rewrites glTF models' JSON (drops their images).
+# The version Bevy's glTF loader already uses.
+serde_json = "=1.0.154"
 # The version Bevy already uses. "termination" makes SIGTERM (e.g. systemd
 # stopping a dedicated server) exit as gracefully as Ctrl+C.
 ctrlc = { version = "3.4", features = ["termination"] }
@@ -55,7 +64,13 @@ ctrlc = { version = "3.4", features = ["termination"] }
 default = ["client"]
 # A player's build: window, audio, gamepads, asset hot reload (Bevy's
 # default features) and wav for the placeholder sounds.
-client = ["bevy/default", "bevy/file_watcher", "bevy/wav"]
+client = [
+    "bevy/default",
+    "bevy/file_watcher",
+    "bevy/wav",
+    "bevy/bevy_dev_tools",
+    "bevy/render_dev_tools",
+]
 # Marker for the lean dedicated-server build, which can only run `--server`:
 #   cargo build --release --no-default-features --features dedicated
 dedicated = []

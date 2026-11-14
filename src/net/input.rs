@@ -22,6 +22,10 @@
 //!   `GadgetIntent::use_unique`): the simulation clears them once handled,
 //!   which a client never does, so they travel as press counters and the
 //!   server re-latches when a counter moves. Loss- and repeat-proof.
+//!
+//! A character looking through a drone or camera has its body's intents
+//! frozen (`gadgets/remote_view.rs`); on the server that freeze runs again
+//! after a client's input is applied, which would otherwise undo it.
 
 use bevy::{
     ecs::{component::Mutable, entity::MapEntities},
@@ -36,10 +40,10 @@ use lightyear::{
 };
 use serde::{Deserialize, Serialize};
 
-use super::Replay;
+use super::{Replay, gadget_sync::ViewSerial};
 use crate::{
     destruction::DestructionIntent,
-    gadgets::{DroneIntent, GadgetIntent},
+    gadgets::{DroneIntent, GadgetIntent, freeze_viewers},
     player::{Lean, LocalPlayer, PlayerInput, Stance},
     round::RoundIntent,
     session::is_authority,
@@ -133,6 +137,9 @@ pub struct DroneButtons {
     pub drive: Vec2,
     pub yaw: f32,
     pub pitch: f32,
+    /// The view (`ViewSerial`) these look angles are for; the server
+    /// ignores angles for an older view (they'd turn the new drone).
+    pub view_serial: u8,
 }
 
 /// Server side: the last press counters seen from a client.
@@ -172,6 +179,8 @@ impl Plugin for NetInputPlugin {
                 capture_local_input.in_set(CaptureInputSystems),
                 (apply_movement_input, apply_buttons.run_if(is_authority))
                     .in_set(ApplyInputSystems),
+                // Viewers' bodies stay frozen whatever their client sends.
+                freeze_viewers.after(ApplyInputSystems).run_if(is_authority),
             ),
         );
         // Held-state intents: one line each.
@@ -232,6 +241,7 @@ fn capture_local_input(
             Option<&mut RoundIntent>,
             Option<&mut GadgetIntent>,
             Option<&mut DroneIntent>,
+            Option<&ViewSerial>,
             &mut ActionState<NetInput>,
         ),
         (With<LocalPlayer>, With<InputMarker<NetInput>>),
@@ -241,7 +251,7 @@ fn capture_local_input(
     if replay.active() {
         return;
     }
-    for (input, round, gadget, drone, mut action) in &mut players {
+    for (input, round, gadget, drone, view_serial, mut action) in &mut players {
         let net = &mut action.0;
         net.movement = MoveInput::from(input);
         if let Some(mut round) = round {
@@ -276,6 +286,8 @@ fn capture_local_input(
             net.drone.drive = drone.drive;
             net.drone.yaw = drone.yaw;
             net.drone.pitch = drone.pitch;
+            // `gadget_sync::follow_new_view` has reset the angles for it.
+            net.drone.view_serial = view_serial.map_or(0, |s| s.0);
         }
     }
 }
@@ -309,11 +321,12 @@ fn apply_buttons(
             Option<&mut RoundIntent>,
             Option<&mut GadgetIntent>,
             Option<&mut DroneIntent>,
+            Option<&ViewSerial>,
         ),
         Without<InputMarker<NetInput>>,
     >,
 ) {
-    for (action, mut seen, round, gadget, drone) in &mut players {
+    for (action, mut seen, round, gadget, drone, view_serial) in &mut players {
         let net = &action.0;
         if let Some(mut round) = round {
             if round.interact != net.round.interact {
@@ -344,8 +357,12 @@ fn apply_buttons(
             drone.cycle += next - previous;
             drone.recon_held = net.drone.recon_held;
             drone.drive = net.drone.drive;
-            drone.yaw = net.drone.yaw;
-            drone.pitch = net.drone.pitch;
+            // Entering a view sets the look angles here; the client's only
+            // count once it knows about that view.
+            if view_serial.is_none_or(|s| s.0 == net.drone.view_serial) {
+                drone.yaw = net.drone.yaw;
+                drone.pitch = net.drone.pitch;
+            }
         }
     }
 }
