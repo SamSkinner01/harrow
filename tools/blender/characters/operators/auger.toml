@@ -1,0 +1,49 @@
+# AUGER: attacker, hard breacher. Armour 2 / speed 2.
+# Solid, mid-thirties, a working tradesman's build. Standard plate carrier,
+# a high-cut helmet with a comms headset, and the Ring Cutter kit on his back.
+#
+# Every key is optional except id/name/team; defaults are in config.py.
+# Rebuild with tools/scripts/build_characters.sh --only auger
+
+id = "auger"
+name = "Auger"
+team = "attackers"
+role = "hard breacher"
+armour = 2
+speed = 2
+
+[body]
+# MPFB macro sliders, 0..1.
+gender = 1.0        # 0 = female, 1 = male
+age = 0.62          # 0.5 = 25 years, 1.0 = 90
+muscle = 0.68
+weight = 0.66
+proportions = 0.55
+height = 0.5        # MPFB proportions; the final size comes from height_m
+height_m = 1.77     # top of the head (helmet adds ~4 cm), metres
+race = { african = 0.10, asian = 0.05, caucasian = 0.85 }
+
+[face]
+eyebrows = "eyebrow004"   # MakeHuman CC0 eyebrows (eyebrow001..012)
+eyes = "brown"            # MakeHuman CC0 iris textures
+# Any MPFB target by file name (see the MPFB data/targets folders), 0..1.
+targets = { "chin-width-incr" = 0.5, "nose-scale-horiz-incr" = 0.35, "nose-hump-incr" = 0.4, "head-square" = 0.5, "neck-scale-horiz-incr" = 0.5, "eyebrows-trans-down" = 0.3 }
+
+[skin]
+texture = "middleage_caucasian_male"   # MakeHuman CC0 skin
+tint = [1.0, 0.95, 0.9]   # multiplies the texture (sunburnt)
+hair = "buzz"             # scalp: "buzz", "short" or "none"
+hair_colour = "#3a2c22"
+stubble = 0.8             # beard shadow, 0..1
+
+[gear]
+helmet = "highcut"        # highcut | full | cap | none
+headset = true            # comms ear cups
+eyewear = "goggles_up"    # goggles_up | glasses | visor_down | none
+carrier = "plate"         # chest_rig | plate | heavy | none
+pouches = ["mags_triple", "radio_left", "admin", "dump_left", "breach_pack"]
+gloves = "full"           # full | fingerless | none
+boots = "high"            # high | low
+pads = ["knees"]          # knees, elbows
+neck = "none"             # gaiter | none
+sleeves = "long"          # long | rolled
