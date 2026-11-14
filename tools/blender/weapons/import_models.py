@@ -1,4 +1,5 @@
-"""Turn the staged CC0 gun models into HARROW weapon models (realism pass).
+"""Turn the staged CC0 gun models into HARROW weapon models (realism pass),
+and stage two cleaned CC0 gadget models (frag grenade, C4) for the gadgets.
 
 Usually run through tools/scripts/import_weapons.sh. Directly:
 
@@ -45,6 +46,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--staging", default=os.environ.get("HARROW_ASSET_STAGING", ""))
     parser.add_argument("--out", default="assets/models/weapons")
+    parser.add_argument("--gadgets-out", default="assets/models/gadgets")
     parser.add_argument("--only", nargs="*", default=None)
     parser.add_argument("--preview", default=None)
     return parser.parse_args(argv)
@@ -373,7 +375,77 @@ def acacia(staging):
     return body
 
 
-MODELS = {"tamarisk": tamarisk, "acacia": acacia}
+def patch(images, box, src_dy):
+    """Paint over markings with clean texture from the same surface:
+    copy the pixels `src_dy` rows away (positive = further down the image)
+    into `box` (x0, y0, x1, y1 in pixels from the top-left), with a soft
+    edge."""
+    import numpy as np
+
+    for image in images:
+        w, h = image.size
+        px = np.array(image.pixels[:], dtype=np.float32).reshape(h, w, 4)[::-1].copy()
+        x0, y0, x1, y1 = box
+        src = px[y0 + src_dy:y1 + src_dy, x0:x1].copy()
+        dst = px[y0:y1, x0:x1]
+        # Feather the border over 6 px.
+        yy, xx = np.mgrid[0:y1 - y0, 0:x1 - x0]
+        edge = np.minimum.reduce([xx, yy, (x1 - x0 - 1) - xx, (y1 - y0 - 1) - yy]).astype(np.float32)
+        a = np.clip(edge / 6.0, 0.0, 1.0)[..., None]
+        px[y0:y1, x0:x1] = dst * (1 - a) + src * a
+        image.pixels[:] = px[::-1].ravel()
+        image.pack()
+        print(f"patched {image.name} {box} from {src_dy:+d} rows")
+
+
+def base_colour_images(objects):
+    return [i for n, i in material_images(objects).items() if "Base_Color" in n]
+
+
+def gadget(staging, folder, name):
+    """A 3DModelsCC0 gadget as it is: metres, +Y up (glTF), origin at its
+    base, separate parts (the grenade's pin) kept."""
+    src = os.path.join(staging, f"firearms/{folder}/{folder}.glb")
+    objs = import_glb(src)
+    meshes = [o for o in objs if o.type == "MESH"]
+    # Bake the source's node scale/rotation (the grenade's 0.01 and 90 deg).
+    roots = [o for o in objs if o.parent is None]
+    for o in meshes:
+        mw = o.matrix_world.copy()
+        o.parent = None
+        o.matrix_world = mw
+    for o in objs:
+        if o.type != "MESH":
+            bpy.data.objects.remove(o, do_unlink=True)
+    select_only(meshes)
+    bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
+    del roots
+    return meshes
+
+
+def frag_grenade(staging):
+    """Frag grenade by 3dmodelscc0 (itch.io, CC0). The US-style stencil
+    ("GRENADE FRAG, HAND", "5-69 COMP") is painted over with clean olive
+    paint from the same panel. The pin stays a separate node (`Pin`)."""
+    meshes = gadget(staging, "3dmcc0_frag_grenade", "frag_grenade")
+    images = base_colour_images(meshes)
+    patch(images, (990, 310, 1330, 450), -190)
+    patch(images, (1010, 570, 1320, 640), 110)
+    return meshes[0]
+
+
+def c4(staging):
+    """C4 charge by 3dmodelscc0 (itch.io, CC0), a base for the breach
+    charge. The "COMPOSITION C4 / DETONATION BLOCK" stencil is painted
+    over with clean wrapper texture from above it."""
+    meshes = gadget(staging, "3dmcc0_c4", "c4")
+    patch(base_colour_images(meshes), (740, 730, 1480, 900), -300)
+    return meshes[0]
+
+
+MODELS = {"tamarisk": tamarisk, "acacia": acacia, "frag_grenade": frag_grenade, "c4": c4}
+# Models that go to --gadgets-out instead of --out.
+GADGETS = {"frag_grenade", "c4"}
 
 
 # ------------------------------------------------------------------ main
@@ -431,9 +503,9 @@ def main():
     if not args.staging or not os.path.isdir(args.staging):
         sys.exit("--staging must point at the asset staging folder (or set HARROW_ASSET_STAGING)")
     names = args.only or list(MODELS)
-    out_dir = os.path.abspath(args.out)
-    os.makedirs(out_dir, exist_ok=True)
     for name in names:
+        out_dir = os.path.abspath(args.gadgets_out if name in GADGETS else args.out)
+        os.makedirs(out_dir, exist_ok=True)
         bpy.ops.wm.read_factory_settings(use_empty=True)
         MODELS[name](args.staging)
         if args.preview:

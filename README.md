@@ -117,6 +117,7 @@ at the top of `tools/blender/kit/pieces.py`; the piece list is in DESIGN.md.
 
 ```sh
 tools/scripts/import_weapons.sh                    # staged CC0 guns -> assets/models/weapons/{tamarisk,acacia}.glb
+                                                   # (and cleaned CC0 frag grenade / C4 -> assets/models/gadgets/)
 tools/scripts/import_weapons.sh --only acacia      # one weapon
 tools/scripts/import_weapons.sh --preview DIR      # render them instead of exporting
 tools/scripts/build_weapons.sh                     # scripted blockouts -> assets/models/weapons/*_blockout.glb
