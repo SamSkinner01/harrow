@@ -20,6 +20,7 @@ mod wings;
 use bevy::prelude::*;
 
 use super::{
+    batch::StaticBatching,
     environment::DesertHoles,
     lamps::{LampAssets, spawn_lantern},
 };
@@ -51,6 +52,10 @@ impl Plugin for HarrowKeepPlugin {
             Rect::new(kx + 20.0, kz - 6.0, kx + 22.0, kz),
         ]))
         .add_systems(Startup, build_map);
+        // `--no-batch` keeps every kit piece as its own mesh (to compare).
+        if !std::env::args().any(|a| a == "--no-batch") {
+            app.init_resource::<StaticBatching>();
+        }
     }
 }
 

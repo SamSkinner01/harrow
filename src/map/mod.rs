@@ -5,6 +5,7 @@
 //! `--map section_a`: the first small section (M2), one building and a courtyard.
 //! `--map greybox`: the M1 controller test area.
 
+mod batch;
 mod environment;
 mod greybox;
 mod harrow_keep;
@@ -24,6 +25,7 @@ impl Plugin for MapPlugin {
             kit::KitPlugin,
             environment::EnvironmentPlugin,
             lamps::LampsPlugin,
+            batch::BatchPlugin,
         ));
         match MapChoice::from_args() {
             MapChoice::Greybox => app.add_plugins(greybox::GreyboxPlugin),
