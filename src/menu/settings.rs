@@ -1,5 +1,6 @@
 //! Menu settings remembered between runs: the last server joined and the
-//! hosting port. A small RON file in the user's config directory:
+//! hosting port. A small RON file in the user's config directory, next to
+//! the player settings (`crate::settings::config_file`):
 //! - Linux: `$XDG_CONFIG_HOME/harrow/menu.ron` (default `~/.config/harrow/`)
 //! - Windows: `%APPDATA%\harrow\menu.ron`
 //! - macOS: `~/Library/Application Support/harrow/menu.ron`
@@ -29,17 +30,7 @@ impl Default for MenuSettings {
 
 impl MenuSettings {
     fn path() -> Option<PathBuf> {
-        let base = if cfg!(windows) {
-            std::env::var_os("APPDATA").map(PathBuf::from)
-        } else if cfg!(target_os = "macos") {
-            std::env::var_os("HOME").map(|h| PathBuf::from(h).join("Library/Application Support"))
-        } else {
-            std::env::var_os("XDG_CONFIG_HOME")
-                .filter(|v| !v.is_empty())
-                .map(PathBuf::from)
-                .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))
-        };
-        base.map(|b| b.join("harrow").join("menu.ron"))
+        crate::settings::config_file("menu.ron")
     }
 
     pub fn load() -> Self {

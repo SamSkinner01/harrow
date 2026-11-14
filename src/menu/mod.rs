@@ -1,16 +1,26 @@
-//! Menus: the main menu (play solo, host, join, quit), the connecting
-//! screen, the in-game pause menu (Esc), and who owns the mouse.
+//! Menus: the main menu (play solo, host, join, settings, credits, quit),
+//! the connecting screen, the in-game pause menu (Esc), the settings and
+//! credits pages, and who owns the mouse.
 //!
-//! Functional styling in the HUD's look (white text on translucent black);
-//! a polish pass can restyle it. The map stays loaded behind the main menu
-//! as its backdrop.
+//! Look: the shared UI style (`ui::style`) over the live map. The main menu
+//! is a column on the left of a slow cinematic drift over the keep
+//! ([`menu_backdrop`]); other pages are centred cards on a darkened world.
+//! The in-game HUD is hidden while a main-menu page is open
+//! (`ui::HudLayer`).
+//!
+//! Pages ([`Page`]) are rebuilt whenever the page changes. Keyboard: Up/Down
+//! or Tab move the focus, Enter activates, Left/Right change a setting, Esc
+//! goes back (pause menu: resumes).
 //!
 //! Mouse: free in menus; captured in game (unless an automated run); Esc in
 //! game opens the pause menu and frees it; clicking the game while free and
 //! not paused captures it again. Gameplay input only reads while captured
 //! (`player::input_captured`).
 
+mod credits;
 mod settings;
+mod settings_screen;
+mod widgets;
 
 use bevy::{
     app::AppExit,
@@ -18,19 +28,21 @@ use bevy::{
         ButtonState,
         keyboard::{Key, KeyboardInput},
     },
-    picking::hover::Hovered,
     prelude::*,
-    ui::Pressed,
     ui_widgets::{Activate, Button},
     window::{CursorGrabMode, CursorOptions},
 };
 
 pub use settings::MenuSettings;
+use widgets::{Focus, Nav, PageRoot};
 
 use crate::{
+    map::MapChoice,
     net::BUILD_ID,
     player::{AutomatedRun, PlayerCamera},
     session::{AppState, MenuNotice, NetMode, resolve_address},
+    settings::{PlayerSettings, SettingsFile},
+    ui::style::{self, palette, size},
 };
 
 pub struct MenuPlugin;
@@ -39,65 +51,95 @@ impl Plugin for MenuPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(MenuSettings::load())
             .init_resource::<Paused>()
+            .init_resource::<Page>()
+            .init_resource::<Focus>()
             .add_message::<MenuAction>()
             .add_observer(activated)
+            .add_systems(OnEnter(AppState::MainMenu), (open(Page::Main), free_cursor, page_from_args).chain())
+            .add_systems(OnEnter(AppState::Connecting), (open(Page::Connecting), free_cursor))
             .add_systems(
-                OnEnter(AppState::MainMenu),
-                (spawn_main_menu, free_cursor),
+                OnEnter(AppState::InGame),
+                (open(Page::Closed), capture_cursor_unless_automated, page_from_args).chain(),
             )
-            .add_systems(
-                OnEnter(AppState::Connecting),
-                (spawn_connecting, free_cursor),
-            )
-            .add_systems(OnEnter(AppState::InGame), capture_cursor_unless_automated)
-            .add_systems(OnExit(AppState::InGame), close_pause)
             .add_systems(
                 Update,
                 (
-                    button_colors,
+                    show_page.run_if(resource_changed::<Page>),
+                    (widgets::hover_focus, widgets::move_focus, widgets::focus_colors).chain(),
                     (type_into_fields, show_fields).chain(),
-                    run_menu_actions,
+                    (keyboard_actions, run_menu_actions).chain(),
                     update_notice,
                     update_connecting_text.run_if(in_state(AppState::Connecting)),
                     // Every frame: at startup the camera appears after the
                     // first state is entered.
                     menu_backdrop.run_if(not(in_state(AppState::InGame))),
-                    (toggle_pause, recapture_on_click).run_if(in_state(AppState::InGame)),
+                    recapture_on_click.run_if(in_state(AppState::InGame)),
                 ),
             );
+        settings_screen::build(app);
+        credits::build(app);
     }
 }
 
-const PANEL: Color = Color::srgba(0.0, 0.0, 0.0, 0.62);
-const BACKDROP: Color = Color::srgba(0.0, 0.0, 0.0, 0.35);
-const TEXT: Color = Color::srgba(1.0, 1.0, 1.0, 0.92);
-const DIM: Color = Color::srgba(1.0, 1.0, 1.0, 0.6);
-const ALERT: Color = Color::srgb(1.0, 0.55, 0.35);
-const BUTTON: Color = Color::srgba(1.0, 1.0, 1.0, 0.08);
-const BUTTON_HOVER: Color = Color::srgba(1.0, 1.0, 1.0, 0.18);
-const BUTTON_PRESS: Color = Color::srgba(0.98, 0.70, 0.32, 0.45);
-const FIELD: Color = Color::srgba(0.0, 0.0, 0.0, 0.5);
-const FIELD_FOCUS: Color = Color::srgba(0.25, 0.2, 0.1, 0.8);
+/// The open menu page.
+#[derive(Resource, Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum Page {
+    /// In game, no menu.
+    #[default]
+    Closed,
+    Main,
+    Connecting,
+    Pause,
+    Settings,
+    Credits,
+}
 
-fn font(size: f32) -> TextFont {
-    TextFont {
-        font_size: FontSize::Px(size),
-        ..default()
+/// The pause menu (or a page opened from it) is up.
+#[derive(Resource, Default)]
+pub struct Paused(pub bool);
+
+/// `--menu-page settings|credits|pause`: open that page straight away (menu
+/// screenshots; `pause` only in game, the others in either).
+fn page_from_args(mut page: ResMut<Page>, state: Res<State<AppState>>) {
+    let args: Vec<String> = std::env::args().collect();
+    let Some(name) = args.iter().position(|a| a == "--menu-page").and_then(|i| args.get(i + 1)) else {
+        return;
+    };
+    let in_game = *state.get() == AppState::InGame;
+    *page = match (name.as_str(), in_game) {
+        ("settings", _) => Page::Settings,
+        ("credits", _) => Page::Credits,
+        ("pause", true) => Page::Pause,
+        _ => return,
+    };
+}
+
+fn open(page: Page) -> impl Fn(ResMut<Page>) {
+    move |mut current: ResMut<Page>| {
+        *current = page;
     }
 }
 
-/// A menu button; activating it (click, or Enter in its text field) sends
-/// a [`MenuAction`].
+/// A menu button; activating it (click, Enter, or Enter in its text field)
+/// sends a [`MenuAction`].
 #[derive(Component, Message, Clone, Copy, Debug, PartialEq, Eq)]
-enum MenuButton {
+pub enum MenuButton {
     Solo,
     Host,
     Join,
+    Settings,
+    Credits,
     Quit,
     Cancel,
     Resume,
     Leave,
+    /// Leave a settings or credits page.
+    Back,
+    /// Settings page: everything back to the defaults.
+    ResetSettings,
 }
+
+type MenuAction = MenuButton;
 
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
 enum FieldKind {
@@ -122,62 +164,148 @@ struct NoticeLine;
 #[derive(Component)]
 struct ConnectingText;
 
-#[derive(Component)]
-struct PauseMenu;
-
-/// The pause menu is open.
-#[derive(Resource, Default)]
-pub struct Paused(pub bool);
-
-fn panel(children: impl Bundle) -> impl Bundle {
-    (
-        Node {
-            flex_direction: FlexDirection::Column,
-            align_items: AlignItems::Stretch,
-            row_gap: px(10.0),
-            padding: UiRect::all(px(24.0)),
-            min_width: px(420.0),
-            max_width: px(620.0),
-            ..default()
-        },
-        BackgroundColor(PANEL),
-        children,
-    )
+/// Rebuild the open page.
+fn show_page(
+    page: Res<Page>,
+    state: Res<State<AppState>>,
+    pages: Query<Entity, With<PageRoot>>,
+    mut paused: ResMut<Paused>,
+    mut focus: ResMut<Focus>,
+    settings: Res<MenuSettings>,
+    player: Res<PlayerSettings>,
+    tuning: Res<crate::config::Tuning>,
+    mut commands: Commands,
+) {
+    for entity in &pages {
+        commands.entity(entity).despawn();
+    }
+    focus.0 = None;
+    let in_game = *state.get() == AppState::InGame;
+    paused.0 = in_game && *page != Page::Closed;
+    match *page {
+        Page::Closed => {}
+        Page::Main => spawn_main(&mut commands, &settings),
+        Page::Connecting => spawn_connecting(&mut commands),
+        Page::Pause => spawn_pause(&mut commands),
+        Page::Settings => settings_screen::spawn(&mut commands, &player, &tuning),
+        Page::Credits => credits::spawn(&mut commands),
+    }
 }
 
-fn screen(marker: impl Bundle, children: impl Bundle) -> impl Bundle {
+fn spawn_main(commands: &mut Commands, settings: &MenuSettings) {
+    use widgets::button;
+    commands.spawn(widgets::side_screen(
+        "Main menu",
+        children![(
+            Node {
+                flex_direction: FlexDirection::Column,
+                align_items: AlignItems::FlexStart,
+                row_gap: px(8.0),
+                margin: UiRect::left(percent(7.0)),
+                ..default()
+            },
+            children![
+                (
+                    Text::new("HARROW"),
+                    style::bold(size::HERO),
+                    TextColor(palette::TEXT),
+                    Node {
+                        margin: UiRect::bottom(px(-10.0)),
+                        ..default()
+                    },
+                ),
+                (
+                    Text::new("HARROW KEEP  /  ATTACK AND DEFENCE"),
+                    style::bold(size::SMALL),
+                    TextColor(palette::ACCENT),
+                    Node {
+                        margin: UiRect::bottom(px(26.0)),
+                        ..default()
+                    },
+                ),
+                (NoticeLine, Text::new(""), style::text(size::BODY), TextColor(palette::ALERT)),
+                button(MenuButton::Solo, 0, "Play Solo"),
+                row(children![
+                    button(MenuButton::Host, 1, "Host Game"),
+                    field_label("Port"),
+                    field(FieldKind::Port, settings.host_port.to_string(), 96.0),
+                ]),
+                row(children![
+                    button(MenuButton::Join, 2, "Join Game"),
+                    field_label("Address"),
+                    field(FieldKind::Address, settings.last_address.clone(), 220.0),
+                ]),
+                button(MenuButton::Settings, 3, "Settings"),
+                button(MenuButton::Credits, 4, "Credits"),
+                button(MenuButton::Quit, 5, "Quit"),
+                (
+                    Text::new(format!("build {BUILD_ID}")),
+                    style::text(size::CAPTION),
+                    TextColor(palette::FAINT),
+                    Node {
+                        margin: UiRect::top(px(28.0)),
+                        ..default()
+                    },
+                ),
+            ],
+        )],
+    ));
+}
+
+fn spawn_connecting(commands: &mut Commands) {
+    commands.spawn(widgets::screen(
+        "Connecting",
+        JustifyContent::Center,
+        children![widgets::panel(
+            460.0,
+            children![
+                widgets::title("CONNECTING"),
+                (ConnectingText, widgets::body("Connecting...", size::BODY, palette::TEXT)),
+                (
+                    Node {
+                        margin: UiRect::top(px(12.0)),
+                        ..default()
+                    },
+                    children![widgets::button(MenuButton::Cancel, 0, "Cancel")],
+                ),
+            ]
+        )],
+    ));
+}
+
+fn spawn_pause(commands: &mut Commands) {
+    use widgets::button;
+    commands.spawn(widgets::screen(
+        "Pause menu",
+        JustifyContent::Center,
+        children![widgets::panel(
+            360.0,
+            children![
+                widgets::title("PAUSED"),
+                button(MenuButton::Resume, 0, "Resume"),
+                button(MenuButton::Settings, 1, "Settings"),
+                button(MenuButton::Credits, 2, "Credits"),
+                button(MenuButton::Leave, 3, "Leave to menu"),
+                button(MenuButton::Quit, 4, "Quit"),
+            ]
+        )],
+    ));
+}
+
+fn row(children: impl Bundle) -> impl Bundle {
     (
-        marker,
         Node {
-            position_type: PositionType::Absolute,
-            width: percent(100.0),
-            height: percent(100.0),
-            justify_content: JustifyContent::Center,
+            flex_direction: FlexDirection::Row,
             align_items: AlignItems::Center,
+            column_gap: px(12.0),
             ..default()
         },
-        BackgroundColor(BACKDROP),
-        GlobalZIndex(10),
         children,
     )
 }
 
-type MenuAction = MenuButton;
-
-fn button(kind: MenuButton, label: &str) -> impl Bundle {
-    (
-        kind,
-        Button,
-        Hovered::default(),
-        Node {
-            padding: UiRect::axes(px(16.0), px(8.0)),
-            justify_content: JustifyContent::Center,
-            min_width: px(150.0),
-            ..default()
-        },
-        BackgroundColor(BUTTON),
-        children![(Text::new(label), font(19.0), TextColor(TEXT))],
-    )
+fn field_label(text: &str) -> impl Bundle {
+    (Text::new(text), style::text(size::SMALL), TextColor(palette::DIM))
 }
 
 fn field(kind: FieldKind, value: String, width: f32) -> impl Bundle {
@@ -191,108 +319,13 @@ fn field(kind: FieldKind, value: String, width: f32) -> impl Bundle {
         Node {
             padding: UiRect::axes(px(10.0), px(7.0)),
             width: px(width),
+            border: UiRect::bottom(px(1.0)),
             ..default()
         },
-        BackgroundColor(FIELD),
-        children![(FieldText, Text::new(""), font(18.0), TextColor(TEXT))],
+        BorderColor::all(palette::DIM),
+        BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.45)),
+        children![(FieldText, Text::new(""), style::text(size::BODY), TextColor(palette::TEXT))],
     )
-}
-
-fn row(children: impl Bundle) -> impl Bundle {
-    (
-        Node {
-            flex_direction: FlexDirection::Row,
-            align_items: AlignItems::Center,
-            column_gap: px(10.0),
-            ..default()
-        },
-        children,
-    )
-}
-
-fn spawn_main_menu(mut commands: Commands, settings: Res<MenuSettings>) {
-    commands.spawn(screen(
-        (Name::new("Main menu"), DespawnOnExit(AppState::MainMenu)),
-        children![panel(children![
-            (
-                Text::new("HARROW"),
-                font(46.0),
-                TextColor(TEXT),
-                TextLayout::justify(Justify::Center),
-            ),
-            (NoticeLine, Text::new(""), font(15.0), TextColor(ALERT)),
-            button(MenuButton::Solo, "Play Solo"),
-            row(children![
-                button(MenuButton::Host, "Host Game"),
-                (Text::new("Port"), font(16.0), TextColor(DIM)),
-                field(FieldKind::Port, settings.host_port.to_string(), 90.0),
-            ]),
-            row(children![
-                button(MenuButton::Join, "Join Game"),
-                (Text::new("Address"), font(16.0), TextColor(DIM)),
-                field(FieldKind::Address, settings.last_address.clone(), 210.0),
-            ]),
-            button(MenuButton::Quit, "Quit"),
-            (
-                Text::new(format!("build {BUILD_ID}")),
-                font(12.0),
-                TextColor(DIM),
-                TextLayout::justify(Justify::Right),
-            ),
-        ])],
-    ));
-}
-
-fn spawn_connecting(mut commands: Commands) {
-    commands.spawn(screen(
-        (Name::new("Connecting"), DespawnOnExit(AppState::Connecting)),
-        children![panel(children![
-            (
-                ConnectingText,
-                Text::new("Connecting..."),
-                font(22.0),
-                TextColor(TEXT)
-            ),
-            button(MenuButton::Cancel, "Cancel"),
-        ])],
-    ));
-}
-
-fn spawn_pause(commands: &mut Commands) {
-    commands.spawn(screen(
-        (Name::new("Pause menu"), PauseMenu),
-        children![panel(children![
-            (Text::new("PAUSED"), font(30.0), TextColor(TEXT)),
-            button(MenuButton::Resume, "Resume"),
-            button(MenuButton::Leave, "Leave to menu"),
-            button(MenuButton::Quit, "Quit"),
-        ])],
-    ));
-}
-
-/// The main menu looks over the courtyard at the keep.
-fn menu_backdrop(mut camera: Query<&mut Transform, With<PlayerCamera>>) {
-    let view = Transform::from_xyz(15.5, 5.5, 21.0).looking_at(Vec3::new(6.0, 2.0, -3.0), Vec3::Y);
-    for mut transform in &mut camera {
-        transform.set_if_neq(view);
-    }
-}
-
-fn button_colors(
-    mut buttons: Query<(&Hovered, Has<Pressed>, &mut BackgroundColor), With<MenuButton>>,
-) {
-    for (hovered, pressed, mut color) in &mut buttons {
-        let wanted = if pressed {
-            BUTTON_PRESS
-        } else if hovered.0 {
-            BUTTON_HOVER
-        } else {
-            BUTTON
-        };
-        if color.0 != wanted {
-            color.0 = wanted;
-        }
-    }
 }
 
 /// A button was clicked: menu buttons act, text fields take the focus.
@@ -312,36 +345,81 @@ fn activated(
     }
 }
 
+/// Enter activates the focused button (or presses Host / Join from their
+/// text field); Esc goes back.
+#[allow(clippy::too_many_arguments)]
+fn keyboard_actions(
+    keys: Res<ButtonInput<KeyCode>>,
+    focus: Res<Focus>,
+    mut page: ResMut<Page>,
+    state: Res<State<AppState>>,
+    buttons: Query<(&Nav, &MenuButton)>,
+    fields: Query<&TextField>,
+    mut actions: MessageWriter<MenuAction>,
+    mut cursor: Query<&mut CursorOptions>,
+) {
+    if keys.any_just_pressed([KeyCode::Enter, KeyCode::NumpadEnter, KeyCode::Space]) {
+        let typing = fields.iter().find(|f| f.focused);
+        if let Some(field) = typing {
+            if !keys.just_pressed(KeyCode::Space) {
+                actions.write(match field.kind {
+                    FieldKind::Port => MenuButton::Host,
+                    FieldKind::Address => MenuButton::Join,
+                });
+            }
+        } else if let Some(at) = focus.0
+            && let Some((_, button)) = buttons.iter().find(|(nav, _)| nav.0 == at)
+        {
+            actions.write(*button);
+        }
+    }
+    if !keys.just_pressed(KeyCode::Escape) {
+        return;
+    }
+    let in_game = *state.get() == AppState::InGame;
+    let target = match (*page, in_game) {
+        (Page::Settings | Page::Credits, true) => Page::Pause,
+        (Page::Settings | Page::Credits, false) => Page::Main,
+        (Page::Closed, true) => Page::Pause,
+        (Page::Pause, true) => Page::Closed,
+        (Page::Connecting, _) => {
+            actions.write(MenuButton::Cancel);
+            return;
+        }
+        _ => return,
+    };
+    if target != *page {
+        set_cursor_free(in_game && target != Page::Closed, in_game, &mut cursor);
+        *page = target;
+    }
+}
+
+/// In game: free the mouse while a page is open, capture it when closed.
+fn set_cursor_free(free: bool, in_game: bool, cursor: &mut Query<&mut CursorOptions>) {
+    if !in_game {
+        return;
+    }
+    for mut cursor in cursor.iter_mut() {
+        cursor.grab_mode = if free { CursorGrabMode::None } else { CursorGrabMode::Locked };
+        cursor.visible = free;
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn run_menu_actions(
     mut actions: MessageReader<MenuAction>,
     mut fields: Query<&mut TextField>,
-    mut keys: MessageReader<KeyboardInput>,
     mut settings: ResMut<MenuSettings>,
     mut notice: ResMut<MenuNotice>,
     mut mode: ResMut<NetMode>,
-    mut paused: ResMut<Paused>,
-    pause_menus: Query<Entity, With<PauseMenu>>,
+    mut page: ResMut<Page>,
     mut next: ResMut<NextState<AppState>>,
     state: Res<State<AppState>>,
     mut exit: MessageWriter<AppExit>,
     mut cursor: Query<&mut CursorOptions>,
-    mut commands: Commands,
+    mut player: ResMut<PlayerSettings>,
+    file: Res<SettingsFile>,
 ) {
-    let mut pressed: Vec<MenuButton> = actions.read().copied().collect();
-    // Enter in a field presses its button.
-    for key in keys.read() {
-        if key.state == ButtonState::Pressed && key.logical_key == Key::Enter {
-            for field in &fields {
-                if field.focused {
-                    pressed.push(match field.kind {
-                        FieldKind::Port => MenuButton::Host,
-                        FieldKind::Address => MenuButton::Join,
-                    });
-                }
-            }
-        }
-    }
     let field_value = |kind: FieldKind, fields: &Query<&mut TextField>| {
         fields
             .iter()
@@ -349,6 +427,8 @@ fn run_menu_actions(
             .map(|f| f.value.trim().to_string())
             .unwrap_or_default()
     };
+    let in_game = *state.get() == AppState::InGame;
+    let pressed: Vec<MenuButton> = actions.read().copied().collect();
     for button in pressed {
         match (button, *state.get()) {
             (MenuButton::Solo, AppState::MainMenu) => {
@@ -381,12 +461,31 @@ fn run_menu_actions(
                     Err(err) => notice.0 = Some(err),
                 }
             }
+            (MenuButton::Settings, _) => *page = Page::Settings,
+            (MenuButton::Credits, _) => *page = Page::Credits,
+            (MenuButton::Back, _) => {
+                if *page == Page::Settings {
+                    file.save(&player);
+                }
+                *page = if in_game { Page::Pause } else { Page::Main };
+            }
+            (MenuButton::ResetSettings, _) => {
+                *player = PlayerSettings {
+                    // Keep the display mode: resetting shouldn't jump the
+                    // window around.
+                    fullscreen: player.fullscreen,
+                    ..default()
+                };
+                // Rebuild the page with the new values.
+                page.set_changed();
+            }
             (MenuButton::Cancel, AppState::Connecting) => {
                 notice.0 = Some("Cancelled".into());
                 next.set(AppState::MainMenu);
             }
             (MenuButton::Resume, AppState::InGame) => {
-                set_paused(false, &mut paused, &pause_menus, &mut cursor, &mut commands);
+                set_cursor_free(false, true, &mut cursor);
+                *page = Page::Closed;
             }
             (MenuButton::Leave, AppState::InGame) => {
                 notice.0 = None;
@@ -412,11 +511,7 @@ fn update_notice(notice: Res<MenuNotice>, mut lines: Query<&mut Text, With<Notic
     }
 }
 
-fn update_connecting_text(
-    mode: Res<NetMode>,
-    time: Res<Time>,
-    mut texts: Query<&mut Text, With<ConnectingText>>,
-) {
+fn update_connecting_text(mode: Res<NetMode>, time: Res<Time>, mut texts: Query<&mut Text, With<ConnectingText>>) {
     let NetMode::Client { server } = *mode else {
         return;
     };
@@ -456,12 +551,11 @@ fn type_into_fields(mut keys: MessageReader<KeyboardInput>, mut fields: Query<&m
 }
 
 fn show_fields(
-    fields: Query<(&TextField, &Children, &mut BackgroundColor), Changed<TextField>>,
+    mut fields: Query<(&TextField, &Children, &mut BorderColor), Changed<TextField>>,
     mut texts: Query<&mut Text, With<FieldText>>,
 ) {
-    let mut fields = fields;
-    for (field, children, mut background) in &mut fields {
-        background.0 = if field.focused { FIELD_FOCUS } else { FIELD };
+    for (field, children, mut border) in &mut fields {
+        *border = BorderColor::all(if field.focused { palette::ACCENT } else { palette::DIM });
         for child in children.iter() {
             if let Ok(mut text) = texts.get_mut(child) {
                 text.0 = if field.focused {
@@ -474,6 +568,31 @@ fn show_fields(
     }
 }
 
+/// Behind the menus: a slow drift over the map. On Harrow Keep the camera
+/// sweeps back and forth across the south side of the compound (the sun
+/// behind it), looking at the keep.
+fn menu_backdrop(mut camera: Query<&mut Transform, With<PlayerCamera>>, time: Res<Time<Real>>) {
+    let t = time.elapsed_secs();
+    let view = match MapChoice::from_args() {
+        MapChoice::Keep => {
+            let target = Vec3::new(0.0, 3.0, -16.0);
+            // Bearing of the camera seen from the target: 0 north, 90 east.
+            let bearing = (165.0 + 28.0 * (t * std::f32::consts::TAU / 110.0).sin()).to_radians();
+            let radius = 64.0 + 6.0 * (t * std::f32::consts::TAU / 70.0).sin();
+            let height = 22.0 + 4.0 * (t * std::f32::consts::TAU / 85.0).cos();
+            let at = target + Vec3::new(bearing.sin() * radius, height, -bearing.cos() * radius);
+            Transform::from_translation(at).looking_at(target, Vec3::Y)
+        }
+        _ => {
+            let sway = 2.0 * (t * std::f32::consts::TAU / 40.0).sin();
+            Transform::from_xyz(15.5 + sway, 5.5, 21.0).looking_at(Vec3::new(6.0, 2.0, -3.0), Vec3::Y)
+        }
+    };
+    for mut transform in &mut camera {
+        transform.set_if_neq(view);
+    }
+}
+
 fn free_cursor(mut cursor: Query<&mut CursorOptions>) {
     for mut cursor in &mut cursor {
         cursor.grab_mode = CursorGrabMode::None;
@@ -481,12 +600,7 @@ fn free_cursor(mut cursor: Query<&mut CursorOptions>) {
     }
 }
 
-fn capture_cursor_unless_automated(
-    automated: Option<Res<AutomatedRun>>,
-    mut cursor: Query<&mut CursorOptions>,
-    mut paused: ResMut<Paused>,
-) {
-    paused.0 = false;
+fn capture_cursor_unless_automated(automated: Option<Res<AutomatedRun>>, mut cursor: Query<&mut CursorOptions>) {
     if automated.is_some() {
         return;
     }
@@ -496,49 +610,8 @@ fn capture_cursor_unless_automated(
     }
 }
 
-fn set_paused(
-    open: bool,
-    paused: &mut Paused,
-    menus: &Query<Entity, With<PauseMenu>>,
-    cursor: &mut Query<&mut CursorOptions>,
-    commands: &mut Commands,
-) {
-    paused.0 = open;
-    for menu in menus {
-        commands.entity(menu).despawn();
-    }
-    if open {
-        spawn_pause(commands);
-    }
-    for mut cursor in cursor.iter_mut() {
-        cursor.grab_mode = if open {
-            CursorGrabMode::None
-        } else {
-            CursorGrabMode::Locked
-        };
-        cursor.visible = open;
-    }
-}
-
-fn toggle_pause(
-    keys: Res<ButtonInput<KeyCode>>,
-    mut paused: ResMut<Paused>,
-    menus: Query<Entity, With<PauseMenu>>,
-    mut cursor: Query<&mut CursorOptions>,
-    mut commands: Commands,
-) {
-    if keys.just_pressed(KeyCode::Escape) {
-        let open = !paused.0;
-        set_paused(open, &mut paused, &menus, &mut cursor, &mut commands);
-    }
-}
-
 /// Clicking the game while the mouse is free (alt-tab) captures it again.
-fn recapture_on_click(
-    mouse: Res<ButtonInput<MouseButton>>,
-    paused: Res<Paused>,
-    mut cursor: Query<&mut CursorOptions>,
-) {
+fn recapture_on_click(mouse: Res<ButtonInput<MouseButton>>, paused: Res<Paused>, mut cursor: Query<&mut CursorOptions>) {
     if paused.0 || !mouse.just_pressed(MouseButton::Left) {
         return;
     }
@@ -547,16 +620,5 @@ fn recapture_on_click(
             cursor.grab_mode = CursorGrabMode::Locked;
             cursor.visible = false;
         }
-    }
-}
-
-fn close_pause(
-    mut paused: ResMut<Paused>,
-    menus: Query<Entity, With<PauseMenu>>,
-    mut commands: Commands,
-) {
-    paused.0 = false;
-    for menu in &menus {
-        commands.entity(menu).despawn();
     }
 }

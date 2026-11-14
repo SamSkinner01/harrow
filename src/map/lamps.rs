@@ -22,8 +22,20 @@ pub struct LampsPlugin;
 impl Plugin for LampsPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<LampAssets>()
+            .init_resource::<LampShadowScale>()
             .add_systems(PreUpdate, apply_lamp_tuning.run_if(resource_changed::<Tuning>))
             .add_systems(PostUpdate, gate_lamp_shadows);
+    }
+}
+
+/// Graphics quality: multiplies `lighting.lamp_shadow_distance` (0 = no
+/// lantern shadows). Set by the settings screen.
+#[derive(Resource, Clone, Copy, Debug)]
+pub struct LampShadowScale(pub f32);
+
+impl Default for LampShadowScale {
+    fn default() -> Self {
+        Self(1.0)
     }
 }
 
@@ -54,6 +66,7 @@ impl FromWorld for LampAssets {
         let mut materials = world.resource_mut::<Assets<StandardMaterial>>();
         let glow = materials.add(StandardMaterial {
             base_color: Color::srgb(1.0, 0.85, 0.6),
+            // Brightness from `lighting.lamp_glow` (`apply_lamp_tuning`).
             emissive: LinearRgba::rgb(1.0, 0.72, 0.42) * 40_000.0,
             ..default()
         });
@@ -123,9 +136,20 @@ fn lamp_light(tuning: &Tuning, shadows: bool) -> SpotLight {
     }
 }
 
-fn apply_lamp_tuning(tuning: Res<Tuning>, mut lamps: Query<(&mut SpotLight, &Lamp)>) {
+fn apply_lamp_tuning(
+    tuning: Res<Tuning>,
+    assets: Res<LampAssets>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut lamps: Query<(&mut SpotLight, &Lamp)>,
+) {
     for (mut light, lamp) in &mut lamps {
+        // Keep the shadow gate's decision (`gate_lamp_shadows`).
+        let shadows = light.shadow_maps_enabled;
         *light = lamp_light(&tuning, lamp.shadows);
+        light.shadow_maps_enabled = shadows && lamp.shadows;
+    }
+    if let Some(mut glow) = materials.get_mut(&assets.glow) {
+        glow.emissive = LinearRgba::rgb(1.0, 0.72, 0.42) * tuning.lighting.lamp_glow;
     }
 }
 
@@ -135,6 +159,7 @@ fn apply_lamp_tuning(tuning: Res<Tuning>, mut lamps: Query<(&mut SpotLight, &Lam
 /// light can't leak up into the camera's room.
 fn gate_lamp_shadows(
     tuning: Res<Tuning>,
+    scale: Res<LampShadowScale>,
     cameras: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
     mut lamps: Query<(&Lamp, &GlobalTransform, &mut SpotLight)>,
 ) {
@@ -143,7 +168,7 @@ fn gate_lamp_shadows(
         .filter(|(camera, _)| camera.is_active)
         .map(|(_, at)| at.translation())
         .collect();
-    let near = tuning.lighting.lamp_shadow_distance;
+    let near = tuning.lighting.lamp_shadow_distance * scale.0;
     for (lamp, at, mut light) in &mut lamps {
         if !lamp.shadows {
             continue;

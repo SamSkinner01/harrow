@@ -27,6 +27,13 @@ licences. Add a row before committing the asset.
 | First-person arms (built from the MakeHuman/MPFB CC0 assets above: base mesh, `game_engine` skeleton, `middleage_caucasian_male` and `mindfront_skin_male_african_middleage` skins) | (generated) | CC0 inputs; our output | `assets/models/characters/arms_{attackers,defenders}.glb`, built by `tools/scripts/build_arms.sh` (`tools/blender/characters/arms.py`): the operator pipeline's uniform sleeves and gloves in each team's palette, cut down to the forearms and hands, with hold and reload clips per weapon |
 
 
+## Sky and type
+
+| Asset | Author | Source URL | Licence | File | Used in |
+|---|---|---|---|---|---|
+| Kiara 5 Noon (HDRI, 4k Radiance `.hdr`, unclipped; sun 51.2 deg) | Greg Zaal | https://polyhaven.com/a/kiara_5_noon | CC0 | `assets/sky/kiara_5_noon.ktx2` | The sky (`Skybox`) of every 3D view, and the source of the haze colour (`lighting.fog_colour`). Converted by `tools/scripts/build_sky.sh` (Blender + numpy: six 1024 px cube faces, rgb9e5, zstd; the sun turned to due south, brightness normalised to the sky's mean, the sun disc clamped). Source file from the asset staging area, downloaded 2026-11-13, no login. Chosen over Goegap (its rock hill sits right behind the keep when seen from above) and Qwantani Noon (no horizon). |
+| Noto Sans Condensed Medium and SemiBold (TTF, version 2.015) | The Noto Project Authors | https://notofonts.github.io/ (copied from Fedora's `google-noto-sans-fonts` package) | SIL Open Font License 1.1 (`assets/fonts/OFL.txt`) | `assets/fonts/NotoSans-Condensed{Medium,SemiBold}.ttf` | All menu and HUD text (`src/ui/style.rs`, embedded in the client binary). The OFL allows bundling with software; the licence text ships next to the fonts. |
+
 ## Props (Harrow Keep)
 
 Scanned models from Poly Haven, collected by the asset scout (1k textures,

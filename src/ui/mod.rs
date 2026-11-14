@@ -1,16 +1,70 @@
-//! HUD and menus. For now: a centre dot and a key-help panel (F1).
+//! HUD basics: the shared style ([`style`]), the HUD layer, a centre dot and
+//! a key-help panel (F1). Menus are in `src/menu/`.
+//!
+//! Every root UI node is moved under one [`HudLayer`] node, which is only
+//! visible in game: the HUDs of the round, weapons, gadgets and destruction
+//! all disappear behind the main menu without knowing about it. Menu pages
+//! (and anything else that must stay up) carry [`NotHud`].
+
+pub mod style;
 
 use bevy::prelude::*;
 
-use crate::{player::LocalPlayer, weapons::AimView};
+use crate::{player::LocalPlayer, session::AppState, weapons::AimView};
+use style::{palette, size, space};
 
 pub struct UiPlugin;
 
 impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, (spawn_crosshair, spawn_help))
-            .add_systems(Update, (toggle_help, hide_crosshair_when_aiming));
+        app.add_plugins(style::UiStylePlugin)
+            .add_systems(PreStartup, spawn_hud_layer)
+            .add_systems(Startup, (spawn_crosshair, spawn_help))
+            .add_systems(
+                Update,
+                (toggle_help, hide_crosshair_when_aiming, adopt_hud_roots, show_hud_in_game),
+            );
     }
+}
+
+/// Parent of every HUD element; hidden outside the game.
+#[derive(Component)]
+pub struct HudLayer;
+
+/// A root UI node that is not part of the HUD (menu pages).
+#[derive(Component)]
+pub struct NotHud;
+
+fn spawn_hud_layer(mut commands: Commands) {
+    commands.spawn((
+        Name::new("HUD"),
+        HudLayer,
+        Node {
+            position_type: PositionType::Absolute,
+            width: percent(100.0),
+            height: percent(100.0),
+            ..default()
+        },
+        Pickable::IGNORE,
+        Visibility::Hidden,
+    ));
+}
+
+/// New root UI nodes join the HUD layer.
+#[allow(clippy::type_complexity)]
+fn adopt_hud_roots(
+    layer: Single<Entity, With<HudLayer>>,
+    roots: Query<Entity, (Added<Node>, Without<ChildOf>, Without<HudLayer>, Without<NotHud>)>,
+    mut commands: Commands,
+) {
+    for root in &roots {
+        commands.entity(root).insert(ChildOf(*layer));
+    }
+}
+
+fn show_hud_in_game(state: Res<State<AppState>>, mut layer: Single<&mut Visibility, With<HudLayer>>) {
+    let wanted = if *state.get() == AppState::InGame { Visibility::Inherited } else { Visibility::Hidden };
+    layer.set_if_neq(wanted);
 }
 
 fn spawn_crosshair(mut commands: Commands) {
@@ -42,7 +96,7 @@ fn spawn_crosshair(mut commands: Commands) {
                     height: px(4.0),
                     ..default()
                 },
-                BackgroundColor(Color::srgba(1.0, 1.0, 1.0, 0.9)),
+                BackgroundColor(palette::TEXT),
             )],
         )],
     ));
@@ -66,6 +120,9 @@ fn hide_crosshair_when_aiming(
 #[derive(Component)]
 struct HelpPanel;
 
+#[derive(Component)]
+struct HelpHint;
+
 const HELP: &str = "\
 WASD  move        Shift  sprint
 C  crouch         Z  prone
@@ -84,27 +141,44 @@ fn spawn_help(mut commands: Commands) {
         Name::new("Help panel"),
         HelpPanel,
         Text::new(HELP),
-        TextFont {
-            font_size: FontSize::Px(14.0),
-            ..default()
-        },
-        TextColor(Color::srgba(1.0, 1.0, 1.0, 0.85)),
+        // Monospace: the keys are laid out in columns.
+        style::mono(size::SMALL),
+        TextColor(palette::TEXT),
         Node {
             position_type: PositionType::Absolute,
-            top: px(12.0),
-            right: px(12.0),
-            padding: UiRect::all(px(8.0)),
+            top: px(space::EDGE),
+            right: px(space::EDGE),
+            padding: UiRect::all(px(10.0)),
+            border: UiRect::top(px(2.0)),
             ..default()
         },
-        BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.45)),
+        BorderColor::all(palette::ACCENT),
+        BackgroundColor(palette::PANEL),
+        Visibility::Hidden,
+    ));
+    commands.spawn((
+        Name::new("Help hint"),
+        HelpHint,
+        Text::new("F1  controls"),
+        style::text(size::CAPTION),
+        TextColor(palette::FAINT),
+        Node {
+            position_type: PositionType::Absolute,
+            top: px(space::EDGE),
+            right: px(space::EDGE),
+            ..default()
+        },
     ));
 }
 
-fn toggle_help(keys: Res<ButtonInput<KeyCode>>, mut panel: Single<&mut Visibility, With<HelpPanel>>) {
+fn toggle_help(
+    keys: Res<ButtonInput<KeyCode>>,
+    mut panel: Single<&mut Visibility, (With<HelpPanel>, Without<HelpHint>)>,
+    mut hint: Single<&mut Visibility, With<HelpHint>>,
+) {
     if keys.just_pressed(KeyCode::F1) {
-        **panel = match **panel {
-            Visibility::Hidden => Visibility::Inherited,
-            _ => Visibility::Hidden,
-        };
+        let show = **panel == Visibility::Hidden;
+        **panel = if show { Visibility::Inherited } else { Visibility::Hidden };
+        **hint = if show { Visibility::Hidden } else { Visibility::Inherited };
     }
 }
