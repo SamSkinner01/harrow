@@ -69,6 +69,7 @@ impl CharacterParts {
 struct PreparedAssets {
     materials: HashSet<AssetId<StandardMaterial>>,
     images: HashSet<AssetId<Image>>,
+    meshes: HashSet<AssetId<Mesh>>,
 }
 
 struct Detail {
@@ -132,9 +133,14 @@ fn prepare_character(
     children: Query<&Children>,
     names: Query<&Name>,
     players: Query<(), With<AnimationPlayer>>,
-    mesh_materials: Query<(&GltfMaterialName, &MeshMaterial3d<StandardMaterial>)>,
+    mesh_materials: Query<(
+        &GltfMaterialName,
+        &MeshMaterial3d<StandardMaterial>,
+        &Mesh3d,
+    )>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut images: ResMut<Assets<Image>>,
+    mut meshes: ResMut<Assets<Mesh>>,
     mut prepared: ResMut<PreparedAssets>,
     details: Res<DetailTextures>,
     mut commands: Commands,
@@ -151,7 +157,7 @@ fn prepare_character(
         if let Ok(name) = names.get(entity) {
             bones.entry(name.as_str().to_string()).or_insert(entity);
         }
-        if let Ok((material_name, material)) = mesh_materials.get(entity) {
+        if let Ok((material_name, material, mesh)) = mesh_materials.get(entity) {
             prepare_material(
                 &material_name.0,
                 &material.0,
@@ -160,6 +166,18 @@ fn prepare_character(
                 &mut prepared,
                 &details,
             );
+            // Normal maps need tangents. They're generated here rather than
+            // exported, so rebuilt .glb files stay byte-identical.
+            if details.by_material.contains_key(material_name.0.as_str())
+                && prepared.meshes.insert(mesh.0.id())
+                && let Some(mut mesh) = meshes.get_mut(&mesh.0)
+                && let Err(err) = mesh.generate_tangents()
+            {
+                warn!(
+                    "{:?}: no tangents for {}: {err}",
+                    character.operator, material_name.0
+                );
+            }
         }
     }
     let Some(player) = player else {

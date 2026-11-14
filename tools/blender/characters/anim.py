@@ -391,10 +391,13 @@ class Animator:
         b = math.sin(2 * math.pi * t / 3.0)
         drop = self.hip_z - 0.47
         pose.pelvis = Vector((0.0, -0.06, -drop))
-        pose.rot["pelvis"] = R("X", -14.0)
-        pose.rot["spine_01"] = R("X", 5.0)
-        pose.rot["spine_02"] = R("X", 4.0)
-        pose.rot["spine_03"] = R("X", 3.0 + 0.8 * b)
+        # Pelvis nearly upright and the spine close to its standing pose,
+        # so the arm (aim) and spine (lean) overrides, which were authored
+        # standing, still line up when crouched.
+        pose.rot["pelvis"] = R("X", -6.0)
+        pose.rot["spine_01"] = R("X", 2.0)
+        pose.rot["spine_02"] = R("X", 2.0)
+        pose.rot["spine_03"] = R("X", 1.0 + 0.8 * b)
         pose.rot["head"] = R("X", 3.0) @ R("Z", 3.0 * math.sin(2 * math.pi * t / 3.0 + 0.5))
         return pose
 
@@ -412,7 +415,7 @@ class Animator:
         bob = math.cos(4 * math.pi * ph)
         pose.pelvis += Vector((0.012 * math.sin(2 * math.pi * ph), 0.0, 0.012 * bob))
         twist = 4.0 * math.cos(2 * math.pi * ph)
-        pose.rot["pelvis"] = R("Z", twist) @ R("X", -14.0)
+        pose.rot["pelvis"] = R("Z", twist) @ R("X", -6.0)
         self.gait(pose, ph, stride=0.9, lift=0.11, stance=0.6, width=0.14, pelvis_rot=R("Z", twist),
                   back=0.06, toe_out=10.0)
         for s in "lr":

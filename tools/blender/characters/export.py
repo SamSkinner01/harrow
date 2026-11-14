@@ -45,7 +45,7 @@ def export_glb(ch, out_dir):
         export_extras=True,
         export_texcoords=True,
         export_normals=True,
-        export_tangents=True,
+        export_tangents=False,  # the game generates them (reproducible files)
         export_materials="EXPORT",
         export_image_format="AUTO",
         export_vertex_color="ACTIVE",

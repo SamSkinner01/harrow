@@ -85,7 +85,7 @@ def build(cfg, scratch):
 
 
 def triangulate(obj):
-    """Triangles only, so the exporter can compute tangents (normal maps)."""
+    """Triangles only, split the same way on every build (reproducible files)."""
     bm = bmesh.new()
     bm.from_mesh(obj.data)
     bmesh.ops.triangulate(bm, faces=bm.faces[:], quad_method="BEAUTY", ngon_method="BEAUTY")
