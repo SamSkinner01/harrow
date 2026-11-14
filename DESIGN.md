@@ -54,11 +54,15 @@ All numbers live in the `weapons` section of `assets/config/tuning.ron`;
 these are the rules (code: `src/weapons/`).
 
 **Loadout (placeholder until operators, M6):** every character carries a
-primary and a sidearm. Both are original designs:
-- **TAMARISK**, assault rifle: full auto, 30-round curved magazine, compact
-  open reflex sight, skeletal stock, octagonal sand-coloured handguard.
+primary and a sidearm. Names and numbers are ours; since the realism pass
+the models are realistic CC0 guns (see "Realism pass: weapons and arms"):
+- **TAMARISK**, assault rifle: full auto, 30-round curved magazine, iron
+  sights. Model: a weathered AK-pattern rifle (wood furniture, bakelite
+  magazine).
 - **ACACIA**, sidearm: semi-auto (one shot per click, rate-capped),
-  15-round magazine, two-tone, three-dot iron sights.
+  15-round magazine, iron sights. Model: a worn P38-style pistol with wood
+  grips. (The original blockouts, a reflex-sighted carbine and a two-tone
+  pistol, are kept as `*_blockout.glb`.)
 Weapons spawn full with a round chambered (30+1, 15+1).
 
 **Firing.** Hitscan from the true eye position (the same point the camera
@@ -631,7 +635,7 @@ Built by `tools/scripts/build_characters.sh` from one config per operator
   (skin pores/roughness from the Mindfront skin; Poly Haven poplin, twill
   and leather); per-operator colour textures are embedded in the .glb.
 - **Budget:** ~26–27k triangles per operator (body ~21k, gear 3.7–5.2k,
-  carbine 0.35k, eyes/brows/lashes 0.7k), 55 bones. Ten on screen is
+  carbine blockout 0.44k, eyes/brows/lashes 0.7k), 55 bones. Ten on screen is
   ~270k skinned triangles and ~70 draw calls plus shadows: fine on a
   mid-range PC. Measured (dev build, `--no-vsync`): the keep alone 343 fps
   (2.9 ms), with 12 animated operators (`--lineup-crowd`) 274 fps
@@ -640,21 +644,21 @@ Built by `tools/scripts/build_characters.sh` from one config per operator
   for distant characters.
 - **Builds are reproducible:** rebuilding produces byte-identical .glb
   files, so unchanged operators don't churn Git LFS.
-- **Animations:** scripted placeholders (no CC0 set without a login fits
-  this skeleton), 30 fps, in place, posed in armature axes with our own
-  two-bone IK: `idle`, `walk` (authored for 3.4 m/s), `run` (5.6),
-  `crouch_idle`, `crouch_walk` (1.9), `prone_idle`, `prone_crawl` (0.8),
-  `lean_left`/`lean_right` (spine and head pose), `fire` (aim plus one
-  recoil kick, looped at the rate of fire), `reload` (2.4 s, the magazine
-  comes out in the left hand). The game blends them by stance and speed
-  and overrides the arms (aim, fire, reload) and spine (lean).
+- **Animations:** 30 fps, in place, posed in armature axes with our own
+  two-bone IK. Locomotion (`idle`, `walk`, `run`, `crouch_idle`,
+  `crouch_walk`) is retargeted CMU motion capture; `prone_idle`,
+  `prone_crawl` (0.8 m/s), `lean_left`/`lean_right` (lower spine),
+  `fire` (aim plus one recoil kick, looped at the rate of fire) and
+  `reload` (2.4 s, the magazine comes out in the left hand) are
+  hand-keyed. The game blends them by stance and speed and overrides the
+  arms, chest and head (aim, fire, reload) and the lower spine (lean).
+  See "Realism pass: character animation".
 - **Hit zones (later):** the fixed capsules in `src/player/hitbox.rs` can
   follow bones: head on `head`, torso between `spine_01` and `spine_03`
   (or `neck_01`), legs on `thigh_*`/`calf_*`.
-- **Mocap plan:** when CC0/permissive mocap (e.g. CMU BVH) is staged,
-  retarget it onto `game_engine` in `anim.py` by mapping its joints to
-  these bone names and baking per operator; the clip names, masks and the
-  game side stay the same.
+- **Mocap:** done (realism pass): CMU BVH clips retargeted onto
+  `game_engine` by `tools/blender/characters/retarget.py` and baked per
+  operator; the clip names and `CharacterAnim` stayed the same.
 - **Not yet:** prone aiming and reloading, strafe/backpedal clips, hair
   meshes (short hair is a scalp tint under the headgear). Real weapon
   models attach to `weapon_r` with the prop carbine hidden (M7
@@ -1451,6 +1455,306 @@ walled courtyard (16 x 12 m) with an arched gate to the south; stairs up
 the west hall; a wooden floor with a hatch over the storeroom; one site
 pair (storeroom / upper east room), attackers outside the courtyard gate.
 
+## Look and feel (polish pass, 2026-11-14)
+
+Target: grounded military realism in a sun-bleached desert fortress.
+Harsh sun, deep interior shadows, a muted sand and ochre palette;
+believable rather than photoreal. Code: `src/map/environment.rs` (sun),
+`src/map/look.rs` (cameras, sky, fill light, post-processing; client
+only), `src/map/lamps.rs`; every number is in the `lighting` section of
+the tuning file.
+
+**Light.** No baked GI, so indirect light is faked by area:
+- The sun: 100 000 lux, slightly warm, 51 deg up (the sky image's own
+  sun) from the south-south-east (bearing 148.5), four shadow cascades to
+  100 m, plus screen-space contact shadows for small-scale grounding.
+- Outdoors: a sky-fill environment light on the camera, a three-colour
+  hemisphere (blue-grey sky above, horizon, warm sand bounce below),
+  `sky_fill` cd/m2. SSAO darkens it in creases and under props.
+- Indoors: one light-probe box per building (keep, third-floor block,
+  barracks, granary, old hall, gatehouse, four towers) with a much dimmer,
+  warmer fill (`interior_fill`). Inside a box it replaces the sky fill. The
+  boxes end on the outer walls' centre lines, so the outside of a wall is
+  sky-lit and the inside isn't. Bevy uses at most 8 probes per view; the
+  8 nearest to the camera are kept on. Sun through doors and windows and the
+  lanterns do the rest.
+- `GlobalAmbientLight` is only a tiny floor (basements, odd corners).
+
+**Eye adaptation.** The base exposure is sunlight (EV100 15); auto exposure
+only ever brightens, by up to `adaptation_max` stops when the view is dark
+(below `adaptation_threshold`), at 1.2 stops/s (2.5 back). Interiors end up
+dark but readable; the yard seen through a door stays sun-bright and
+blooms.
+
+**Image.** HDR, AgX tonemapping (soft highlight roll-off, muted colours),
+slight warm white balance and desaturation (more in shadows and
+highlights), energy-conserving bloom at a low strength, debanding. No
+contrast or lift in the grading: Bevy applies them around 0.5 in linear
+light *before* eye adaptation, which crushed dark interiors to black (and
+red). Haze: exponential-squared distance fog (none inside a room, thick
+only far out in the desert), coloured like the sky's horizon at the base
+exposure so the 3 km desert floor melts into the sky (world cameras cull
+at 4 km instead of Bevy's 1 km).
+
+**Sky.** Kiara 5 Noon (Poly Haven, CC0; a dry valley ringed by distant
+mountains, sun 51 deg) converted to a 6 x 1024 px rgb9e5 KTX2
+cubemap by `tools/scripts/build_sky.sh`; the sun is turned to due south in
+the file and the skybox is rotated by `sun_azimuth` at runtime, so the sun
+in the sky always matches the sun light and shadows. Its distant mountains sit
+on the horizon beyond our desert floor, which runs out 3 km so that even
+from the towers and the menu's high view its edge is lost in the haze.
+(Goegap was the first pick: from above, its nearby rock hill loomed right
+behind the keep. Qwantani Noon has no horizon at all.)
+
+**Anti-aliasing and the weapon.** TAA (High/Ultra), SMAA (Medium) or FXAA
+(Low) on the world camera; all need MSAA off, which SSAO also requires. The
+weapon is drawn by its own LDR camera after TAA, so it never smears; it
+gets the same tonemapper, grading and sky fill (times `weapon_fill`, so
+the dark metal doesn't read as a silhouette) and the interior probes
+(which are on its render layer too), but no HDR effects. The lanterns
+don't light it (they are on the world layer only). TAA history is
+reset when a camera comes back on (drone/CCTV view) or cuts (menu to game).
+
+**Graphics settings** (settings screen): presets Low/Medium/High/Ultra or
+each of anti-aliasing, ambient occlusion, shadows (sun shadow map size,
+cascades and distance; lantern shadow reach), bloom and contact shadows.
+See README, "Settings". No render-scale option: Bevy 0.20 can render the
+main pass smaller (`MainPassResolutionOverride`) but only an upscaler
+(DLSS, not built in) fills the screen again.
+
+**Menus and HUD.** One style for everything (`src/ui/style.rs`): Noto
+Sans Condensed (OFL) for text, the monospace default font only where text is
+laid out in columns; warm off-white on dark translucent panels with a
+thin sand-coloured accent edge; attackers ochre, defenders muted blue,
+alerts red; six text sizes (12, 14, 16, 21, 30, 44, plus the 96 px
+wordmark). The main menu is a left column over a slow drift above the keep
+(camera sweeping the south side with the sun behind it); settings, credits,
+pause and connecting are centred cards. Keyboard: Up/Down/Tab, Enter,
+Left/Right, Esc. All HUD roots sit under one HUD layer (`ui::HudLayer`)
+that is hidden outside the game, so nothing of the HUD shows behind the
+main menu.
+
+**Performance** (RTX 4070 Ti Super, 1920x1080, `--no-vsync`, free play,
+`tools/scripts/look_shots.sh`; average fps, best of two passes; other
+builds were running on the machine, so expect +-25 % between runs):
+
+| View | dev, High | release, High |
+|---|---|---|
+| Outside the gate | 408 | 385 |
+| Yard toward the keep | 456 | 421 |
+| Great hall | 317 | 288 |
+| Basement (cistern) | 343 | 312 |
+| Upper room (map room) | 358 | 312 |
+| Tower roof | 435 | 393 |
+
+Release, by preset: great hall (the heaviest view) Low 490, Medium 342,
+High 288, Ultra 196; tower roof Low 555, Medium 526, High 393, Ultra 331.
+The release build is no faster than the dev build here: the frame is GPU
+bound (dependencies are optimised in dev too). The most expensive switches
+are SSAO quality, TAA and the Ultra shadow map (4096 px); Low turns off
+SSAO, bloom, contact shadows and lantern shadows.
+
 ## Open questions
 
 - Vault action (see Movement).
+
+## Realism pass: audio
+
+Recorded sounds replace the synthesised placeholders (packs and licences in
+ASSETS.md, "Audio"; built by `tools/audio/build_audio.py`). Code:
+`src/audio/` (library, playback, spatial setup, impacts/breaking/explosions,
+surface lookup), `src/weapons/audio.rs`, `src/player/footsteps.rs`.
+
+- **Own vs. world.** The local player's shots, reloads and footsteps play
+  straight to the ears (the first-person shot is a stereo recording).
+  Everything else is 3D at its world position: other people's shots and
+  footsteps, reloads, bullet impacts, breaking surfaces, explosions.
+- **Shots.** TAMARISK: AK-47 recordings; ACACIA: Walther PPQ / 1911. Other
+  people's shots layer a close and a mid-distance recording, crossfaded by
+  distance (`audio.distant_blend`); explosions do the same.
+- **Spatial audio.** Bevy pans by distance to each ear (rodio's `Spatial`),
+  which flips sides for distant sources and falls off as 1/d^2. We scale
+  positions so the distance term is always 1, swap the ears (correct
+  panning), and apply our own fall-off: full volume to `near`, then
+  (near / d)^rolloff, silent at `far`, per category in the tuning file.
+- **Surfaces.** Footsteps cast a short ray down; impacts use the hit
+  collider. Destructible surfaces know their material (plaster, wood; metal
+  on hatch frames and facing reinforcement plates); everything else matches
+  piece/collider names against `audio.surfaces` (stone, wood, sand, metal,
+  plaster), falling back to stone. Sandbags and the desert are sand.
+- **Load.** Bullet impacts are rate-limited (`impacts_per_second`, merged
+  when close together); at most `max_voices` world sounds at once; an
+  explosion plays at most three breaking sounds.
+- **Reload timing.** Magazine out at 20 %, in at 70 %, charging handle /
+  slide at 86 % of the reload (`RELOAD_TIMING` in `weapons/audio.rs`; the
+  first-person animation follows it).
+- **Checking it.** Automated runs are silent; `--log-sounds` logs every
+  sound (event, file, surface, 2D/3D, distance, volume), `--play-sounds`
+  plays them anyway.
+- **Not done yet:** indoor reverb / occlusion (no CC0 indoor gunshots
+  exist; walls don't muffle anything yet), shell casings, bullet whizz, a
+  desert wind bed, and the round/gadget sounds are still synthesised.
+
+## Realism pass: character animation
+
+The four operators' third-person clips (`tools/blender/characters/anim.py`,
+`retarget.py`; built by `build_characters.sh`). Clip names and
+`CharacterAnim` are unchanged.
+
+- **Sources:** CMU Graphics Lab motion capture (BVH, Bruce Hahne's
+  conversion; terms and credit in ASSETS.md / CREDITS.md). The BVH files are
+  read at build time from the staging folder (`--mocap DIR`, default
+  `$HARROW_MOCAP` or `~/harrow-assets-staging/mocap`) and only ship as
+  keyframes in the .glb files; they are not in the repository.
+
+  | Clip | Source | Notes |
+  |---|---|---|
+  | `idle` | CMU 77_02 (standing), 2.8 s loop | weight shifts and breathing from the capture; the head turned back to the front on average |
+  | `walk` | CMU 35_17 (jog), one 0.73 s cycle | the game's 3.4 m/s walk is jogging pace: a captured walk (1.3–1.8 m/s) would need ~2x playback |
+  | `run` | CMU 09_01 (run), one cycle, played 1.35x | rifle carried across the chest, muzzle down-left |
+  | `crouch_walk` | CMU 136_09 (crouched walk), two steps, played 1.8x | hips lowered to 52% of standing so the head top is ~1.3 m (crouched capsule 1.2 m); the IK legs bend further, the captured foot paths stay |
+  | `crouch_idle` | the crouch walk's double-support stance, held | front foot flattened, rear on its ball, plus breathing and a slow sway |
+  | `prone_idle`, `prone_crawl`, `fire`, `reload`, `lean_*` | hand-keyed | no free source has rifle, prone or lean clips |
+
+  Quaternius' Universal Animation Library 1 and 2 (CC0) were evaluated and
+  not used: hand-keyed and stylised next to the CMU captures, and they have
+  no rifle, prone or tactical crouch clips either.
+
+- **Retargeting** (`retarget.py`): the BVH text is parsed directly (no
+  importer, no scripts), forward kinematics per frame, converted to Z up.
+  A cycle search picks the segment whose end best matches its start (pose
+  and velocity). The T-pose facing (frame 1) and the segment's direction
+  of travel are turned to +Y; the average velocity is removed (in place;
+  the bob and sway stay); everything is scaled by target/source leg length,
+  per operator. Rotations are world-space deltas from the source T-pose:
+  `target = (R_src(t) R_src(T-pose)^-1) R_target_rest`, for pelvis,
+  spine_01..03, neck_01, head, feet and toes (Hips, LowerBack, Spine,
+  Spine1, Neck1, Head, *Foot, *ToeBase). Both rests are upright with
+  straight legs, so no per-bone axis tables are needed and MakeHuman's
+  forward-angled forearms don't matter (the arms are never retargeted). The
+  legs are two-bone IK to the scaled source ankles, knees towards the
+  source thigh's forward direction, so the captured foot contacts carry
+  over exactly. Loops: the last frame's mismatch with the first is spread
+  over the cycle (positions lerped, rotations slerped), and every loop
+  starts at the left foot's touchdown.
+- **Overlays line up:** each clip's average pelvis, chest (`spine_02`,
+  `spine_03`) and head rotations are turned to the standing pose's (the
+  run keeps half its forward lean); the per-frame motion stays. `fire` and
+  `reload` own `spine_03`, neck and head plus the arms, `lean_*` own
+  `spine_01`/`spine_02`, so the aim stays level and on the eye over any
+  locomotion and lean, and aim plus lean never fight over a bone
+  (`src/characters/library.rs`, mask group `UPPER`).
+- **Rifle hold:** the arms never come from the capture. The rifle frame
+  rides on the chest (`gun_rest`: low ready; sprint carry; reload with the
+  stock under the arm) and both hands are IK'd onto it with the same
+  TAMARISK grips as the first-person arms (anatomical hand frames: wrist to
+  middle knuckle, palm from the knuckle line; finger curls per hand).
+  `weapon_r` is derived from the right-hand grip, so the real model
+  attached there (`model.third_person`) sits in the hand. The prop is an
+  AK-proportioned blockout (butt, magazine, handguard, sights at the real
+  model's positions) that the game hides when the real model is attached.
+- **Aim (`fire`):** chest bladed 30 degrees right and 14 forward, neck and
+  head flexed and tilted 15+15 degrees onto the stock, right shoulder
+  raised. The rifle is placed so its sight line (z 0.077 in the gun frame)
+  runs through the right eye 0.63 m behind the front post; the butt plate
+  then sits in the shoulder pocket (about 5 cm in from and 7 cm in front
+  of the shoulder joint; angles chosen by a small search over the pose).
+  Recoil per loop: 2 cm back, 2.5 degrees up, chest 2 degrees back.
+  Prone aiming uses the same eye-on-sight placement.
+- **Reload:** 2.4 s tactical reload: rifle tucked under the arm and rolled
+  left, eyes on the magazine well, the support hand rocks the magazine out
+  (it follows `weapon_mag`), stows it at the chest pouch, seats a new one
+  and goes back to the handguard.
+- **Lean:** `spine_01` 12 and `spine_02` 14 degrees, which moves the head
+  ~0.32 m like the first-person lean; the chest, head and arms come from
+  whatever else is playing.
+- **No foot sliding:** each locomotion clip's `speed` in `harrow_clips` is
+  measured on the retargeted, scaled feet: the median backward speed of
+  the planted contact point (heel or ball within 1.5 cm of the ground).
+  The game plays a clip at movement speed / that speed, so planted feet
+  stay put. Per operator (m/s, and the playback rate at the game's speed):
+
+  | | walk (3.4) | run (5.6) | crouch_walk (1.9) |
+  |---|---|---|---|
+  | Auger | 3.20 (1.06x) | 4.98 (1.12x) | 1.60 (1.19x) |
+  | Lark | 2.97 (1.15x) | 4.63 (1.21x) | 1.48 (1.28x) |
+  | Mortise | 3.27 (1.04x) | 5.09 (1.10x) | 1.63 (1.16x) |
+  | Fathom | 3.03 (1.12x) | 4.74 (1.18x) | 1.51 (1.26x) |
+
+  All inside `animation.rs`' clamps (walk 0.55–1.5, run 0.7–1.4, crouch
+  0.5–1.5); aiming (0.75x speed) still lands inside. Blending between
+  clips is now keyed to the game's speeds (`Clip::game_speed`), not the
+  authored ones, so 3.4 m/s is pure walk and 5.6 pure run.
+- **Heights** (head bone tip): standing 1.72–1.81 m, crouched 1.27–1.35 m
+  (the old scripted crouch was ~1.3), prone ~0.5 m.
+- **Not yet / limits:** strafe and backpedal still use the forward clips;
+  the aim always points level (no pitch from `NetAim` yet); walk and run
+  loops differ in length, so a walk/run blend is only in step where it
+  starts; the crouch idle is a held pose with procedural breathing; the
+  prone crawl is hand-keyed (0.8 m/s nominal); the real rifle model's
+  magazine does not follow `weapon_mag` during the third-person reload
+  (the prop's does); footstep sounds use their own stride (0.75 m) rather
+  than the clips' foot contacts.
+
+
+## Realism pass: weapons and arms
+
+**Weapon models.** TAMARISK uses the CC0 "AKM" by LonesomeDucky
+(OpenGameArt), ACACIA the CC0 "Service Pistol" by Mateusz Sadek (Poly
+Haven). We compared the AKM with the 3dmodelscc0 AK-47 and M4A1 (which have
+separate magazines): the AKM's weathered 4k PBR finish reads far more
+real, so it won and its magazine was split off in Blender instead.
+`tools/blender/weapons/import_models.py` (`tools/scripts/import_weapons.sh`)
+turns the staged downloads into game files with the blockouts' conventions:
+metres, barrel down -Z, origin at the top-back of the pistol grip (where the
+web of the hand sits), `MAGAZINE`/`SLIDE` nodes, `SIGHT` (front sight tip,
+level with the rear sight), `MUZZLE`, plus `RACK` (charging handle / slide
+serrations) and `MAG_GRIP` (where the support hand holds the magazine).
+The AKM is scaled to a real AKM's 0.88 m; the pistol's stamped serial and
+proof mark are blurred out. Textures are 2k JPEG (2.4 MB and 6 MB files);
+the viewmodel adds mipmaps to them.
+
+**In first person** (tuning `weapons.*.pose`): aiming puts the eye 0.72 m
+behind the front sight for both guns, which for the rifle is just behind
+the receiver: the rear notch and the front post line up at the screen
+centre over the receiver cover, as on the real rifle. The muzzle flash sits
+on the `MUZZLE` node.
+
+**First-person arms.** Gloved, sleeved forearms and hands built with the
+operators' own MPFB pipeline (same skeleton, uniform and glove colours; one
+file per team, `arms_attackers.glb` olive/coyote, `arms_defenders.glb`
+slate/black) by `tools/scripts/build_arms.sh`
+(`tools/blender/characters/arms.py`): the dressed body is cut down to the
+forearms, hands and lower upper arms (~8.6k triangles), then posed on each
+weapon with the same two-bone IK as the operators' clips, using anatomical
+hand frames (wrist to middle knuckle, palm from the knuckle line; this
+rig's hand bones don't point along the fingers) and per-finger curls.
+Per weapon: `<arms>_hold`, `<arms>_reload` and `<arms>_reload_empty`. The
+reload clips replay the magazine path `viewmodel.rs` uses (out 12-32 %,
+fetch off screen, in 55-75 %, seat; on an empty reload the support hand
+then pulls the charging handle / racks the slide), and the game scrubs
+them to the reload's progress, so the support hand carries the magazine at
+any reload time without runtime IK. In game (`src/weapons/arms.rs`) the
+arms are a child of the weapon rig, so aim, sway, bob, kick, sprint,
+switching and the reload tilt move them with the weapon; the rig node's
+`harrow_arms` extra places them for each weapon's grip. You see your
+team's arms. A weapon's `model.arms` names its clips; a model without arms
+(`None`, e.g. the blockouts) shows the weapon alone.
+`build_arms.sh --preview DIR` renders the first-person views (hip, aimed,
+reload moments) and close-ups of each hand, for posing without the game.
+
+**Third person.** `weapons.*.model.third_person` is the weapon model's
+transform on a character's `weapon_r` bone (bone frame: origin where the
+web of the right hand grips, +Y along the barrel, +Z up). Our models share
+that origin, so it is just the turn from the model's axes (barrel -Z, +Y
+up): offset (0, 0, 0), rotation (0, 90, 0). `weapons::third_person_transform(def)`
+gives the Bevy `Transform`; spawn the weapon's scene as a child of
+`weapon_r` with it and set `Character::prop_weapon = false`.
+`--lineup --lineup-weapons [sidearm]` shows it on the lineup. Not done: the
+third-person reload doesn't move the real magazine with `weapon_mag` (the
+prop's magazine did).
+
+**Not yet:** the arms' sleeves are the operators' uniform mesh (no cloth
+folds or cuffs), hands use one static grip per weapon (the trigger finger
+doesn't move when firing), and there is no environment map, so the guns'
+metal is lit by the sun and ambient light only.

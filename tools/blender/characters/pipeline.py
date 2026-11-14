@@ -57,7 +57,7 @@ def _join_brows(eyebrows, eyelashes, material):
     return eyebrows
 
 
-def build(cfg, scratch):
+def build(cfg, scratch, mocap=None):
     ch = Character(cfg)
     rig, body, eyes, brows, lashes = mpfb.build_human(cfg)
     mpfb.stage_for_game(rig, [body, eyes, brows, lashes], cfg["body"]["height_m"])
@@ -78,7 +78,7 @@ def build(cfg, scratch):
     ch.colours = colours
     surfaces = gear_mod.Surfaces(body)
     ch.gear = gear_mod.build(ch, surfaces)
-    anim.build(ch, gear_mod, surfaces)
+    anim.build(ch, gear_mod, surfaces, mocap)
     for obj in ch.meshes:
         triangulate(obj)
     return ch

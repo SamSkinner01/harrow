@@ -32,6 +32,7 @@ impl Plugin for SetupPlugin {
         app.init_resource::<PreparedAssets>()
             .init_resource::<DetailTextures>()
             .add_observer(prepare_character)
+            .add_observer(prepare_marked)
             .add_systems(Update, (sync_prop_weapon, mip_detail_textures));
     }
 }
@@ -45,6 +46,12 @@ const DETAIL_TEXTURES: [(&str, &str, Option<f32>); 4] = [
     ("webbing", "webbing", Some(0.273)),
     ("leather", "leather", Some(0.5)),
 ];
+
+/// Marks a glTF scene from the character pipeline that isn't an operator
+/// (the first-person arms): once it has spawned, its materials get the same
+/// finishing as an operator's (shared detail maps, tangents, mipmaps).
+#[derive(Component, Debug, Default)]
+pub struct CharacterMaterials;
 
 /// A spawned character's animation player and bones.
 #[derive(Component, Debug)]
@@ -158,26 +165,16 @@ fn prepare_character(
             bones.entry(name.as_str().to_string()).or_insert(entity);
         }
         if let Ok((material_name, material, mesh)) = mesh_materials.get(entity) {
-            prepare_material(
+            finish_mesh(
                 &material_name.0,
                 &material.0,
+                &mesh.0,
                 &mut materials,
                 &mut images,
+                &mut meshes,
                 &mut prepared,
                 &details,
             );
-            // Normal maps need tangents. They're generated here rather than
-            // exported, so rebuilt .glb files stay byte-identical.
-            if details.by_material.contains_key(material_name.0.as_str())
-                && prepared.meshes.insert(mesh.0.id())
-                && let Some(mut mesh) = meshes.get_mut(&mesh.0)
-                && let Err(err) = mesh.generate_tangents()
-            {
-                warn!(
-                    "{:?}: no tangents for {}: {err}",
-                    character.operator, material_name.0
-                );
-            }
         }
     }
     let Some(player) = player else {
@@ -190,6 +187,66 @@ fn prepare_character(
     commands
         .entity(ready.entity)
         .insert(CharacterParts { player, bones });
+}
+
+/// Material and mesh finishing for one mesh entity of a character scene.
+#[allow(clippy::too_many_arguments)]
+fn finish_mesh(
+    material_name: &str,
+    material: &Handle<StandardMaterial>,
+    mesh: &Handle<Mesh>,
+    materials: &mut Assets<StandardMaterial>,
+    images: &mut Assets<Image>,
+    meshes: &mut Assets<Mesh>,
+    prepared: &mut PreparedAssets,
+    details: &DetailTextures,
+) {
+    prepare_material(material_name, material, materials, images, prepared, details);
+    // Normal maps need tangents. They're generated here rather than
+    // exported, so rebuilt .glb files stay byte-identical.
+    if details.by_material.contains_key(material_name)
+        && prepared.meshes.insert(mesh.id())
+        && let Some(mut mesh) = meshes.get_mut(mesh)
+        && let Err(err) = mesh.generate_tangents()
+    {
+        warn!("no tangents for {material_name}: {err}");
+    }
+}
+
+/// [`CharacterMaterials`] scenes: materials only (no bones or animation).
+#[allow(clippy::too_many_arguments)]
+fn prepare_marked(
+    ready: On<WorldInstanceReady>,
+    marked: Query<(), With<CharacterMaterials>>,
+    children: Query<&Children>,
+    mesh_materials: Query<(
+        &GltfMaterialName,
+        &MeshMaterial3d<StandardMaterial>,
+        &Mesh3d,
+    )>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut images: ResMut<Assets<Image>>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut prepared: ResMut<PreparedAssets>,
+    details: Res<DetailTextures>,
+) {
+    if !marked.contains(ready.entity) {
+        return;
+    }
+    for entity in children.iter_descendants(ready.entity) {
+        if let Ok((material_name, material, mesh)) = mesh_materials.get(entity) {
+            finish_mesh(
+                &material_name.0,
+                &material.0,
+                &mesh.0,
+                &mut materials,
+                &mut images,
+                &mut meshes,
+                &mut prepared,
+                &details,
+            );
+        }
+    }
 }
 
 fn prop_visibility(character: &Character) -> Visibility {
@@ -274,7 +331,7 @@ fn mip_detail_textures(
 
 /// Appends a box-filtered mip chain to an RGBA8 image (sRGB averaged in
 /// linear space). Same approach as the fortress material library.
-fn add_mip_chain(image: &mut Image) {
+pub(crate) fn add_mip_chain(image: &mut Image) {
     let srgb = match image.texture_descriptor.format {
         TextureFormat::Rgba8UnormSrgb => true,
         TextureFormat::Rgba8Unorm => false,

@@ -19,6 +19,7 @@ use super::{
 use crate::{
     combat::Team,
     player::LocalPlayer,
+    ui::style::{self, palette, size, space},
 };
 
 pub struct GadgetHudPlugin;
@@ -30,11 +31,12 @@ impl Plugin for GadgetHudPlugin {
     }
 }
 
-const PANEL: Color = Color::srgba(0.0, 0.0, 0.0, 0.45);
-const TEXT: Color = Color::srgba(1.0, 1.0, 1.0, 0.9);
-const ACCENT: Color = Color::srgb(0.98, 0.70, 0.32);
-const ALERT: Color = Color::srgb(1.0, 0.35, 0.25);
-const GOOD: Color = Color::srgb(0.6, 0.95, 0.55);
+// Shared HUD style (`ui::style`).
+const PANEL: Color = palette::PANEL;
+const TEXT: Color = palette::TEXT;
+const ACCENT: Color = palette::ACCENT;
+const ALERT: Color = palette::ALERT;
+const GOOD: Color = palette::GOOD;
 
 #[derive(Component)]
 struct ProgressRoot;
@@ -47,12 +49,6 @@ struct StatusText;
 #[derive(Component)]
 struct NoticeText;
 
-fn font(size: f32) -> TextFont {
-    TextFont {
-        font_size: FontSize::Px(size),
-        ..default()
-    }
-}
 
 fn spawn_hud(mut commands: Commands) {
     commands.spawn((
@@ -73,7 +69,7 @@ fn spawn_hud(mut commands: Commands) {
             (
                 ProgressLabel,
                 Text::new(""),
-                font(15.0),
+                style::text(size::BODY),
                 TextColor(TEXT),
                 Node {
                     padding: UiRect::axes(px(8.0), px(3.0)),
@@ -83,13 +79,13 @@ fn spawn_hud(mut commands: Commands) {
             ),
             (
                 Node {
-                    width: px(240.0),
-                    height: px(7.0),
+                    width: px(260.0),
+                    height: px(8.0),
                     border: UiRect::all(px(1.0)),
                     ..default()
                 },
-                BorderColor::all(Color::srgba(1.0, 1.0, 1.0, 0.5)),
-                BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.55)),
+                BorderColor::all(palette::BAR_EDGE),
+                BackgroundColor(palette::BAR_TRACK),
                 children![(
                     ProgressFill,
                     Node {
@@ -106,7 +102,7 @@ fn spawn_hud(mut commands: Commands) {
         Name::new("Gadget notice"),
         NoticeText,
         Text::new(""),
-        font(15.0),
+        style::bold(size::BODY),
         TextColor(TEXT),
         TextLayout::justify(Justify::Center),
         Node {
@@ -122,16 +118,18 @@ fn spawn_hud(mut commands: Commands) {
         Name::new("Gadget status"),
         StatusText,
         Text::new(""),
-        font(13.0),
+        style::text(size::SMALL),
         TextColor(TEXT),
         TextLayout::justify(Justify::Right),
         Node {
             position_type: PositionType::Absolute,
-            right: px(28.0),
-            bottom: px(118.0),
-            padding: UiRect::all(px(7.0)),
+            right: px(space::EDGE),
+            bottom: px(space::EDGE + 92.0),
+            padding: UiRect::axes(px(10.0), px(space::PAD)),
+            border: UiRect::right(px(2.0)),
             ..default()
         },
+        BorderColor::all(palette::ACCENT),
         BackgroundColor(PANEL),
         Visibility::Hidden,
         Pickable::IGNORE,

@@ -47,6 +47,8 @@ pub struct Tuning {
     pub lighting: LightingTuning,
     pub surfaces: HashMap<String, SurfaceTuning>,
     pub footsteps: FootstepTuning,
+    #[cfg_attr(not(feature = "client"), allow(dead_code))] // sounds only
+    pub audio: AudioTuning,
     // Placeholder sections, filled in by M3 / M4 / M6.
     pub weapons: WeaponTuning,
     pub destruction: DestructionTuning,
@@ -175,6 +177,31 @@ pub struct WeaponModelTuning {
     /// Nodes animated by reloads and shots (optional).
     pub magazine_node: Option<String>,
     pub slide_node: Option<String>,
+    /// How the model sits on a third-person character (see
+    /// [`ThirdPersonAttach`]).
+    pub third_person: ThirdPersonAttach,
+    /// First-person arms holding this model: the clip prefix in
+    /// `assets/models/characters/arms_*.glb` (`<arms>_hold`,
+    /// `<arms>_reload`, `<arms>_reload_empty`; built for the model's grip,
+    /// so use the model they were posed on). None = no arms.
+    #[cfg_attr(not(feature = "client"), allow(dead_code))] // arms are client only
+    pub arms: Option<String>,
+}
+
+/// The weapon model's transform relative to a character's `weapon_r` bone
+/// (child of `hand_r`). The bone's frame: origin where the web of the right
+/// hand sits on the grip, +Y along the barrel, +Z up, +X to the right. Our
+/// weapon models use the same origin but point the barrel down -Z with +Y
+/// up, so `rotation` is (0, 90, 0) for them. Used by the third-person
+/// bodies (bots, remote players) and the `--lineup` check.
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct ThirdPersonAttach {
+    /// Metres, in the bone's frame (x right, y forward along the barrel, z up).
+    pub offset: (f32, f32, f32),
+    /// (yaw, pitch, roll) in degrees, applied to the model like
+    /// `model.rotation` (Y, then X, then Z).
+    pub rotation: (f32, f32, f32),
 }
 
 /// Where the weapon sits in front of the camera, metres.
@@ -471,31 +498,104 @@ pub struct IntelTuning {
     pub ping_time: f32,
 }
 
+/// Sun, sky, ambient, eye adaptation, post-processing and lanterns. Every
+/// value is explained in the tuning file. Read by `src/map/environment.rs`
+/// (sun, ambient), `src/map/look.rs` (cameras, sky, fill lights; client
+/// only) and `src/map/lamps.rs`.
 #[derive(Deserialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
+#[cfg_attr(not(feature = "client"), allow(dead_code))] // look: client only
 pub struct LightingTuning {
     /// Camera exposure, EV100.
     pub exposure: f32,
     /// Sun illuminance, lux.
     pub sun: f32,
-    /// Ambient (sky fill) brightness, cd/m2.
+    /// Sun colour (linear RGB).
+    pub sun_colour: (f32, f32, f32),
+    /// Sun height above the horizon, degrees.
+    pub sun_elevation: f32,
+    /// Sun compass bearing, degrees (0 north, 90 east, 180 south).
+    pub sun_azimuth: f32,
+    /// Uniform ambient floor everywhere, cd/m2.
     pub ambient: f32,
+    /// Sky cubemap (KTX2, under `assets/`).
+    pub sky: String,
+    /// Sky brightness: the sky's mean luminance, cd/m2.
+    pub sky_brightness: f32,
+    /// Outdoor fill light (hemisphere), cd/m2, and its colours facing up,
+    /// sideways and down (linear RGB).
+    pub sky_fill: f32,
+    pub sky_fill_colours: ((f32, f32, f32), (f32, f32, f32), (f32, f32, f32)),
+    /// Multiplier on the sky fill for the weapon in your hands.
+    pub weapon_fill: f32,
+    /// Fill light inside buildings, cd/m2, and its colours (up, side, down).
+    pub interior_fill: f32,
+    pub interior_fill_colours: ((f32, f32, f32), (f32, f32, f32), (f32, f32, f32)),
+    /// Haze colour (linear, in the sky image's units: the horizon) and the
+    /// distance, metres, at which it hides everything.
+    pub fog_colour: (f32, f32, f32),
+    pub fog_visibility: f32,
+    /// Sun glow in the haze when looking towards the sun (0..1).
+    pub fog_sun_glow: f32,
     /// Max eye-adaptation boost in dark scenes, stops (0 = off).
     pub adaptation_max: f32,
     /// Average scene log2 luminance below which adaptation kicks in.
     pub adaptation_threshold: f32,
+    /// Eye adaptation speed, stops per second: (brighten, darken).
+    pub adaptation_speed: (f32, f32),
+    pub tonemapper: Tonemapper,
+    pub grading: GradingTuning,
+    /// Bloom strength (0 = off) and the brightness it starts at.
+    pub bloom: f32,
+    pub bloom_threshold: f32,
+    /// SSAO sample radius and assumed object thickness, metres.
+    pub ssao_radius: f32,
+    pub ssao_thickness: f32,
     /// Interior lantern spot-light intensity (game units).
     pub lamp_intensity: f32,
     /// Lantern colour (sRGB).
     pub lamp_colour: (f32, f32, f32),
     /// Lantern light range, metres.
     pub lamp_range: f32,
+    /// Lantern glass glow (emissive, cd/m2-ish).
+    pub lamp_glow: f32,
     /// Lanterns without shadows (small rooms on the full map): intensity
     /// and range multiplier, so less light leaks through walls.
     pub unshadowed_lamp_scale: f32,
     /// Shadow-casting lanterns only render shadows within this many metres
     /// of the camera (each shadow map costs a render pass).
     pub lamp_shadow_distance: f32,
+}
+
+/// Display transform (see Bevy's `Tonemapping`).
+#[derive(Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(not(feature = "client"), allow(dead_code))]
+pub enum Tonemapper {
+    AgX,
+    TonyMcMapface,
+    AcesFitted,
+    BlenderFilmic,
+    KhronosPbrNeutral,
+}
+
+/// Colour grading before (and saturation after) tonemapping.
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(not(feature = "client"), allow(dead_code))]
+pub struct GradingTuning {
+    /// White balance: + warmer / - cooler (CIE x shift, small values).
+    pub temperature: f32,
+    /// + magenta / - green.
+    pub tint: f32,
+    /// Overall saturation (1 = unchanged), and multipliers for the shadows
+    /// and the highlights.
+    pub saturation: f32,
+    pub shadow_saturation: f32,
+    pub highlight_saturation: f32,
+    /// Highlight brightness multiplier.
+    pub highlight_gain: f32,
+    /// Saturation after tonemapping.
+    pub post_saturation: f32,
 }
 
 #[derive(Deserialize, Clone, Debug)]
@@ -529,6 +629,84 @@ pub struct FootstepTuning {
     pub crouch_loudness: f32,
     pub prone_loudness: f32,
     pub volume: f32,
+}
+
+/// Sound mix, distance falloff and surface sounds (`src/audio`). Every value
+/// is explained in the tuning file.
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(not(feature = "client"), allow(dead_code))] // sounds only
+pub struct AudioTuning {
+    /// Overall volume (menu: master).
+    pub master: f32,
+    /// Weapons, impacts, destruction and explosions (menu: effects).
+    pub effects: f32,
+    /// Everyone's footsteps.
+    pub footsteps: f32,
+    /// Falloff beyond a category's `near` distance: gain = (near / d) ^ rolloff.
+    pub rolloff: f32,
+    /// Metres between the listener's ears (stereo panning of world sounds).
+    pub ear_gap: f32,
+    /// Random pitch per play, +- fraction.
+    pub pitch_jitter: f32,
+    /// Random volume per play, +- dB.
+    pub volume_jitter_db: f32,
+    /// Most world sounds playing at once (your own sounds and explosions
+    /// always play).
+    pub max_voices: usize,
+    /// Most bullet-impact sounds per second.
+    pub impacts_per_second: f32,
+    /// Impacts closer than (metres, seconds) to one already playing are
+    /// skipped (pellets, penetration).
+    pub impact_merge: (f32, f32),
+    /// Distances (metres) over which other people's gunshots and explosions
+    /// cross over to the distant layer: (start, fully distant).
+    pub distant_blend: (f32, f32),
+    /// Non-violent surface damage removing at least this many cells (melee)
+    /// also plays a break sound.
+    pub break_min_cells: usize,
+    pub categories: SoundCategories,
+    /// Name pattern -> material, first match wins (see the tuning file).
+    pub surfaces: Vec<(String, SoundMaterial)>,
+    /// Material for surfaces no pattern matches.
+    pub default_surface: SoundMaterial,
+}
+
+/// Volume and distance range of one kind of sound.
+#[derive(Deserialize, Clone, Copy, Debug)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(not(feature = "client"), allow(dead_code))] // sounds only
+pub struct SoundCategory {
+    pub volume: f32,
+    /// Full volume up to here, metres.
+    pub near: f32,
+    /// Silent from here, metres.
+    pub far: f32,
+}
+
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(not(feature = "client"), allow(dead_code))] // sounds only
+pub struct SoundCategories {
+    pub shots: SoundCategory,
+    pub shots_distant: SoundCategory,
+    pub foley: SoundCategory,
+    pub footsteps: SoundCategory,
+    pub impacts: SoundCategory,
+    pub destruction: SoundCategory,
+    pub explosions: SoundCategory,
+    pub explosions_distant: SoundCategory,
+}
+
+/// What a surface sounds like (footsteps, bullet impacts, breaking).
+#[derive(Deserialize, Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum SoundMaterial {
+    Stone,
+    Plaster,
+    Wood,
+    Metal,
+    Sand,
+    Body,
 }
 
 #[derive(Deserialize, Clone, Debug)]

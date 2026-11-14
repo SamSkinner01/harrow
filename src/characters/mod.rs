@@ -34,6 +34,10 @@ use bevy::{gltf::GltfAssetLabel, prelude::*, world_serialization::WorldAssetRoot
 pub use animation::CharacterAnim;
 pub use library::Operator;
 pub use setup::CharacterParts;
+// The first-person arms (client only) use the operators' material finishing.
+#[cfg(feature = "client")]
+pub use setup::CharacterMaterials;
+pub(crate) use setup::add_mip_chain;
 
 pub struct CharactersPlugin;
 

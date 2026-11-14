@@ -12,12 +12,16 @@ mod harrow_keep;
 mod keep;
 mod kit;
 mod lamps;
+#[cfg(feature = "client")]
+mod look;
 mod materials;
 mod props;
 
 use bevy::prelude::*;
 
 pub use kit::KitLoaded;
+#[cfg(feature = "client")]
+pub use look::{AntiAliasing, GraphicsOptions, ShadowQuality, SsaoQuality};
 
 pub struct MapPlugin;
 
@@ -31,6 +35,12 @@ impl Plugin for MapPlugin {
             batch::BatchPlugin,
             props::PropsPlugin,
         ));
+        // Cameras, sky, fill lights, post-processing: only where something
+        // is drawn (not a headless server).
+        #[cfg(feature = "client")]
+        if app.get_sub_app(bevy::render::RenderApp).is_some() {
+            app.add_plugins(look::LookPlugin);
+        }
         // A dedicated server's config file can choose the map (`MapOverride`,
         // inserted before this plugin); otherwise `--map`.
         let choice = match app.world().get_resource::<MapOverride>() {

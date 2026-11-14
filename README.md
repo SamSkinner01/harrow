@@ -86,11 +86,40 @@ Bevy's API changes between releases, so everything is pinned with `=` in
 | F5 | Third-person debug view |
 | F12 | Save screenshot to `screenshots/` |
 
-Hold vs. toggle for sprint, crouch, lean and aiming is set in the tuning file.
+Hold vs. toggle for sprint, crouch, lean and aiming: Settings (below), or
+the tuning file.
+
+## Settings
+
+**Settings** (main menu or pause menu) has controls (mouse sensitivity,
+invert Y, field of view, hold/toggle for sprint, crouch, lean and aim),
+audio (master and effects volume), graphics (a quality preset: Low,
+Medium, High, Ultra; or anti-aliasing, ambient occlusion, shadows, bloom
+and contact shadows one by one) and display (windowed/fullscreen, V-sync,
+FPS counter). Mouse or keyboard: Up/Down (Tab) to move, Left/Right to
+change, Enter, Esc to go back. Changes apply at once and are saved when you
+leave the page, in `~/.config/harrow/settings.ron` (Windows:
+`%APPDATA%\harrow\settings.ron`), next to the menu's `menu.ron`.
+
+Controls you never change follow the tuning file; once set, a setting wins
+over it ("Reset to defaults" hands them back). Volumes multiply the tuning
+volumes. Automated runs (`--screenshot`, test scripts) ignore the saved
+settings so results don't depend on who runs them.
+
+| Preset | Anti-aliasing | Ambient occlusion | Shadows | Bloom | Contact shadows |
+|---|---|---|---|---|---|
+| Low | FXAA | off | 1024 px, 2 cascades, 60 m, no lantern shadows | off | off |
+| Medium | SMAA | low | 2048 px, 3 cascades, 80 m | on | off |
+| High (default) | TAA | medium | 2048 px, 4 cascades, 100 m | on | on |
+| Ultra | TAA | high | 4096 px, 4 cascades, 120 m | on | on |
+
+**Credits** (main or pause menu) shows `CREDITS.md`.
 
 ## Tuning
 
-Movement, look, lighting, per-surface look (texture scale and tint) and
+Movement, look, lighting (sun, sky, haze, fill light, eye adaptation,
+tonemapping and grading, bloom, SSAO: see DESIGN.md, "Look and feel"),
+per-surface look (texture scale and tint) and
 weapons (damage, recoil, spread, reloads, the weapon models and where they sit
 on screen) live in `assets/config/tuning.ron`. Edit and save while the game is running and the
 changes apply immediately. A mistake in the file is logged and ignored.
@@ -108,28 +137,61 @@ tools/scripts/build_characters.sh --setup        # once: install MPFB 2.0.18 + M
 tools/scripts/build_characters.sh                # Blender -> assets/models/characters/*.glb
 tools/scripts/build_characters.sh --only lark    # rebuild one operator
 tools/scripts/build_characters.sh --preview DIR  # also render each operator and some poses to DIR
+tools/scripts/build_characters.sh --mocap DIR    # where the CMU BVH clips are (see below)
 python3 tools/scripts/fetch_character_textures.py  # re-download CC0 cloth/leather detail maps
+tools/scripts/build_sky.sh kiara_5_noon_4k.hdr   # HDRI -> assets/sky/kiara_5_noon.ktx2 (sky cubemap; prints the haze colour)
 ```
 
 On Windows use `tools/scripts/build_kit.ps1`. Kit conventions are documented
 at the top of `tools/blender/kit/pieces.py`; the piece list is in DESIGN.md.
 
 ```sh
-tools/scripts/build_weapons.sh                     # Blender -> assets/models/weapons/*.glb
-tools/scripts/build_weapons.sh --only tamarisk     # rebuild one weapon
-tools/scripts/build_weapons.sh --preview sheet.png # render the weapons to an image
+tools/scripts/import_weapons.sh                    # staged CC0 guns -> assets/models/weapons/{tamarisk,acacia}.glb
+                                                   # (and cleaned CC0 frag grenade / C4 -> assets/models/gadgets/)
+tools/scripts/import_weapons.sh --only acacia      # one weapon
+tools/scripts/import_weapons.sh --preview DIR      # render them instead of exporting
+tools/scripts/build_weapons.sh                     # scripted blockouts -> assets/models/weapons/*_blockout.glb
+tools/scripts/build_weapons.sh --preview sheet.png # render the blockouts to an image
+tools/scripts/build_arms.sh                        # first-person arms -> assets/models/characters/arms_*.glb
+tools/scripts/build_arms.sh --only defenders --preview DIR  # one team, plus first-person renders per weapon
 ```
 
-(`build_weapons.ps1` on Windows.) Weapon conventions (axes, origin at the
-grip, `SIGHT`/`MUZZLE` empties, `MAGAZINE`/`SLIDE` nodes) are at the top of
-`tools/blender/weapons/models.py`. To use a different weapon model, change
-its `model` block in the tuning file (path, scale, rotation, sight and muzzle
-points or node names, magazine/slide node names) and its `pose`; no code.
+The realistic weapon models are made from CC0 downloads that are not in the
+repository: `import_weapons.sh` reads them from the asset staging folder
+(`$HARROW_ASSET_STAGING`, default `~/harrow-assets-staging`); see ASSETS.md.
+The blockouts are kept as fallbacks (`build_weapons.ps1` on Windows).
+Weapon conventions (axes, origin at the grip, `SIGHT`/`MUZZLE` empties,
+`MAGAZINE`/`SLIDE` nodes) are at the top of
+`tools/blender/weapons/models.py` and `import_models.py`. To use a different
+weapon model, change its `model` block in the tuning file (path, scale,
+rotation, sight and muzzle points or node names, magazine/slide node names,
+the third-person attach transform, the arms clips) and its `pose`; no code.
+The first-person arms are posed on the realistic models (rebuild them with
+`build_arms.sh` after changing a model or a weapon's `hip` pose a lot; it
+needs MPFB, see `--setup` below).
 
 Characters: one config per operator in `tools/blender/characters/operators/`
 (body, face, skin, gear; commented). `--setup` changes only your Blender user
 configuration (the MPFB extension and its asset folder). On Windows use
 `tools/scripts/build_characters.ps1`. See DESIGN.md, "M5 characters".
+The locomotion clips are retargeted from CMU motion capture, which is not
+in the repository: the build reads `cmu_mocap_bvh_selection/source/*.bvh`
+from the asset staging folder (`--mocap DIR`, default `$HARROW_MOCAP`, else
+`~/harrow-assets-staging/mocap`). See DESIGN.md, "Realism pass: character
+animation", and ASSETS.md, "Motion capture".
+
+Sound effects (`assets/audio/**/*.ogg`) are cut, layered and encoded from
+CC0/CC-BY packs with Blender's bundled Python (no ffmpeg needed):
+
+```sh
+blender --background --factory-startup --python tools/audio/build_audio.py -- \
+    --staging /path/to/harrow-assets-staging/audio --out assets/audio
+```
+
+It prints a table of every file (duration, peak, RMS, channels, rate). Slice
+times and layers are fixed in the script; the packs and licences are in
+ASSETS.md ("Audio"), credits in CREDITS.md. If a bank's variant count
+changes, update `BANKS` in `src/audio/mod.rs`.
 
 ## Multiplayer
 
@@ -156,7 +218,7 @@ on connect and refuses a different build with "Version mismatch".
   address is remembered (`~/.config/harrow/menu.ron` on Linux,
   `%APPDATA%\harrow\menu.ron` on Windows).
 
-In game, **Esc** opens the pause menu (Resume, Leave to menu, Quit). If
+In game, **Esc** opens the pause menu (Resume, Settings, Credits, Leave to menu, Quit). If
 the connection fails or drops you're taken back to the menu with the
 reason ("Server not responding", "Version mismatch", "Server full",
 "Disconnected...").
@@ -336,6 +398,9 @@ cargo run -- --stance crouch --lean left       # hold a stance / lean
 cargo run -- --third-person --hitboxes         # start with debug views on
 cargo run -- --trace-player                    # log position 4x per second, and every footstep
 cargo run -- --no-vsync                        # uncapped frame rate (performance checks)
+cargo run -- --window 1920x1080 --quality ultra  # window size; graphics preset (low/medium/high/ultra)
+cargo run -- --menu --menu-page settings --screenshot s.png  # open a menu page (settings, credits; pause in game)
+tools/scripts/look_shots.sh /tmp/look --no-vsync # six reference views + contact sheet + fps (look checks)
 cargo run -- --team defenders --operator fathom  # your starting side and operator (solo testing)
 cargo run -- --no-round --operator lark          # free play: no round loop; --operator still gives that gadget
 cargo run -- --round-test                        # short round timers and a short match (round.test_timers)
@@ -354,17 +419,22 @@ cargo run -- --weapon sidearm --ads            # hold a weapon / aim down sights
 cargo run -- --hold-fire                       # hold the trigger
 cargo run -- --fire-at 90 --reload-at 120      # pull the trigger / press reload at a fixed tick (64 per second)
 cargo run -- --screenshot-on-hit out.png --dummies --fire-at 90  # screenshot just after your first hit, then quit
-cargo run -- --dump-weapon-sounds sounds/      # also write the synthesised weapon sounds as .wav files
+cargo run -- --log-sounds                      # log every sound: event, file, surface, 2D/3D, distance, volume
+cargo run -- --log-sounds --no-round --spawn 8,0,18,0,0 --m4 "0.5 move 0 1; 5 quit"
+                                               # walk from the desert sand onto the courtyard stone, logging steps
+cargo run -- --play-sounds --m4 "..."          # play sounds in an automated run too (to listen to a scripted scene)
 cargo run -- --no-viewmodel                    # don't draw the weapon in your hands (look/performance comparisons)
 cargo run -- --lineup                          # the four operators in the courtyard, cycling animations
 cargo run -- --lineup-state crouch_walk        # ... all holding one state (names in src/characters/lineup.rs)
 cargo run -- --lineup-crowd --no-vsync         # 12 operators, for checking what a full match costs
+cargo run -- --lineup --lineup-weapons         # ... holding the real rifle (or `--lineup-weapons sidearm`)
 ```
 
 Used for automated checks: e.g. spawn at the stairs, auto-move forward, and
 screenshot/log where the player ends up. Automated runs (`--screenshot`,
-`--weapon-test`, `--screenshot-on-hit`) don't grab the mouse and don't play
-player or weapon sounds.
+`--weapon-test`, `--screenshot-on-hit`, `--m4`, `--round-script`) don't
+grab the mouse and play no sounds; add `--log-sounds` to see which sounds
+would have played (that's how audio is checked in automated runs).
 
 Maps: `--map keep` (default) is the full Harrow Keep; `--map section_a` the
 small M2 section; `--map greybox` the movement test area (no round loop).
