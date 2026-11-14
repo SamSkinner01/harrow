@@ -111,8 +111,8 @@ pub fn smoke_blocks<'a>(a: Vec3, b: Vec3, clouds: impl IntoIterator<Item = &'a S
     })
 }
 
-/// Throw (or drop, with `fuse = Some(0)`) a grenade of `kind` from a
-/// character's hand. `fuse` overrides the kind's own fuse (a cooked frag).
+/// Throw a grenade of `kind` from a character's hand, or drop it at their
+/// feet. `fuse` overrides the kind's own fuse (a cooked frag).
 #[allow(clippy::too_many_arguments)]
 pub fn spawn_grenade(
     commands: &mut Commands,
@@ -124,6 +124,7 @@ pub fn spawn_grenade(
     input: &PlayerInput,
     tuning: &Tuning,
     fuse: Option<f32>,
+    dropped: bool,
 ) -> Entity {
     let g = &tuning.round.gadgets;
     let (eye, look) = eye_and_look(transform, state, input, &tuning.body, tuning.lean.offset);
@@ -133,7 +134,6 @@ pub fn spawn_grenade(
         SecondaryGadget::ImpactCharge => (g.impact.speed, g.throw.lift * 0.5),
         _ => (g.throw.speed, g.throw.lift),
     };
-    let dropped = fuse == Some(0.0);
     let velocity = if dropped { Vec3::ZERO } else { *look * speed + Vec3::Y * lift };
     let fuse = match kind {
         SecondaryGadget::Frag => fuse.or(Some(g.frag.fuse)),

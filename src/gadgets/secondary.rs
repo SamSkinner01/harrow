@@ -209,9 +209,13 @@ fn use_secondaries(
         match *activity {
             GadgetActivity::Cooking { kind: held_kind, fuse, total } => {
                 if block.is_some() {
-                    // Dropped: a cooking frag still goes off where you stand.
-                    if fuse.is_some() {
-                        throwables::spawn_grenade(&mut commands, entity, *team, held_kind, transform, state, input, &tuning, Some(0.0));
+                    match fuse {
+                        // A cooking frag is dropped and still goes off.
+                        Some(left) => {
+                            throwables::spawn_grenade(&mut commands, entity, *team, held_kind, transform, state, input, &tuning, Some(left), true);
+                        }
+                        // Anything else goes back in the pouch.
+                        None => stock.remaining += 1,
                     }
                     *activity = GadgetActivity::Idle;
                     continue;
@@ -219,14 +223,14 @@ fn use_secondaries(
                 let fuse = fuse.map(|f| f - dt);
                 if fuse.is_some_and(|f| f <= 0.0) {
                     // Held too long: it goes off in your hand.
-                    throwables::spawn_grenade(&mut commands, entity, *team, held_kind, transform, state, input, &tuning, Some(0.0));
+                    throwables::spawn_grenade(&mut commands, entity, *team, held_kind, transform, state, input, &tuning, Some(0.0), true);
                     *activity = GadgetActivity::Idle;
                     continue;
                 }
                 if button.held {
                     *activity = GadgetActivity::Cooking { kind: held_kind, fuse, total };
                 } else {
-                    throwables::spawn_grenade(&mut commands, entity, *team, held_kind, transform, state, input, &tuning, fuse);
+                    throwables::spawn_grenade(&mut commands, entity, *team, held_kind, transform, state, input, &tuning, fuse, false);
                     events.write(GadgetEvent::Thrown { by: entity, kind: held_kind });
                     *activity = GadgetActivity::Idle;
                 }

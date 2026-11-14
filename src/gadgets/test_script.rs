@@ -32,6 +32,7 @@
 
 use avian3d::prelude::*;
 use bevy::{
+    diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin},
     prelude::*,
     render::view::screenshot::{Screenshot, save_to_disk},
 };
@@ -547,6 +548,7 @@ struct LogQueries<'w, 's> {
         (With<TestWalker>, Without<LocalPlayer>),
     >,
     surfaces: Query<'w, 's, (Entity, &'static Name, &'static SoftSurface, &'static GlobalTransform)>,
+    diagnostics: Res<'w, DiagnosticsStore>,
 }
 
 fn log_state(q: &LogQueries, me: Entity, at: Vec3) {
@@ -611,6 +613,9 @@ fn log_state(q: &LogQueries, me: Entity, at: Vec3) {
             d.battery,
             h.current
         );
+    }
+    if let Some(fps) = q.diagnostics.get(&FrameTimeDiagnosticsPlugin::FPS).and_then(|d| d.average()) {
+        info!("  average fps {fps:.1}");
     }
     let cams: Vec<String> = q.cameras.iter().map(|(_, c, h)| format!("{}({:.0})", c.name, h.current)).collect();
     info!("  cctv: {}", cams.join(", "));
