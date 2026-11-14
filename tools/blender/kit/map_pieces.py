@@ -144,6 +144,15 @@ def curtain_post():
     return p
 
 
+def cap_slab():
+    """1 cm paving slab over a junction cap where a roof edge has no merlon
+    (wall-walk entries): the cap and the floor tile both end at floor level
+    there, and this keeps them from flickering."""
+    p = Piece("cap_slab")
+    box(p, (-P, 0, -P), (P, 0.01, P), "flagstone", collide=False)
+    return p
+
+
 def arcade_arch():
     """4 m bay with a wide round arch (2.8 m opening): arcades and stables."""
     p = stone_wall_arch(4, opening=2.8, spring=1.4)
@@ -592,7 +601,7 @@ def track(length):
 
 
 def all_map_pieces():
-    pieces = [curtain_post()]
+    pieces = [curtain_post(), cap_slab()]
     for length in (1, 2, 4):
         pieces.append(curtain_wall(length))
     pieces += [

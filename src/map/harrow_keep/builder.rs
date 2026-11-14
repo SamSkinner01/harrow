@@ -271,6 +271,7 @@ impl<'w, 's, 'a> Builder<'w, 's, 'a> {
         let mut tokens = spec.split_whitespace().peekable();
         if tokens.peek() == Some(&"!") {
             tokens.next();
+            self.open_corner(p, y);
         } else {
             self.merlon(p, y);
         }
@@ -293,9 +294,20 @@ impl<'w, 's, 'a> Builder<'w, 's, 'a> {
                 self.place(&format!("parapet_{len}m"), at, dir.rotation());
             }
             p += dir.step() * len;
-            if !skip_end {
+            if skip_end {
+                self.open_corner(p, y);
+            } else {
                 self.merlon(p, y);
             }
+        }
+    }
+
+    /// A roof junction left open (no merlon): if the wall below has a cap
+    /// there, its top and the floor tile's meet in the same plane, so cover
+    /// them with a thin slab.
+    fn open_corner(&mut self, p: IVec2, y: f32) {
+        if self.has_junction(p, y - 0.2) {
+            self.junction("cap_slab", p, y);
         }
     }
 

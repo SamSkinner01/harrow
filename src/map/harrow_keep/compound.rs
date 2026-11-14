@@ -140,11 +140,14 @@ fn gatehouse(b: &mut Builder) {
     b.run((12, 8), North, u, "W s2 s4", Trim::BAND);
     b.run((12, 0), West, u, "s2 W W W W s2", Trim::BAND);
     b.run((0, 0), South, u, "s4 s2 W", Trim::BAND);
-    // Stairs: west guard room up to the gate room, gate room up to the roof.
+    // Stairs: west guard room up to the gate room; gate room up to the
+    // roof along the south wall, clear of the wall-walk crossing the roof
+    // (z 2.5..5 here).
     b.uphill("stairs_3_2m", (0.0, 6.8), g, North);
-    b.uphill("stairs_3_2m", (12.0, 1.2), u, South);
+    b.uphill("stairs_3_2m", (3.2, 6.0), u, East);
     b.railing((2, 2), South, u, 3);
-    b.railing((10, 0), South, t, 3);
+    b.railing((2, 6), East, t, 3);
+    b.railing((2, 6), South, t, 1);
     b.floor((0, 0), (12, 8), g, |_, _| Some("floor_stone_2m"));
     b.floor((0, 0), (12, 8), u, |x, z| match (x, z) {
         (0, 2) | (0, 4) | (0, 6) => None,
@@ -153,7 +156,7 @@ fn gatehouse(b: &mut Builder) {
         _ => Some("floor_stone_2m"),
     });
     b.floor((0, 0), (12, 8), t, |x, z| match (x, z) {
-        (10, 0) | (10, 2) | (10, 4) => None,
+        (2, 6) | (4, 6) | (6, 6) => None,
         _ => Some("floor_stone_2m"),
     });
     // Battlements; gaps where the wall-walks come in from east and west.
@@ -168,8 +171,8 @@ fn gatehouse(b: &mut Builder) {
     b.prop("crate_large", 3.0, g, 1.2, 0.0);
     b.prop("barrel", 3.3, g, 7.2, 0.0);
     b.prop("crate_large", 4.5, u, 1.0, 0.0);
-    b.prop("crate_small", 8.0, u, 7.2, 15.0);
-    b.prop("sandbags_2m", 6.0, u, 6.9, 0.0);
+    b.prop("crate_small", 11.0, u, 6.8, 15.0);
+    b.prop("sandbags_2m", 9.0, u, 1.0, 0.0);
     b.prop("sandbags_2m", 3.0, t, 1.2, 0.0);
     b.prop("sandbags_2m", 7.0, t, 1.2, 0.0);
     b.lamp(2.0, 4.0, g, false);
