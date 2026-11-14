@@ -70,11 +70,15 @@ Bevy's API changes between releases, so everything is pinned with `=` in
 | 1 / 2, mouse wheel | Primary (TAMARISK rifle) / sidearm (ACACIA pistol) |
 | V | Melee (breaks soft walls, hatches from above, barricades) |
 | F (hold) | Plant the defuser in a site (attackers) / disable it (defenders). Defenders elsewhere: reinforce the wall or hatch you look at (5 s), or barricade an empty doorway/window (2 s) |
-| 3 | Unique gadget (operator ability) |
-| 4 (hold, then press) | Breach charge: hold to stick it on a soft wall, floor or barricade, press again to set it off |
+| 3 | Unique gadget. Lark, Fathom: press to fire a dart / hammer a stake. Auger: hold on a wall or hatch to clamp a ring cutter, tap to start it, hold at a jammed cutter to re-seat it. Mortise: hold on your reinforcement to bolt a backplate charge, tap (anywhere) to fire the latest |
+| 4 | Secondary gadget (the one in your loadout). Breach charge: hold to stick it, press again to set it off. Frag / flashbang / smoke / impact charge: press to ready, release to throw (holding a frag cooks it). Razor wire / ballistic cover / proximity alarm: hold to place |
+| G | Recon: tap to look through your drones (attackers) or the CCTV cameras (defenders), tap again to come back; attackers hold G to throw another drone |
+| Q / E (recon view) | Previous / next drone or camera |
+| W A S D, mouse (recon view) | Drive and turn the drone, tilt its camera; pan and tilt a CCTV camera |
 | 5 | Equip / stow the defuser (attackers) |
 | 1 / 2 | Pick an operator on the selection screen |
 | Esc | Pause menu (frees the mouse); left click in game captures it again |
+| 4 (selection screen) | Change the picked operator's secondary gadget |
 | F1 | Toggle key help |
 | F3 | Toggle FPS overlay |
 | F4 | Show hit zones and movement capsule |
@@ -89,6 +93,8 @@ Movement, look, lighting, per-surface look (texture scale and tint) and
 weapons (damage, recoil, spread, reloads, the weapon models and where they sit
 on screen) live in `assets/config/tuning.ron`. Edit and save while the game is running and the
 changes apply immediately. A mistake in the file is logged and ignored.
+Gadgets, drones and CCTV are under `round.gadgets` (timings, damage, counts,
+drone speed and battery, camera pan limits).
 
 ## Asset pipeline
 
@@ -257,6 +263,9 @@ cargo run -- --round-test                        # short round timers and a shor
 cargo run -- --round-script "action@0.5: hold; planted@1: shot out.png; planted@2: quit"
                                                # scripted automated run; commands in src/round/script.rs
 cargo run -- --show-all-intel                    # show both teams' gadget reveals (testing)
+cargo run -- --secondary frag                    # your secondary gadget: breach, frag, flash, smoke, wire, cover, impact, alarm
+cargo run -- --no-round --operator auger --gadget-test "1 tp 7 0 -2.6 0 0; 1.5 hold3 2; 4 tap3; 15 shot cut.png; 15.5 quit"
+                                               # scripted gadget checks; commands in src/gadgets/test_script.rs
 cargo run -- --dummies                         # training dummies in the keep (courtyard, behind plaster, behind stone)
 cargo run -- --weapon-test                     # scripted weapon checks; logs PASS/FAIL, exit code 1 on failure
 cargo run -- --weapon sidearm --ads            # hold a weapon / aim down sights
@@ -295,6 +304,22 @@ Use `--no-round` for free play (otherwise the round loop respawns and
 locks the player). Commands: `team`, `look`, `tp`, `move`, `stance`, `fire bullet|pellet`,
 `melee`, `interact`, `gadget`, `explode`, `hardbreach`, `reinforce`, `lamp`,
 `dummy`, `log` (surfaces, player, rebuild cost, FPS), `shot`, `quit`.
+
+Gadget test script (`--gadget-test`, same `<seconds> <command>` format;
+`src/gadgets/test_script.rs` lists every command): `op`, `secondary`, `tp`,
+`look`, `aimat`, `move`, `stance`, `hold3`/`tap3`, `hold4`/`tap4`, `g`,
+`next`/`prev`, `drive`, `dlook`, `dface`, `reinforce`, `hardbreach`, `fire`
+(a real weapon shot), `shoot`, `aimblade`/`shootblade`, `dummy`, `walker`,
+`walker-move`, `explode`, `lamp`, `reset` (a new-round reset), `log`,
+`shot`, `quit`. With the round loop, add `--round-script "action@99: log x"`
+to keep the operator selection open (otherwise automated runs auto-pick).
+
+```sh
+# backplate vs ring cutter: reinforce, bolt a backplate, clamp and start a cutter, fire the backplate
+cargo run -- --no-round --operator auger --gadget-test "1.5 tp 7 0 -5.6 180 0; 1.8 reinforce; 2 op mortise; 2.2 hold3 2; 4.6 op auger; 4.7 tp 7 0 -2.4 0 -12; 5 hold3 2; 7.2 tap3; 9 op mortise; 9.2 tap3; 9.6 log; 10 quit"
+# drones: throw one, drive it, come back
+cargo run -- --no-round --operator lark --gadget-test "1.5 g; 3 drive 0 1; 4.5 drive 0 0; 5 shot drone.png; 5.5 g; 6 quit"
+```
 
 ## Layout
 

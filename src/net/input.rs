@@ -39,7 +39,7 @@ use serde::{Deserialize, Serialize};
 use super::Replay;
 use crate::{
     destruction::DestructionIntent,
-    gadgets::GadgetIntent,
+    gadgets::{DroneIntent, GadgetIntent},
     player::{Lean, LocalPlayer, PlayerInput, Stance},
     round::RoundIntent,
     session::is_authority,
@@ -52,8 +52,10 @@ pub struct NetInput {
     pub movement: MoveInput,
     /// M6 round loop: F, 5, operator picks.
     pub round: RoundButtons,
-    /// M6 gadgets: 3.
+    /// M6 gadgets: 3 and 4 (presses and held state).
     pub gadget: GadgetButtons,
+    /// M6 part two recon: G, drone/camera cycling, driving and looking.
+    pub drone: DroneButtons,
     /// M4 destruction: V, F, 4 (held state).
     pub destruction: DestructionIntent,
     /// M3 weapons: trigger, aim, reload, slot (held state and press
@@ -116,6 +118,21 @@ pub struct RoundButtons {
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Debug, Default, Reflect)]
 pub struct GadgetButtons {
     pub unique_presses: u8,
+    /// Key 3 held (ring cutter clamp/re-seat, backplate bolting: tap vs hold).
+    pub unique_held: bool,
+    /// Key 4 held (secondary gadgets: cook, place).
+    pub secondary_held: bool,
+}
+
+/// [`DroneIntent`] on the wire. Cycling is two press counters.
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Debug, Default, Reflect)]
+pub struct DroneButtons {
+    pub recon_held: bool,
+    pub next_presses: u8,
+    pub previous_presses: u8,
+    pub drive: Vec2,
+    pub yaw: f32,
+    pub pitch: f32,
 }
 
 /// Server side: the last press counters seen from a client.
@@ -124,6 +141,8 @@ pub(super) struct SeenPresses {
     equip: u8,
     pick: u8,
     unique: u8,
+    next: u8,
+    previous: u8,
 }
 
 /// Where client input is captured (client, `FixedPreUpdate`).
@@ -212,6 +231,7 @@ fn capture_local_input(
             &PlayerInput,
             Option<&mut RoundIntent>,
             Option<&mut GadgetIntent>,
+            Option<&mut DroneIntent>,
             &mut ActionState<NetInput>,
         ),
         (With<LocalPlayer>, With<InputMarker<NetInput>>),
@@ -221,7 +241,7 @@ fn capture_local_input(
     if replay.active() {
         return;
     }
-    for (input, round, gadget, mut action) in &mut players {
+    for (input, round, gadget, drone, mut action) in &mut players {
         let net = &mut action.0;
         net.movement = MoveInput::from(input);
         if let Some(mut round) = round {
@@ -236,10 +256,26 @@ fn capture_local_input(
                 net.round.pick_presses = net.round.pick_presses.wrapping_add(1);
             }
         }
-        if let Some(mut gadget) = gadget
-            && std::mem::take(&mut gadget.use_unique)
-        {
-            net.gadget.unique_presses = net.gadget.unique_presses.wrapping_add(1);
+        if let Some(mut gadget) = gadget {
+            if std::mem::take(&mut gadget.use_unique) {
+                net.gadget.unique_presses = net.gadget.unique_presses.wrapping_add(1);
+            }
+            net.gadget.unique_held = gadget.unique_held;
+            net.gadget.secondary_held = gadget.secondary_held;
+        }
+        if let Some(mut drone) = drone {
+            // As above: the client doesn't simulate gadgets, so it clears
+            // the cycle latch once it's on the wire.
+            let cycle = std::mem::take(&mut drone.cycle);
+            if cycle > 0 {
+                net.drone.next_presses = net.drone.next_presses.wrapping_add(cycle as u8);
+            } else if cycle < 0 {
+                net.drone.previous_presses = net.drone.previous_presses.wrapping_add((-cycle) as u8);
+            }
+            net.drone.recon_held = drone.recon_held;
+            net.drone.drive = drone.drive;
+            net.drone.yaw = drone.yaw;
+            net.drone.pitch = drone.pitch;
         }
     }
 }
@@ -272,11 +308,12 @@ fn apply_buttons(
             &mut SeenPresses,
             Option<&mut RoundIntent>,
             Option<&mut GadgetIntent>,
+            Option<&mut DroneIntent>,
         ),
         Without<InputMarker<NetInput>>,
     >,
 ) {
-    for (action, mut seen, round, gadget) in &mut players {
+    for (action, mut seen, round, gadget, drone) in &mut players {
         let net = &action.0;
         if let Some(mut round) = round {
             if round.interact != net.round.interact {
@@ -291,11 +328,24 @@ fn apply_buttons(
                 round.pick_operator = Some(net.round.pick);
             }
         }
-        if let Some(mut gadget) = gadget
-            && seen.unique != net.gadget.unique_presses
-        {
-            seen.unique = net.gadget.unique_presses;
-            gadget.use_unique = true;
+        if let Some(mut gadget) = gadget {
+            if seen.unique != net.gadget.unique_presses {
+                seen.unique = net.gadget.unique_presses;
+                gadget.use_unique = true;
+            }
+            gadget.unique_held = net.gadget.unique_held;
+            gadget.secondary_held = net.gadget.secondary_held;
+        }
+        if let Some(mut drone) = drone {
+            let next = net.drone.next_presses.wrapping_sub(seen.next) as i32;
+            let previous = net.drone.previous_presses.wrapping_sub(seen.previous) as i32;
+            seen.next = net.drone.next_presses;
+            seen.previous = net.drone.previous_presses;
+            drone.cycle += next - previous;
+            drone.recon_held = net.drone.recon_held;
+            drone.drive = net.drone.drive;
+            drone.yaw = net.drone.yaw;
+            drone.pitch = net.drone.pitch;
         }
     }
 }

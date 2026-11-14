@@ -13,7 +13,7 @@ use lightyear::prelude::{server::ClientOf, *};
 use super::{client::NetClient, protocol::EventChannel, server::ClientInfo};
 use crate::{
     combat::Team,
-    gadgets::{GadgetEvent, Reveal},
+    gadgets::{GadgetEvent, Reveal, RemoteView},
     round::RoundEvent,
     session::{is_client, is_server},
     weapons::{BulletHit, ShotFired, WeaponEvent},
@@ -156,10 +156,35 @@ impl MapEntities for GadgetEvent {
             GadgetEvent::StakePing { stake, .. } | GadgetEvent::StakeSaturated { stake } => {
                 map(stake, mapper)
             }
-            GadgetEvent::Destroyed { entity, .. } => map(entity, mapper),
+            GadgetEvent::Destroyed { entity, .. } | GadgetEvent::Flashed { entity, .. } => {
+                map(entity, mapper)
+            }
+            GadgetEvent::CutterClamped { by, cutter, .. } | GadgetEvent::DroneThrown { by, drone: cutter } => {
+                map(by, mapper);
+                map(cutter, mapper);
+            }
+            GadgetEvent::CutterStarted { cutter }
+            | GadgetEvent::CutterExposed { cutter, .. }
+            | GadgetEvent::CutterJammed { cutter, .. }
+            | GadgetEvent::CutterReseated { cutter }
+            | GadgetEvent::CutterBreached { cutter, .. } => map(cutter, mapper),
+            GadgetEvent::BackplateSet { by, .. }
+            | GadgetEvent::Thrown { by, .. }
+            | GadgetEvent::Placed { by, .. }
+            | GadgetEvent::WireRattle { by, .. }
+            | GadgetEvent::ViewLeft { by, .. } => map(by, mapper),
+            GadgetEvent::AlarmTriggered { alarm, .. } => map(alarm, mapper),
+            GadgetEvent::ViewEntered { by, view } => {
+                map(by, mapper);
+                match view {
+                    RemoteView::Drone(e) | RemoteView::Camera(e) => map(e, mapper),
+                }
+            }
             GadgetEvent::DartStuck { .. }
             | GadgetEvent::DartLost
-            | GadgetEvent::DartExpired { .. } => {}
+            | GadgetEvent::DartExpired { .. }
+            | GadgetEvent::BackplateFired { .. }
+            | GadgetEvent::Detonated { .. } => {}
         }
     }
 }

@@ -130,6 +130,7 @@ pub(crate) fn spawn_stake(
             Collider::capsule(0.06, 0.12),
             Sensor,
             CollisionLayers::new(GameLayer::Hitbox, LayerMask::NONE),
+            children![super::blast_anchor(Vec3::ZERO)],
         ))
         .id();
     attach_stake_model(commands, assets, stake);

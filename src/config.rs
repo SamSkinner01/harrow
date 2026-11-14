@@ -363,6 +363,9 @@ pub struct RoundTuning {
     pub intel: IntelTuning,
     #[cfg_attr(not(feature = "client"), allow(dead_code))] // sounds only
     pub volume: f32,
+    /// Ring cutter, backplate charges, shared secondaries, drones, CCTV
+    /// (M6 part two). Defined in `src/gadgets/tuning.rs`.
+    pub gadgets: crate::gadgets::tuning::GadgetTuning,
 }
 
 /// Seconds for each part of a round.

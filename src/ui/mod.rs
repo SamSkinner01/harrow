@@ -74,7 +74,7 @@ LMB  fire         RMB  aim
 R  reload         1 / 2  weapons
 V  melee          F  interact (hold)
 3  gadget         4  secondary gadget
-5  defuser
+5  defuser        G  drones / cameras
 F1  this help     F3  FPS
 F4  hit zones     F5  third person
 F12  screenshot";
