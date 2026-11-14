@@ -163,7 +163,10 @@ def cut_seams(body, marks, gear):
     bm.from_mesh(body.data)
     for point, normal, keep in _cut_planes(marks, gear):
         faces = [f for f in bm.faces if keep(f.calc_center_median())]
-        geom = list({e for f in faces for e in f.edges}) + faces + list({v for f in faces for v in f.verts})
+        # Ordered (not sets) so the result is the same on every run.
+        edges = list(dict.fromkeys(e for f in faces for e in f.edges))
+        verts = list(dict.fromkeys(v for f in faces for v in f.verts))
+        geom = edges + faces + verts
         bmesh.ops.bisect_plane(bm, geom=geom, dist=1e-5, plane_co=point, plane_no=normal)
     bm.to_mesh(body.data)
     bm.free()

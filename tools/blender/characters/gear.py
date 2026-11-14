@@ -56,6 +56,18 @@ def _frame(normal, up=Vector((0, 0, 1))):
     return Matrix((x, y, z)).transposed().to_4x4()
 
 
+def _face_ring(axis, sign):
+    """The four box corners (sign tuples) of the face on `axis` at `sign`,
+    in order around the face."""
+    u, v = [a for a in range(3) if a != axis]
+    out = []
+    for su, sv in ((-1, -1), (1, -1), (1, 1), (-1, 1)):
+        c = [0, 0, 0]
+        c[axis], c[u], c[v] = sign, su, sv
+        out.append(tuple(c))
+    return out
+
+
 class Surfaces:
     """Ray-cast targets over parts of the dressed body."""
 
@@ -185,21 +197,54 @@ class Gear:
         return [self.bm.faces.new([vs[i] for i in q]) for q in quads]
 
     def box(self, matrix, size, colour, weights=None, bevel=0.0, taper=1.0):
-        """Box centred on `matrix`, size (x, y, z). `taper` scales the +Z
-        face (wedges, rounded-looking pouches)."""
+        """Box centred on `matrix`, size (x, y, z), edges chamfered by
+        `bevel`. `taper` scales the +Z end (wedges, rounded-looking pouches).
+        Built by hand rather than with bmesh's bevel so the face order is
+        the same on every run (reproducible .glb files)."""
         sx, sy, sz = (s / 2 for s in size)
-        t = taper
-        pts = [(-sx, -sy, -sz), (sx, -sy, -sz), (sx, sy, -sz), (-sx, sy, -sz),
-               (-sx * t, -sy * t, sz), (sx * t, -sy * t, sz), (sx * t, sy * t, sz), (-sx * t, sy * t, sz)]
-        quads = [(0, 3, 2, 1), (4, 5, 6, 7), (0, 1, 5, 4), (1, 2, 6, 5), (2, 3, 7, 6), (3, 0, 4, 7)]
-        existing = set(self.bm.faces) if bevel > 0.0 else None
-        faces = self._make(pts, quads, matrix)
-        if bevel > 0.0:
-            edges = list({e for f in faces for e in f.edges})
-            bmesh.ops.bevel(self.bm, geom=edges, offset=bevel, segments=1, affect="EDGES",
-                            profile=0.5, clamp_overlap=True)
-            # Bevel replaces the original faces; take everything new.
-            faces = [f for f in self.bm.faces if f not in existing]
+        b = min(bevel, sx * 0.9, sy * 0.9, sz * 0.9)
+        signs = [(cx, cy, cz) for cx in (-1, 1) for cy in (-1, 1) for cz in (-1, 1)]
+
+        def corner(c, axis):
+            # The corner's vertex on the face perpendicular to `axis`.
+            p = [(sx - b) * c[0], (sy - b) * c[1], (sz - b) * c[2]]
+            p[axis] = (sx, sy, sz)[axis] * c[axis]
+            if p[2] > 0:
+                p[0], p[1] = p[0] * taper, p[1] * taper
+            return p
+
+        if b <= 0.0:
+            pts = [corner(c, 0) for c in signs]  # all three coincide
+            idx = {c: i for i, c in enumerate(signs)}
+            quads = []
+            for axis in range(3):
+                for sign in (-1, 1):
+                    ring = _face_ring(axis, sign)
+                    quads.append(tuple(idx[c] for c in ring))
+            faces = self._make(pts, quads, matrix)
+            return self.finish(faces, colour, weights, smooth=False)
+
+        pts, idx = [], {}
+        for c in signs:
+            for axis in range(3):
+                idx[(c, axis)] = len(pts)
+                pts.append(corner(c, axis))
+        polys = []
+        for axis in range(3):                      # main faces
+            for sign in (-1, 1):
+                polys.append(tuple(idx[(c, axis)] for c in _face_ring(axis, sign)))
+        for a1, a2 in ((0, 1), (0, 2), (1, 2)):    # edge strips
+            free = 3 - a1 - a2
+            for s1 in (-1, 1):
+                for s2 in (-1, 1):
+                    def c(sf, s1=s1, s2=s2):
+                        out = [0, 0, 0]
+                        out[a1], out[a2], out[free] = s1, s2, sf
+                        return tuple(out)
+                    polys.append((idx[(c(-1), a1)], idx[(c(1), a1)], idx[(c(1), a2)], idx[(c(-1), a2)]))
+        for c in signs:                            # corner triangles
+            polys.append((idx[(c, 0)], idx[(c, 1)], idx[(c, 2)]))
+        faces = self._make(pts, polys, matrix)
         return self.finish(faces, colour, weights, smooth=False)
 
     def cylinder(self, matrix, radius, length, colour, weights=None, segments=12, radius2=None, smooth=True):
