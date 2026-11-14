@@ -29,7 +29,10 @@ impl Plugin for NetTracePlugin {
             (
                 count,
                 trace.run_if(on_timer(Duration::from_secs(1))),
-                footprint.run_if(on_timer(Duration::from_secs(10))),
+                // Mesh data is only in the main world without a renderer.
+                footprint
+                    .run_if(|mode: Res<NetMode>| matches!(*mode, NetMode::Dedicated { .. }))
+                    .run_if(on_timer(Duration::from_secs(10))),
             )
                 .chain(),
         );
@@ -56,7 +59,7 @@ fn count(
     counts.cells += changes.read().map(|c| c.removed.len() as u32).sum::<u32>();
 }
 
-/// Every 10 s: what the world holds (memory checks of servers).
+/// Every 10 s on a dedicated server: what the world holds (memory checks).
 fn footprint(
     entities: Query<()>,
     meshes: Res<Assets<Mesh>>,
