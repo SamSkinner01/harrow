@@ -93,7 +93,7 @@
         sky_fill_colours: ((0.80, 0.92, 1.12), (1.10, 1.02, 0.90), (1.45, 1.20, 0.90)),
         // Extra fill on the weapon in your hands (multiplier), so the dark
         // metal doesn't turn into a silhouette in shade.
-        weapon_fill: 3.0,
+        weapon_fill: 2.0,
         // Fill inside buildings (replaces the sky fill there), cd/m2, and its
         // colours. Lower = darker interiors; lanterns and sun through the
         // openings do the rest.

@@ -1286,7 +1286,8 @@ contrast or lift in the grading: Bevy applies them around 0.5 in linear
 light *before* eye adaptation, which crushed dark interiors to black (and
 red). Haze: exponential-squared distance fog (none inside a room, thick
 only far out in the desert), coloured like the sky's horizon at the base
-exposure so the 1 km desert floor melts into the sky.
+exposure so the 3 km desert floor melts into the sky (world cameras cull
+at 4 km instead of Bevy's 1 km).
 
 **Sky.** Kiara 5 Noon (Poly Haven, CC0; a dry valley ringed by distant
 mountains, sun 51 deg) converted to a 6 x 1024 px rgb9e5 KTX2
@@ -1301,14 +1302,18 @@ behind the keep. Qwantani Noon has no horizon at all.)
 **Anti-aliasing and the weapon.** TAA (High/Ultra), SMAA (Medium) or FXAA
 (Low) on the world camera; all need MSAA off, which SSAO also requires. The
 weapon is drawn by its own LDR camera after TAA, so it never smears; it
-gets the same tonemapper, grading and sky fill (and the interior probes,
-which are on its render layer too), but no HDR effects. TAA history is
+gets the same tonemapper, grading and sky fill (times `weapon_fill`, so
+the dark metal doesn't read as a silhouette) and the interior probes
+(which are on its render layer too), but no HDR effects. The lanterns
+don't light it (they are on the world layer only). TAA history is
 reset when a camera comes back on (drone/CCTV view) or cuts (menu to game).
 
 **Graphics settings** (settings screen): presets Low/Medium/High/Ultra or
 each of anti-aliasing, ambient occlusion, shadows (sun shadow map size,
 cascades and distance; lantern shadow reach), bloom and contact shadows.
-See README, "Settings".
+See README, "Settings". No render-scale option: Bevy 0.20 can render the
+main pass smaller (`MainPassResolutionOverride`) but only an upscaler
+(DLSS, not built in) fills the screen again.
 
 **Menus and HUD.** One style for everything (`src/ui/style.rs`): Noto
 Sans Condensed (OFL) for text, the monospace default font only where text is

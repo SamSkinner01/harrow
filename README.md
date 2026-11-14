@@ -368,6 +368,7 @@ cargo run -- --third-person --hitboxes         # start with debug views on
 cargo run -- --trace-player                    # log position 4x per second, and every footstep
 cargo run -- --no-vsync                        # uncapped frame rate (performance checks)
 cargo run -- --window 1920x1080 --quality ultra  # window size; graphics preset (low/medium/high/ultra)
+cargo run -- --menu --menu-page settings --screenshot s.png  # open a menu page (settings, credits; pause in game)
 tools/scripts/look_shots.sh /tmp/look --no-vsync # six reference views + contact sheet + fps (look checks)
 cargo run -- --team defenders --operator fathom  # your starting side and operator (solo testing)
 cargo run -- --no-round --operator lark          # free play: no round loop; --operator still gives that gadget
