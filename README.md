@@ -87,6 +87,7 @@ tools/scripts/build_characters.sh --setup        # once: install MPFB 2.0.18 + M
 tools/scripts/build_characters.sh                # Blender -> assets/models/characters/*.glb
 tools/scripts/build_characters.sh --only lark    # rebuild one operator
 tools/scripts/build_characters.sh --preview DIR  # also render each operator and some poses to DIR
+python3 tools/scripts/fetch_character_textures.py  # re-download CC0 cloth/leather detail maps
 ```
 
 On Windows use `tools/scripts/build_kit.ps1`. Kit conventions are documented
@@ -110,6 +111,7 @@ cargo run -- --trace-player                    # log position 4x per second, and
 cargo run -- --no-vsync                        # uncapped frame rate (performance checks)
 cargo run -- --lineup                          # the four operators in the courtyard, cycling animations
 cargo run -- --lineup-state crouch_walk        # ... all holding one state (names in src/characters/lineup.rs)
+cargo run -- --lineup-crowd --no-vsync         # 12 operators, for checking what a full match costs
 ```
 
 Used for automated checks: e.g. spawn at the stairs, auto-move forward, and
