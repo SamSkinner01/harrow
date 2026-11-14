@@ -41,6 +41,7 @@ pub struct Tuning {
     pub lighting: LightingTuning,
     pub surfaces: HashMap<String, SurfaceTuning>,
     pub footsteps: FootstepTuning,
+    pub audio: AudioTuning,
     // Placeholder sections, filled in by M3 / M4 / M6.
     pub weapons: WeaponTuning,
     pub destruction: DestructionTuning,
@@ -496,6 +497,81 @@ pub struct FootstepTuning {
     pub crouch_loudness: f32,
     pub prone_loudness: f32,
     pub volume: f32,
+}
+
+/// Sound mix, distance falloff and surface sounds (`src/audio`). Every value
+/// is explained in the tuning file.
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct AudioTuning {
+    /// Overall volume (menu: master).
+    pub master: f32,
+    /// Weapons, impacts, destruction and explosions (menu: effects).
+    pub effects: f32,
+    /// Everyone's footsteps.
+    pub footsteps: f32,
+    /// Falloff beyond a category's `near` distance: gain = (near / d) ^ rolloff.
+    pub rolloff: f32,
+    /// Metres between the listener's ears (stereo panning of world sounds).
+    pub ear_gap: f32,
+    /// Random pitch per play, +- fraction.
+    pub pitch_jitter: f32,
+    /// Random volume per play, +- dB.
+    pub volume_jitter_db: f32,
+    /// Most world sounds playing at once (your own sounds and explosions
+    /// always play).
+    pub max_voices: usize,
+    /// Most bullet-impact sounds per second.
+    pub impacts_per_second: f32,
+    /// Impacts closer than (metres, seconds) to one already playing are
+    /// skipped (pellets, penetration).
+    pub impact_merge: (f32, f32),
+    /// Distances (metres) over which other people's gunshots and explosions
+    /// cross over to the distant layer: (start, fully distant).
+    pub distant_blend: (f32, f32),
+    /// Non-violent surface damage removing at least this many cells (melee)
+    /// also plays a break sound.
+    pub break_min_cells: usize,
+    pub categories: SoundCategories,
+    /// Name pattern -> material, first match wins (see the tuning file).
+    pub surfaces: Vec<(String, SoundMaterial)>,
+    /// Material for surfaces no pattern matches.
+    pub default_surface: SoundMaterial,
+}
+
+/// Volume and distance range of one kind of sound.
+#[derive(Deserialize, Clone, Copy, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct SoundCategory {
+    pub volume: f32,
+    /// Full volume up to here, metres.
+    pub near: f32,
+    /// Silent from here, metres.
+    pub far: f32,
+}
+
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct SoundCategories {
+    pub shots: SoundCategory,
+    pub shots_distant: SoundCategory,
+    pub foley: SoundCategory,
+    pub footsteps: SoundCategory,
+    pub impacts: SoundCategory,
+    pub destruction: SoundCategory,
+    pub explosions: SoundCategory,
+    pub explosions_distant: SoundCategory,
+}
+
+/// What a surface sounds like (footsteps, bullet impacts, breaking).
+#[derive(Deserialize, Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum SoundMaterial {
+    Stone,
+    Plaster,
+    Wood,
+    Metal,
+    Sand,
+    Body,
 }
 
 #[derive(Deserialize, Clone, Debug)]

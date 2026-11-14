@@ -121,6 +121,19 @@ Characters: one config per operator in `tools/blender/characters/operators/`
 configuration (the MPFB extension and its asset folder). On Windows use
 `tools/scripts/build_characters.ps1`. See DESIGN.md, "M5 characters".
 
+Sound effects (`assets/audio/**/*.ogg`) are cut, layered and encoded from
+CC0/CC-BY packs with Blender's bundled Python (no ffmpeg needed):
+
+```sh
+blender --background --factory-startup --python tools/audio/build_audio.py -- \
+    --staging /path/to/harrow-assets-staging/audio --out assets/audio
+```
+
+It prints a table of every file (duration, peak, RMS, channels, rate). Slice
+times and layers are fixed in the script; the packs and licences are in
+ASSETS.md ("Audio"), credits in CREDITS.md. If a bank's variant count
+changes, update `BANKS` in `src/audio/mod.rs`.
+
 ## Developer flags
 
 ```sh
@@ -144,7 +157,10 @@ cargo run -- --weapon sidearm --ads            # hold a weapon / aim down sights
 cargo run -- --hold-fire                       # hold the trigger
 cargo run -- --fire-at 90 --reload-at 120      # pull the trigger / press reload at a fixed tick (64 per second)
 cargo run -- --screenshot-on-hit out.png --dummies --fire-at 90  # screenshot just after your first hit, then quit
-cargo run -- --dump-weapon-sounds sounds/      # also write the synthesised weapon sounds as .wav files
+cargo run -- --log-sounds                      # log every sound: event, file, surface, 2D/3D, distance, volume
+cargo run -- --log-sounds --no-round --spawn 8,0,18,0,0 --m4 "0.5 move 0 1; 5 quit"
+                                               # walk from the desert sand onto the courtyard stone, logging steps
+cargo run -- --play-sounds --m4 "..."          # play sounds in an automated run too (to listen to a scripted scene)
 cargo run -- --no-viewmodel                    # don't draw the weapon in your hands (look/performance comparisons)
 cargo run -- --lineup                          # the four operators in the courtyard, cycling animations
 cargo run -- --lineup-state crouch_walk        # ... all holding one state (names in src/characters/lineup.rs)
@@ -153,8 +169,9 @@ cargo run -- --lineup-crowd --no-vsync         # 12 operators, for checking what
 
 Used for automated checks: e.g. spawn at the stairs, auto-move forward, and
 screenshot/log where the player ends up. Automated runs (`--screenshot`,
-`--weapon-test`, `--screenshot-on-hit`) don't grab the mouse and don't play
-player or weapon sounds.
+`--weapon-test`, `--screenshot-on-hit`, `--m4`, `--round-script`) don't
+grab the mouse and play no sounds; add `--log-sounds` to see which sounds
+would have played (that's how audio is checked in automated runs).
 
 The round loop (Harrow Keep only) starts with operator selection. In
 `--screenshot` runs everyone is auto-picked; `--round-script` runs pick

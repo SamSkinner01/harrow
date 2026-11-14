@@ -27,10 +27,11 @@ made by our own scripts (`tools/blender/characters/`). No animation pack was
 used: the CC0 sets that need no login don't match the MakeHuman skeleton,
 so the clips are scripted placeholders (see DESIGN.md, M5 characters).
 
-Sounds: the footstep sound is synthesised in code (`src/player/footsteps.rs`),
-and so are the round and gadget sounds (defuser beeps, result chords, dart
-hiss, stake tick: `src/round/sound.rs`) and the weapon sounds (shots, empty
-click, reload foley: `src/weapons/audio.rs`); no external audio yet.
+Sounds: weapons, footsteps, bullet impacts, breaking surfaces and
+explosions are recorded sounds from CC0 and CC-BY packs, listed under
+"Audio" below (CC-BY credits are in [CREDITS.md](CREDITS.md)). The round and
+gadget sounds (defuser beeps, result chords, dart hiss, stake tick:
+`src/round/sound.rs`) are still synthesised in code.
 
 Models made in code (no external assets): the defuser device
 (`src/round/defuser.rs`), sensor darts and seismic stakes (`src/gadgets/`),
@@ -45,6 +46,51 @@ Made in this repo (no external source): the weapon models
 Destruction (M4) is procedural (cell-grid meshes, debris, dust, the breach
 charge and reinforcement plates) and reuses the library materials above; it
 adds no external assets.
+
+## Audio
+
+Everything under `assets/audio/` is built from these packs by
+`tools/audio/build_audio.py` (fixed slice times and layer choices; see the
+README). Only CC0 and CC-BY packs are used; the Sonniss GDC bundles are not
+(their licence forbids redistributing the files). CC-BY attribution lines
+are copied exactly into [CREDITS.md](CREDITS.md).
+
+Every shipped file was: decoded, resampled to 48 kHz, DC-offset removed,
+high-passed (35-120 Hz) to drop rumble, trimmed with a short lead-in and a
+faded tail, loudness-matched within its bank (A-weighted) and peak-normalised
+(-1 to -3 dBFS), and encoded as Ogg Vorbis (112 kbps mono; 160 kbps stereo).
+Mono except the first-person shots (stereo). Extra changes per pack below.
+
+| Asset | Author | Source URL | Licence | Shipped (`assets/audio/...`) | Changes |
+|---|---|---|---|---|---|
+| The Free Firearm Sound Library (Prepared SFX Library) | Ben Jaszczak, Brian Nelson, Kevin Heras, Matthew Nanney | https://opengameart.org/content/the-free-firearm-sound-library | CC0 1.0 | `weapons/rifle_shot_*`, `weapons/rifle_shot_mono_*`, `weapons/rifle_far_*`, `weapons/pistol_shot_*`, `weapons/pistol_shot_mono_*`, `weapons/pistol_far_*` | One-shots cut from AK-47 `C_28P` (near) and `C_31P`, `C_34P` (mid), Walther PPQ `X_39P` (near) and `X_31P` (mid), 1911 `A_42P` (near), with ~1-2 s of natural tail. Near: stereo with balanced channels, or one mic for mono. Mid ("far" layer): one mic, low-passed at 5 kHz |
+| Handgun Reload Sound Effect | zer0_sol | https://opengameart.org/content/handgun-reload-sound-effect | CC0 1.0 | `weapons/pistol_mag_out_1`, `weapons/pistol_mag_in_1`, `weapons/pistol_slide_1` | Sliced into magazine out, magazine in, slide rack; mono |
+| Equipment Clicks II | LFA | https://opengameart.org/content/equipment-clicks-ii | CC0 1.0 | `weapons/rifle_mag_in_1` | One slice (thump and clack) |
+| equipment clicks III | LFA | https://opengameart.org/content/equipment-clicks-iii | CC0 1.0 | `weapons/rifle_mag_out_1`, `weapons/rifle_charge_*` | Slices; `rifle_charge_2` splices a pull and a release with the pause removed |
+| 2 metal weapon clicks | Michel Baradari | https://opengameart.org/content/2-metal-weapon-clicks | CC-BY 3.0 | `weapons/dry_fire_1` | `outofammo.wav`, trimmed, mono |
+| RPG Audio | Kenney | https://kenney.nl/assets/rpg-audio | CC0 1.0 | `weapons/draw_*`, `weapons/holster_*`, `footsteps/wood_*` (layer) | Draw: `cloth1`/`cloth2` + `metalClick`/`metalLatch`; holster: `cloth3`/`cloth4` + `handleSmallLeather`/`2`; `footstep00`-`07` as the sole-contact layer of the wood steps; mono |
+| Impact Sounds | Kenney | https://kenney.nl/assets/impact-sounds | CC0 1.0 | `impacts/body_*`, `impacts/sand_*` (layers) | `impactPunch_medium_000`-`003` under the body hits; `impactSoft_heavy_000`-`003` under the sand hits |
+| Fantozzi's Footsteps (Grass/Sand & Stone) | Fantozzi | https://opengameart.org/content/fantozzis-footsteps-grasssand-stone | CC0 1.0 | `footsteps/stone_*`, `footsteps/sand_*`, `impacts/sand_*` (layer) | Stone and sand steps (FLAC originals); for sand impacts the first 0.22 s as a spray layer; mono |
+| Footsteps on different surfaces | congusbongus (from freesound recordings by swuing and Eelke) | https://opengameart.org/content/footsteps-on-different-surfaces | CC-BY 3.0 | `footsteps/stone_*` (layer), `footsteps/wood_*`, `footsteps/metal_*` | Folders `boots` 0-5 (high-passed at 70 Hz, -9 dB under the stone steps), `wood` 0-7 (high-passed at 45 Hz to remove infrasonic thump), `metal` 0-7 |
+| Impact | qubodup | https://opengameart.org/content/impact | CC0 1.0 | `impacts/metal_5`, `impacts/stone_*` (layer), `impacts/body_*` | `ImpactMetal`; `ImpactStone` at -9 dB under stone variants 1, 3, 5; `ImpactMeat01`/`02` layered with punches |
+| 75 CC0 breaking / falling / hit sfx | rubberduck | https://opengameart.org/content/75-cc0-breaking-falling-hit-sfx | CC0 1.0 | `impacts/stone_*`, `impacts/plaster_*`, `impacts/metal_3`, `impacts/metal_4`, `destruction/plaster_*` (layer), `explosions/near_*` (layer) | Stone: `rock_hit`/`hit` cracks + `rock_falling` grit; plaster: `hit` + `rock_falling`/`breaking` crumble; `metal_hit_06`, `metal_hit_02`; `falling`/`rock_falling` as debris tails |
+| 100 CC0 metal and wood SFX | rubberduck | https://opengameart.org/content/100-cc0-metal-and-wood-sfx | CC0 1.0 | `impacts/wood_*`, `impacts/metal_1`, `impacts/metal_2`, `destruction/wood_4`, `destruction/metal_*` | Wood: `wood_hit` thunk + `wood_cracking` splinter; `metal_hit_01`, `metal_hit_04`; `wood_breaking_01` + `wood_falling_01`; `metal_falling_01`, `metal_sheet_03`, `metal_sheet_06` (cut to 1.3 s) |
+| 25 CC0 bang / firework SFX | rubberduck | https://opengameart.org/content/25-cc0-bang-firework-sfx | CC0 1.0 | `explosions/near_*` (layer) | `cannon_01`, `bang_06`, `cannon_04` as the crack of the blast |
+| 35 wooden cracks/hits/destructions | Independent.nu | https://opengameart.org/content/35-wooden-crackshitsdestructions | CC0 1.0 | `destruction/wood_1`-`3` | `crack05`, `crack01`, `crack04`, cut to 1.2-1.3 s |
+| 5 break, crunch impacts | Independent.nu | https://opengameart.org/content/5-break-crunch-impacts | CC0 1.0 | `destruction/plaster_*` | `impactcrunch01`, `03`, `04`, `05` with crumble tails, cut to 1.5 s |
+| 2 High Quality Explosions | Michel Baradari | https://opengameart.org/content/2-high-quality-explosions | CC-BY 3.0 | `explosions/near_*` (layer) | `explode.wav`, `explodemini.wav` as the body of the blast, high-passed at 30 Hz |
+| Big low frequency explosion boom | Varkalandar | https://opengameart.org/content/big-low-frequency-explosion-boom | CC-BY 4.0 (chosen from CC-BY 4.0/3.0, CC-BY-SA 4.0/3.0, OGA-BY 3.0) | `explosions/near_*` (layer) | First 3 s as a sub layer at -6 dB, high-passed at 28 Hz, faded |
+| 3 Background Crash Explosion Bang Sounds | qubodup | https://opengameart.org/content/3-background-crash-explosion-bang-sounds | CC-BY 3.0 (chosen over GPL 3.0 / 2.0) | `explosions/far_*` | `BangLong`, `BangMid`, `BangShort` (96 kHz versions), low-passed at 1.8 kHz as the distant layer |
+
+CC-BY attribution text, exactly as given by each source (also in
+CREDITS.md):
+
+- "2 metal weapon clicks" - Sounds (c) by Michel Baradari apollo-music.de, licensed under CC BY 3.0 (http://creativecommons.org/licenses/by/3.0/), https://opengameart.org/content/2-metal-weapon-clicks
+- "Footsteps on different surfaces" by congusbongus (https://opengameart.org/content/footsteps-on-different-surfaces), CC BY 3.0; derived from freesound.org sounds: footstep-concrete.wav / footstep-grass.wav / footstep-wood.wav by swuing (CC BY 3.0), fboots on aluminum ladder 01 by Eelke (CC BY 3.0), Squeaky footstep.wav by ceberation (CC BY 3.0), Water Footsteps by EminYILDIRIM (CC BY 3.0), Wolf run.wav by sabotovat (CC BY 3.0), Robotic mechanic step sounds by Lee Barkovich (CC BY 3.0); gravel from Ali_6868 Gravel Footsteps pack (CC0), bones from blukotek (CC0). Credit only the folders you ship (see each folder's license.txt).
+  (We ship the `boots`, `wood` and `metal` folders: swuing and Eelke.)
+- "2 High Quality Explosions" - Sounds (c) by Michel Baradari apollo-music.de, licensed under CC BY 3.0 (http://creativecommons.org/licenses/by/3.0/), https://opengameart.org/content/2-high-quality-explosions
+- "Big low frequency explosion boom" by Varkalandar (https://opengameart.org/content/big-low-frequency-explosion-boom), CC BY 4.0
+- 3 Explosion Bangs Copyright 2012 Iwan 'qubodup' Gabovitch <http://qubodup.net>, CC BY 3.0, https://opengameart.org/content/3-background-crash-explosion-bang-sounds
 
 ## Tools (not shipped with the game)
 

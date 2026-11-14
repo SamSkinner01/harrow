@@ -56,6 +56,7 @@ impl Plugin for WeaponsPlugin {
                 viewmodel::ViewmodelPlugin,
                 effects::ImpactEffectsPlugin,
                 hud::WeaponHudPlugin,
+                crate::audio::GameAudioPlugin,
                 audio::WeaponAudioPlugin,
                 testing::WeaponTestPlugin,
             ));

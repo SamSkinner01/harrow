@@ -550,3 +550,40 @@ layout must not be modelled on it.
 ## Open questions
 
 - Vault action (see Movement).
+
+## Realism pass: audio
+
+Recorded sounds replace the synthesised placeholders (packs and licences in
+ASSETS.md, "Audio"; built by `tools/audio/build_audio.py`). Code:
+`src/audio/` (library, playback, spatial setup, impacts/breaking/explosions,
+surface lookup), `src/weapons/audio.rs`, `src/player/footsteps.rs`.
+
+- **Own vs. world.** The local player's shots, reloads and footsteps play
+  straight to the ears (the first-person shot is a stereo recording).
+  Everything else is 3D at its world position: other people's shots and
+  footsteps, reloads, bullet impacts, breaking surfaces, explosions.
+- **Shots.** TAMARISK: AK-47 recordings; ACACIA: Walther PPQ / 1911. Other
+  people's shots layer a close and a mid-distance recording, crossfaded by
+  distance (`audio.distant_blend`); explosions do the same.
+- **Spatial audio.** Bevy pans by distance to each ear (rodio's `Spatial`),
+  which flips sides for distant sources and falls off as 1/d^2. We scale
+  positions so the distance term is always 1, swap the ears (correct
+  panning), and apply our own fall-off: full volume to `near`, then
+  (near / d)^rolloff, silent at `far`, per category in the tuning file.
+- **Surfaces.** Footsteps cast a short ray down; impacts use the hit
+  collider. Destructible surfaces know their material (plaster, wood; metal
+  on hatch frames and facing reinforcement plates); everything else matches
+  piece/collider names against `audio.surfaces` (stone, wood, sand, metal,
+  plaster), falling back to stone. Sandbags and the desert are sand.
+- **Load.** Bullet impacts are rate-limited (`impacts_per_second`, merged
+  when close together); at most `max_voices` world sounds at once; an
+  explosion plays at most three breaking sounds.
+- **Reload timing.** Magazine out at 20 %, in at 70 %, charging handle /
+  slide at 86 % of the reload (`RELOAD_TIMING` in `weapons/audio.rs`; the
+  first-person animation follows it).
+- **Checking it.** Automated runs are silent; `--log-sounds` logs every
+  sound (event, file, surface, 2D/3D, distance, volume), `--play-sounds`
+  plays them anyway.
+- **Not done yet:** indoor reverb / occlusion (no CC0 indoor gunshots
+  exist; walls don't muffle anything yet), shell casings, bullet whizz, a
+  desert wind bed, and the round/gadget sounds are still synthesised.

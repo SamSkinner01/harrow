@@ -5,6 +5,7 @@
 //! placeholder simply does nothing.
 
 mod ai;
+mod audio;
 mod characters;
 mod combat;
 mod config;
