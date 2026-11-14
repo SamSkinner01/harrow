@@ -129,9 +129,10 @@ if [[ -n $GADGETS ]]; then
             BRAVO="7 aimat 8.5 1.4 6; 10.2 log; 10.4 shot $S-bravo.png; 13 log; 13.5 shot $S-bravo-later.png; 14 quit"
             ;;
         drone)
-            SERVER="6 equip Alpha lark; 6 equip Bravo fathom; 6 tp Alpha 8 0 9; 6 tp Bravo 8 0 2.5; 17 log; 19 log"
-            ALPHA="8 look 0 0; 9 g; 11 drive 0 1; 13 log; 13.5 shot $S-alpha-view.png; 14 drive 0 0; 14.5 log; 15 g; 16.5 log; 17 quit"
-            BRAVO="7 aimat 8 0.2 6.5; 11 log; 12.5 log; 13 shot $S-bravo.png; 14 log; 15 quit"
+            # The drone drives ~3 m towards the keep, stops and turns to Bravo.
+            SERVER="6 equip Alpha lark; 6 equip Bravo fathom; 6 tp Alpha 8 0 9; 6 tp Bravo 10.5 0 3; 17 log; 19 log"
+            ALPHA="8 look 0 0; 9 g; 11 drive 0 1; 12 drive 0 0; 12.5 dface 10.5 3; 13 log; 14 shot $S-alpha-view.png; 14.5 log; 15 g; 16.5 log; 17 quit"
+            BRAVO="7 aimat 8 0.2 5; 11 log; 12.5 log; 13.5 shot $S-bravo.png; 14 log; 16 quit"
             ;;
         wire)
             SERVER="6 equip Bravo mortise wire; 6 equip Alpha lark; 6 tp Bravo 8.5 0 9; 6 tp Alpha 8.5 0 4; 13 tp Bravo 11 0 3.5; 14 log; 17 log; 18 log; 22 log"
@@ -145,6 +146,8 @@ if [[ -n $GADGETS ]]; then
             ;;
         *) echo "unknown scenario $GADGETS (frag smoke flash drone wire cutter all)" >&2; exit 2 ;;
     esac
+    # Positions are on Harrow Keep section A (the first, small map).
+    NET+=(--map section_a)
     echo "server: port $PORT, gadget scenario $GADGETS ${NET[*]}"
     "$BIN" --server "$PORT" --no-round --net-trace --net-script "$SERVER" "${NET[@]}" \
         > "$S-server.log" 2>&1 &
@@ -170,7 +173,8 @@ if [[ -n $GADGETS ]]; then
             | sed -E 's/^ *INFO harrow::[a-z_:]+: //' \
             | grep -vE "100% intact, reinforced false|average fps|screenshot ->|cctv: |gadget test t=.*(Shot|Quit)" \
             | head -n 70 || true
-        strip "$S-$who.log" | grep "net-trace: InGame" | tail -n 1 | grep -oE "rollbacks [0-9]+ \([0-9]+ ticks\)" \
+        strip "$S-$who.log" | grep "net-trace: InGame" | tail -n 1 \
+            | grep -oE "rollbacks [0-9]+ \([0-9]+ ticks\)( \| others' private state [0-9]+)?" \
             | sed 's/^/last trace: /' || true
     done
     if [[ $GADGETS == wire ]]; then

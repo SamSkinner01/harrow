@@ -54,6 +54,9 @@ bevy_replicon = { version = "=0.45.5", default-features = false, features = ["cl
 # Turns a server's shared secret into its netcode key. The version Bevy's
 # asset hashing already uses.
 blake3 = { version = "=1.8.7", default-features = false }
+# The dedicated server rewrites glTF models' JSON (drops their images).
+# The version Bevy's glTF loader already uses.
+serde_json = "=1.0.154"
 # The version Bevy already uses. "termination" makes SIGTERM (e.g. systemd
 # stopping a dedicated server) exit as gracefully as Ctrl+C.
 ctrlc = { version = "3.4", features = ["termination"] }

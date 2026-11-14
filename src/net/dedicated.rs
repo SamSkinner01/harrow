@@ -12,12 +12,13 @@
 //! even link the window system, audio or gamepad libraries.
 //!
 //! Lean assets: without a render world, Bevy keeps every decoded texture in
-//! RAM, which was most of a server's ~750 MB. A headless server reads its
-//! assets through [`LeanAssetReader`], which hands out a 1x1 stand-in for
-//! every image under `textures/` (material and character detail maps): the
-//! code that asks for them works unchanged, and the server bundle doesn't
-//! need `textures/` at all. Models load normally (kit models are the map's
-//! collision; character models carry skeletons and animations).
+//! RAM (section A: ~750 MB of the server's memory; the full map's props
+//! add ~380 MB more). A headless server reads its assets through
+//! [`LeanAssetReader`], which hands out a 1x1 stand-in for every image
+//! under `textures/` (material and character detail maps) and for every
+//! image embedded in a `.glb` model. The code that asks for them works
+//! unchanged, models keep their meshes (kit and prop collision), skeletons
+//! and animations, and the server bundle doesn't need `textures/`.
 //!
 //! Config file (RON), every field optional; see `assets/config/server.ron`:
 //! name, port, map, max_players, log_level, round_loop, key (shared
@@ -31,7 +32,7 @@ use bevy::{
         AssetApp, AssetPlugin,
         io::{
             AssetReader, AssetReaderError, AssetSource, AssetSourceBuilder, AssetSourceId,
-            ErasedAssetReader, PathStream, Reader, SliceReader,
+            ErasedAssetReader, PathStream, Reader, SliceReader, VecReader,
         },
     },
     log::{BoxedFmtLayer, Level, LogPlugin, tracing_subscriber},
@@ -215,9 +216,9 @@ impl Plugin for LeanAssetsPlugin {
     }
 }
 
-/// The dedicated server's view of `assets/`: images under `textures/` are
-/// a 1x1 stand-in (a server never draws them); everything else is read
-/// from disk as usual. See the module docs.
+/// The dedicated server's view of `assets/`: images under `textures/` and
+/// inside `.glb` models are a 1x1 stand-in (a server never draws them);
+/// everything else is read from disk as usual. See the module docs.
 pub struct LeanAssetReader(Box<dyn ErasedAssetReader>);
 
 /// A 1x1 grey JPEG and PNG (the image loader picks the format by
@@ -253,12 +254,64 @@ fn stand_in(path: &Path) -> Option<&'static [u8]> {
     }
 }
 
+/// [`STAND_IN_PNG`] as a data URI, for images inside glTF files.
+const STAND_IN_PNG_URI: &str =
+    "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR42mNoaGgAAAMEAYF1LgG8AAAAAElFTkSuQmCC";
+
+/// A binary glTF (`.glb`) with every image replaced by the 1x1 stand-in
+/// (an inline data URI); meshes, skeletons, animations and the binary
+/// buffer are untouched (the old image bytes stay in the buffer, unused,
+/// and are dropped after loading). `None`: not a glb, or no images.
+fn strip_glb_images(glb: &[u8]) -> Option<Vec<u8>> {
+    const JSON: u32 = 0x4E4F_534A;
+    let u32_at = |i: usize| glb.get(i..i + 4).map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]));
+    if glb.get(0..4)? != b"glTF" || u32_at(4)? != 2 || u32_at(16)? != JSON {
+        return None;
+    }
+    let json_end = 20 + u32_at(12)? as usize;
+    let mut json: serde_json::Value = serde_json::from_slice(glb.get(20..json_end)?).ok()?;
+    let images = json.get_mut("images")?.as_array_mut()?;
+    if images.is_empty() {
+        return None;
+    }
+    for image in images.iter_mut() {
+        let mut stand_in = serde_json::json!({ "uri": STAND_IN_PNG_URI });
+        if let Some(name) = image.get("name") {
+            stand_in["name"] = name.clone();
+        }
+        *image = stand_in;
+    }
+    let mut text = serde_json::to_vec(&json).ok()?;
+    while text.len() % 4 != 0 {
+        text.push(b' ');
+    }
+    let rest = &glb[json_end..];
+    let total = 20 + text.len() + rest.len();
+    let mut out = Vec::with_capacity(total);
+    out.extend_from_slice(b"glTF");
+    out.extend_from_slice(&2u32.to_le_bytes());
+    out.extend_from_slice(&(total as u32).to_le_bytes());
+    out.extend_from_slice(&(text.len() as u32).to_le_bytes());
+    out.extend_from_slice(&JSON.to_le_bytes());
+    out.extend_from_slice(&text);
+    out.extend_from_slice(rest);
+    Some(out)
+}
+
 impl AssetReader for LeanAssetReader {
     async fn read<'a>(&'a self, path: &'a Path) -> Result<Box<dyn Reader + 'a>, AssetReaderError> {
-        match stand_in(path) {
-            Some(bytes) => Ok(Box::new(SliceReader::new(bytes))),
-            None => self.0.read(path).await,
+        if let Some(bytes) = stand_in(path) {
+            return Ok(Box::new(SliceReader::new(bytes)));
         }
+        let mut reader = self.0.read(path).await?;
+        if path.extension().is_none_or(|e| !e.eq_ignore_ascii_case("glb")) {
+            return Ok(reader);
+        }
+        // Models: keep the geometry, drop the pictures.
+        let mut bytes = Vec::new();
+        reader.read_to_end(&mut bytes).await?;
+        let bytes = strip_glb_images(&bytes).unwrap_or(bytes);
+        Ok(Box::new(VecReader::new(bytes)))
     }
 
     async fn read_meta<'a>(&'a self, path: &'a Path) -> Result<Box<dyn Reader + 'a>, AssetReaderError> {
