@@ -784,6 +784,9 @@ hand-placed data), so a new map just works:
   (weighted by how far the view must turn).
 - **Reaction:** first shot no sooner than `reaction_time` (+/- jitter,
   more at the edge of the view, halved when a lost target reappears).
+  Someone appearing where the bot was already aiming (a held angle, a
+  pre-aimed doorway) gets 30% less reaction time and a third of the aim
+  error; within 15 degrees, 15% and 60%.
 - **Aim:** the view turns at `turn_speed` towards the chosen zone (head
   with `head_aim` chance, else torso, else whatever shows) plus an error
   starting at `aim_error` degrees that settles over `aim_settle` seconds;

@@ -173,9 +173,22 @@ fn fight(
                 if back_soon {
                     reaction *= 0.5;
                 }
+                // Someone appearing right where the bot was already aiming
+                // (a held angle, a pre-aimed doorway) is shot sooner and
+                // straighter than someone it has to turn to.
+                let (yaw_to, pitch_to) = angles_to(seen.zones[1].unwrap_or(seen.feet + Vec3::Y) - eye);
+                let off_aim = (super::angle_diff(yaw_to, state.look.yaw).powi(2) + (pitch_to - state.look.pitch).powi(2)).sqrt();
+                let (react_scale, error_scale) = if off_aim < 6f32.to_radians() {
+                    (0.7, 0.35)
+                } else if off_aim < 15f32.to_radians() {
+                    (0.85, 0.6)
+                } else {
+                    (1.0, 1.0)
+                };
+                reaction *= react_scale;
                 c.react_at = now + reaction.max(0.05);
                 let angle = bot.rng.f32() * std::f32::consts::TAU;
-                let size = d.aim_error.to_radians() * (0.7 + 0.5 * bot.rng.f32());
+                let size = d.aim_error.to_radians() * (0.7 + 0.5 * bot.rng.f32()) * error_scale;
                 c.error = Vec2::new(angle.cos(), angle.sin() * 0.6) * size;
                 c.zone = if bot.rng.chance(d.head_aim) { 0 } else { 1 };
                 c.last_angles = None;
