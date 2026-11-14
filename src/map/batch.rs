@@ -22,24 +22,25 @@ use bevy::{
     render::render_resource::PrimitiveTopology,
 };
 
-use super::kit::KitPiece;
+use super::kit::{KitLoaded, KitPiece};
 use crate::combat::SurfaceKind;
 
 pub struct BatchPlugin;
 
 impl Plugin for BatchPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, merge_static_pieces.run_if(resource_exists::<StaticBatching>));
+        app.add_systems(
+            Update,
+            merge_static_pieces
+                .run_if(resource_exists::<StaticBatching>)
+                .run_if(resource_added::<KitLoaded>),
+        );
     }
 }
 
 /// Insert to merge static kit geometry once the map has loaded.
 #[derive(Resource, Default)]
-pub struct StaticBatching {
-    /// Frames since every kit piece was ready.
-    ready_frames: u32,
-    done: bool,
-}
+pub struct StaticBatching;
 
 /// A merged mesh.
 #[derive(Component)]
@@ -61,28 +62,13 @@ struct Batch {
 
 #[allow(clippy::type_complexity)]
 fn merge_static_pieces(
-    mut state: ResMut<StaticBatching>,
     pieces: Query<(Entity, &SurfaceKind), With<KitPiece>>,
-    waiting: Query<(), (With<KitPiece>, Without<SurfaceKind>)>,
     children: Query<&Children>,
     parts: Query<(&Mesh3d, &MeshMaterial3d<StandardMaterial>, &GlobalTransform, &Visibility), Without<Collider>>,
     collider_sources: Query<(), (With<Collider>, With<Mesh3d>)>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut commands: Commands,
 ) {
-    if state.done {
-        return;
-    }
-    if pieces.is_empty() || !waiting.is_empty() {
-        state.ready_frames = 0;
-        return;
-    }
-    // Let transforms propagate and material swaps land first.
-    state.ready_frames += 1;
-    if state.ready_frames < 3 {
-        return;
-    }
-    state.done = true;
     let start = std::time::Instant::now();
 
     let mut batches: HashMap<(AssetId<StandardMaterial>, i32, i32, i32), (Handle<StandardMaterial>, Batch)> =

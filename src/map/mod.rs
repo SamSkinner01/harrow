@@ -16,6 +16,8 @@ mod materials;
 
 use bevy::prelude::*;
 
+pub use kit::KitLoaded;
+
 pub struct MapPlugin;
 
 impl Plugin for MapPlugin {

@@ -33,7 +33,7 @@ use super::{Round, RoundEvent, RoundPhase, RoundSettings};
 use crate::{
     combat::Team,
     config::{Rotation, Tuning},
-    map::MapChoice,
+    map::{KitLoaded, MapChoice},
 };
 
 pub struct SitesPlugin;
@@ -51,6 +51,8 @@ impl Plugin for SitesPlugin {
         app.insert_resource(objectives)
             .insert_resource(forced)
             .insert_resource(layout)
+            .add_systems(Startup, spawn_safety_floors)
+            .add_systems(Update, remove_safety_floors.run_if(resource_added::<KitLoaded>))
             .add_systems(
                 Update,
                 repaint_site_markings
@@ -417,6 +419,36 @@ pub(super) fn choose_site_pair(
         "round {}: sites {} (A {}, B {}), attackers from {}",
         round.number, layout.pair_name, layout.sites[0].name, layout.sites[1].name, layout.attack_from
     );
+}
+
+/// Invisible floor under a spawn point while the map is still loading.
+#[derive(Component)]
+struct SafetyFloor;
+
+/// The first round starts on the first tick, before the kit pieces (and
+/// their colliders) have loaded, so players placed on an upper floor or in
+/// the basement would fall through it. A small collider under every spawn
+/// point holds them until the map is in.
+fn spawn_safety_floors(mut commands: Commands, objectives: Res<MapObjectives>) {
+    let points = objectives
+        .pairs
+        .iter()
+        .flat_map(|p| &p.defender_spawns)
+        .chain(objectives.areas.iter().flat_map(|a| &a.spawns));
+    for spawn in points {
+        commands.spawn((
+            SafetyFloor,
+            avian3d::prelude::RigidBody::Static,
+            avian3d::prelude::Collider::cuboid(1.0, 0.1, 1.0),
+            Transform::from_translation(spawn.position - Vec3::Y * 0.05),
+        ));
+    }
+}
+
+fn remove_safety_floors(floors: Query<Entity, With<SafetyFloor>>, mut commands: Commands) {
+    for floor in &floors {
+        commands.entity(floor).despawn();
+    }
 }
 
 /// Marks the painted lines of the current pair.
