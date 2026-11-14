@@ -222,7 +222,10 @@ fn fight(
             c.last_angles = Some((yaw0, pitch0));
             state.look.combat = Some((yaw0 + c.error.x, pitch0 + c.error.y));
             let retreating = state.goal.kind == GoalKind::Retreat;
-            c.stand_still = !retreating;
+            // Stop to shoot when holding, or when it's close; a long-range
+            // duel while on the move (crossing open ground) keeps moving.
+            let on_the_move = state.goal.at.is_some() && !state.nav.arrived && distance > 18.0;
+            c.stand_still = !retreating && !on_the_move;
             state.buttons.aim = !retreating || distance < 12.0;
 
             // Friendly fire check, a few times a second.

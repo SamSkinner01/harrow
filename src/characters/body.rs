@@ -14,7 +14,9 @@
 //! networked remote player only has to carry these):
 //! - `Transform` (feet, yaw), [`CharacterState`] (stance, height and lean,
 //!   blended between ticks), `LinearVelocity` (walk/run speed),
-//! - [`PlayerInput`] `pitch`: the spine bends to look up and down,
+//! - [`PlayerInput`] `pitch` (or, for remote characters that have no input
+//!   on this machine, the networked `net::NetAim`): the spine bends to look
+//!   up and down,
 //! - [`WeaponState`]: active weapon (model swap), aiming, firing (recent
 //!   shot), reloading, holstering; `hands_busy` lowers it,
 //! - [`Team`], [`Dead`]: the body tips over on death and stands up again
@@ -32,6 +34,8 @@
 use std::f32::consts::FRAC_PI_2;
 
 use avian3d::prelude::LinearVelocity;
+
+use crate::net::NetAim;
 use bevy::{
     app::AnimationSystems,
     gltf::{GltfAssetLabel, GltfMaterialName},
@@ -53,11 +57,16 @@ pub struct BodyPlugin;
 
 impl Plugin for BodyPlugin {
     fn build(&self, app: &mut App) {
+        // A dedicated server draws nothing.
+        if app.world().get_resource::<crate::session::Launch>().is_some_and(|l| l.dedicated) {
+            return;
+        }
         app.add_observer(prepare_body_weapon)
             .add_systems(
                 Update,
                 (
                     attach_bodies,
+                    drop_local_bodies,
                     swap_models,
                     attach_weapons,
                     drive_bodies,
@@ -88,6 +97,11 @@ pub struct Body {
     fall: f32,
     /// Sideways roll of the fall, radians (varies per character).
     fall_roll: f32,
+    /// Where the body was drawn last frame, and its smoothed ground speed
+    /// (from the drawn motion, so it works for interpolated remote
+    /// characters too).
+    last_feet: Option<Vec3>,
+    speed: f32,
 }
 
 /// Put on a [`Player`] that must not get a third-person body.
@@ -167,7 +181,18 @@ fn attach_bodies(
             weapon: None,
             fall: 0.0,
             fall_roll: roll,
+            last_feet: None,
+            speed: 0.0,
         });
+    }
+}
+
+/// A character that turns out to be ours (a client's own character gets
+/// `LocalPlayer` after it arrives) has no body.
+fn drop_local_bodies(players: Query<(Entity, &Body), With<LocalPlayer>>, mut commands: Commands) {
+    for (entity, body) in &players {
+        commands.entity(body.model).try_despawn();
+        commands.entity(entity).remove::<Body>();
     }
 }
 
@@ -268,10 +293,11 @@ fn prepare_body_weapon(
 /// Simulation state -> animation, every frame.
 #[allow(clippy::type_complexity)]
 fn drive_bodies(
-    players: Query<(
-        &Body,
+    mut players: Query<(
+        &mut Body,
+        &GlobalTransform,
         &CharacterState,
-        &LinearVelocity,
+        Option<&LinearVelocity>,
         Option<&WeaponState>,
         Has<Dead>,
     )>,
@@ -279,10 +305,20 @@ fn drive_bodies(
     mut visibility: Query<&mut Visibility, With<BodyWeapon>>,
     tuning: Res<Tuning>,
     fixed: Res<Time<Fixed>>,
+    time: Res<Time>,
 ) {
     let t = fixed.overstep_fraction();
+    let dt = time.delta_secs().max(1e-4);
     let b = &tuning.body;
-    for (body, state, velocity, weapon, dead) in &players {
+    for (mut body, feet, state, velocity, weapon, dead) in &mut players {
+        // Ground speed: simulated velocity where we have it, else how far
+        // the drawn body moved (interpolated remote characters).
+        let at = feet.translation();
+        let moved = body.last_feet.map_or(0.0, |p| (at - p).with_y(0.0).length() / dt);
+        body.last_feet = Some(at);
+        let measured = velocity.map_or(moved, |v| v.0.with_y(0.0).length().max(moved.min(v.0.length() + 0.5)));
+        body.speed += (measured.min(8.0) - body.speed) * (1.0 - (-12.0 * dt).exp());
+        let speed = body.speed;
         let Ok(mut anim) = anims.get_mut(body.model) else { continue };
         let (height, lean) = state.interpolated(t);
         let stance = if height < (b.crouch_height + b.prone_height) / 2.0 {
@@ -305,7 +341,7 @@ fn drive_bodies(
             CharacterAnim::default()
         } else {
             CharacterAnim {
-                speed: velocity.0.with_y(0.0).length(),
+                speed,
                 stance,
                 lean,
                 aiming: aiming && !lowered,
@@ -334,18 +370,19 @@ fn drive_bodies(
 
 /// Bend the spine for the look pitch, after the animation has posed it.
 fn bend_spines(
-    players: Query<(&Body, &PlayerInput, Has<Dead>)>,
+    players: Query<(&Body, Option<&PlayerInput>, Option<&NetAim>, Has<Dead>)>,
     models: Query<&CharacterParts>,
     parents: Query<&ChildOf>,
     mut transforms: Query<&mut Transform>,
 ) {
     const SHARES: [(&str, f32); 3] = [("spine_01", 0.25), ("spine_02", 0.35), ("spine_03", 0.4)];
-    for (body, input, dead) in &players {
+    for (body, input, aim, dead) in &players {
         if dead || body.fall > 0.0 {
             continue;
         }
         let Ok(parts) = models.get(body.model) else { continue };
-        let pitch = input.pitch.clamp(-1.1, 1.1);
+        // Simulated here: the input's look; remote: the networked look.
+        let pitch = input.map(|i| i.pitch).or(aim.map(|a| a.pitch)).unwrap_or(0.0).clamp(-1.1, 1.1);
         for (bone, share) in SHARES {
             let Some(entity) = parts.bone(bone) else { continue };
             // The parent's rotation in model space (current local poses).

@@ -284,7 +284,7 @@ fn plan_rounds(
             grid.locate(spawn_centre + Vec3::Y * 0.3, 4),
             grid.locate(site.inside_point(&grid, 0) + Vec3::Y * 0.3, 2),
         ) {
-            let options = PathOptions { barricades: true, breach: false, max_expansions: 120_000 };
+            let options = PathOptions { barricades: Some(super::path::COST_BARRICADE), breach: false, max_expansions: 120_000 };
             if let Some(path) = find_path(&grid, &mut scratch, from, to, options, &|_| 0.0) {
                 for w in &path.points {
                     for id in grid.nodes_near(w.pos, 1.6, 1.0) {
@@ -536,7 +536,6 @@ fn think(
             feet,
             team: *team,
             now,
-            round: &round,
             plans: &plans,
             tactics: &tactics,
             grid: &grid,
@@ -574,7 +573,6 @@ struct Ctx<'a, 'w, 's> {
     feet: Vec3,
     team: Team,
     now: f32,
-    round: &'a Round,
     plans: &'a TeamPlans,
     tactics: &'a Tactics,
     grid: &'a NavGrid,
@@ -863,7 +861,7 @@ fn attack(ctx: &Ctx, state: &mut BotState, bot: &mut Bot, carrier: Option<&Defus
             return state.goal.clone();
         }
     }
-    if in_site || dist < 3.0 {
+    if site.contains(ctx.feet + Vec3::Y * 0.05) || dist < 3.0 {
         // In: cover an entrance from a hold spot.
         return hold_site(ctx, state, bot, site);
     }

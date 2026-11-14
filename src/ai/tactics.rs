@@ -57,8 +57,6 @@ pub struct HoldSpot {
     pub pos: Vec3,
     /// Point to watch (the entrance, chest height).
     pub watch: Vec3,
-    pub entrance: usize,
-    pub cover: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -68,7 +66,6 @@ pub struct WallJob {
     pub aim: Vec3,
     /// Crouch to reach (hatches from above).
     pub crouch: bool,
-    pub hatch: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -141,23 +138,29 @@ fn analyse_map(
     mut resets: MessageReader<RoundReset>,
     time: Res<Time<Real>>,
     mut last: Local<f32>,
-    mut pending_reset: Local<bool>,
+    mut pending_reset: Local<Option<f32>>,
 ) {
+    let now = time.elapsed_secs();
     if resets.read().last().is_some() {
-        *pending_reset = true;
+        // The map is restored: nothing from last round's layout counts
+        // (plans wait for the new analysis).
+        *pending_reset = Some(now);
+        tactics.ready = false;
     }
     if !settings.nav_wanted() || !grid.ready {
         return;
     }
     let Some(layout) = layout else { return };
-    let now = time.elapsed_secs();
     let stale = grid.revision != tactics.revision && now - *last > 3.0;
     // After a reset the grid is patched over a few frames; wait for it.
-    let reset_due = *pending_reset && grid.revision != tactics.revision && now - *last > 0.5;
+    let reset_due = pending_reset.is_some_and(|at| now - at > 0.6);
     if tactics.ready && !stale && !reset_due {
         return;
     }
-    *pending_reset = false;
+    if pending_reset.is_some() && !reset_due {
+        return;
+    }
+    *pending_reset = None;
     *last = now;
     let started = std::time::Instant::now();
     let filter = SpatialQueryFilter::from_mask(GameLayer::World);
@@ -223,7 +226,7 @@ fn analyse_map(
         let mut holds = Vec::new();
         // Watch real openings; intact soft walls only if there are none.
         let openings = entrances.iter().any(|e| e.kind != LinkKind::Breach);
-        for (e_index, e) in entrances.iter().enumerate() {
+        for e in &entrances {
             if openings && e.kind == LinkKind::Breach {
                 continue;
             }
@@ -245,7 +248,7 @@ fn analyse_map(
                 // Off-angle: not straight down the opening.
                 let along = (p - e.inside).with_y(0.0).normalize_or_zero().dot(-e.out_dir);
                 let score = (d - 5.0).abs() * 0.4 + along.max(0.0) * 1.5 - if cover { 1.0 } else { 0.0 };
-                candidates.push((score, HoldSpot { pos: p, watch, entrance: e_index, cover }));
+                candidates.push((score, HoldSpot { pos: p, watch }));
             }
             candidates.sort_by(|a, b| a.0.total_cmp(&b.0));
             // Keep a few, spread apart.
@@ -296,7 +299,6 @@ fn analyse_map(
                         stand,
                         aim: gt.transform_point(Vec3::new(mid_u, 1.3, 0.0)),
                         crouch: false,
-                        hatch: false,
                     });
                 }
                 SurfaceRole::Hatch => {
@@ -312,7 +314,7 @@ fn analyse_map(
                         grid.locate(Vec3::new(hatch.x, site.floor + 0.2, hatch.z), 1).filter(|n| main[*n as usize]).and_then(|n| {
                             let p = grid.pos(n);
                             (grid.node(n).standable() && hatch.y - p.y < 3.4 && p.with_y(0.0).distance(hatch.with_y(0.0)) < 0.5)
-                                .then_some(WallJob { surface: entity, stand: p, aim: hatch - Vec3::Y * 0.03, crouch: false, hatch: true })
+                                .then_some(WallJob { surface: entity, stand: p, aim: hatch - Vec3::Y * 0.03, crouch: false })
                         })
                     } else {
                         let side = hatch + Vec3::new(0.0, 0.2, 0.9);
@@ -321,7 +323,6 @@ fn analyse_map(
                             stand: grid.pos(n),
                             aim: hatch,
                             crouch: true,
-                            hatch: true,
                         })
                     };
                     walls.extend(job);

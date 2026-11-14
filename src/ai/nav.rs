@@ -62,6 +62,9 @@ pub const SLOPE: u8 = 4;
 pub const BARRICADE: u8 = 8;
 /// Some of the 8 neighbours are not walk-linked (next to a wall or edge).
 pub const EDGE: u8 = 16;
+/// Next to a drop (the side of a stair ramp, a floor's edge): paths keep
+/// off these where they can, so nobody gets nudged over.
+pub const LEDGE: u8 = 32;
 
 const NO_LINK: u8 = 0xFF;
 const KIND_WALK: u8 = 0;
@@ -169,11 +172,6 @@ pub struct NavGrid {
 }
 
 impl NavGrid {
-    pub fn column(&self, p: Vec3) -> Option<IVec2> {
-        let c = ((Vec2::new(p.x, p.z) - self.origin) / self.cell).round().as_ivec2();
-        self.in_bounds(c).then_some(c)
-    }
-
     fn in_bounds(&self, c: IVec2) -> bool {
         c.x >= 0 && c.y >= 0 && c.x < self.nx && c.y < self.nz
     }
@@ -792,11 +790,16 @@ impl NavGrid {
     fn update_edge_flags(&mut self, c: IVec2) {
         for layer in self.layers(c) {
             let id = self.id(c, layer) as usize;
-            let all = self.nodes[id].links.iter().all(|&l| l != NO_LINK && l >> 4 == KIND_WALK);
-            if all {
-                self.nodes[id].flags &= !EDGE;
-            } else {
-                self.nodes[id].flags |= EDGE;
+            let links = self.nodes[id].links;
+            let all = links.iter().all(|&l| l != NO_LINK && l >> 4 == KIND_WALK);
+            let ledge = links.iter().any(|&l| l != NO_LINK && l >> 4 == KIND_DROP);
+            let flags = &mut self.nodes[id].flags;
+            *flags &= !(EDGE | LEDGE);
+            if !all {
+                *flags |= EDGE;
+            }
+            if ledge {
+                *flags |= LEDGE;
             }
         }
     }

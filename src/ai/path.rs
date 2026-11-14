@@ -14,7 +14,7 @@ use std::{cmp::Reverse, collections::BinaryHeap};
 
 use bevy::prelude::*;
 
-use super::nav::{BARRICADE, BreachLink, EDGE, LinkKind, NavGrid, NodeId, STAND};
+use super::nav::{BARRICADE, BreachLink, EDGE, LEDGE, LinkKind, NavGrid, NodeId, STAND};
 
 /// Reused search buffers (one search at a time).
 #[derive(Resource, Default)]
@@ -32,8 +32,10 @@ pub struct PathScratch {
 /// What a path may use.
 #[derive(Clone, Copy)]
 pub struct PathOptions {
-    /// Break through barricades (attackers).
-    pub barricades: bool,
+    /// Extra cost (metres) of breaking through a barricade; `None` = never.
+    /// Attackers break them routinely; defenders only as a last resort
+    /// (their own barricades shouldn't lock them out of a site).
+    pub barricades: Option<f32>,
     /// Blow through soft walls (carries breach charges).
     pub breach: bool,
     pub max_expansions: u32,
@@ -43,7 +45,6 @@ pub struct PathOptions {
 #[derive(Clone, Debug)]
 pub struct Waypoint {
     pub pos: Vec3,
-    pub node: NodeId,
     /// How the path arrives here.
     pub kind: LinkKind,
     /// Only crouching fits here.
@@ -63,14 +64,13 @@ pub struct Path {
     pub cost: f32,
 }
 
-impl Path {
-    pub fn goal(&self) -> Option<Vec3> {
-        self.points.last().map(|w| w.pos)
-    }
-}
-
 const COST_CROUCH: f32 = 1.8;
-const COST_BARRICADE: f32 = 6.0;
+/// Breaking a barricade, for attackers (metres of walking it's worth).
+pub const COST_BARRICADE: f32 = 6.0;
+/// The same for defenders: only when there's no other way.
+pub const COST_BARRICADE_DEFENDER: f32 = 40.0;
+const COST_EDGE: f32 = 0.25;
+const COST_LEDGE: f32 = 2.0;
 const COST_DROP: f32 = 1.5;
 const COST_BREACH: f32 = 14.0;
 
@@ -134,10 +134,14 @@ pub fn find_path(
                 LinkKind::Breach => continue,
             }
             if node.flags & BARRICADE != 0 {
-                if !options.barricades {
-                    continue;
-                }
-                cost += COST_BARRICADE;
+                let Some(extra) = options.barricades else { continue };
+                cost += extra;
+            }
+            // Keep off walls a little, and off ledges a lot.
+            if node.flags & LEDGE != 0 {
+                cost += COST_LEDGE;
+            } else if node.flags & EDGE != 0 {
+                cost += COST_EDGE;
             }
             if node.flags & STAND == 0 {
                 cost *= COST_CROUCH;
@@ -180,7 +184,6 @@ fn smooth(grid: &NavGrid, chain: &[(NodeId, LinkKind)], cost: f32) -> Path {
         };
         Waypoint {
             pos: grid.pos(node),
-            node,
             kind,
             crouch: n.flags & STAND == 0,
             blocker: if n.flags & BARRICADE != 0 { n.blocker } else { None },

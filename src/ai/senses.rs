@@ -3,8 +3,8 @@
 //! - **Sight** (every `senses.sight_interval` per bot, staggered): enemies
 //!   inside the bot's view cone (`fov`) and `sight_range`, checked with a
 //!   ray from the bot's eye to each of the enemy's hit zones (torso, head,
-//!   legs) against world geometry. Walls (soft or stone), floors and
-//!   closed barricades block sight; holes and gaps don't. Someone within
+//!   legs) against world geometry. Walls (soft or stone), floors, closed
+//!   barricades and smoke block sight; holes and gaps don't. Someone within
 //!   2.5 m is noticed whatever the angle.
 //! - **Hearing** (every tick): footsteps ([`Footstep`]) and other sounds
 //!   ([`Noise`]: gunfire, reloads, gadgets, explosions) within
@@ -23,7 +23,7 @@ use super::{AiSettings, AiSystems, Bot, BotState, angle_diff, angles_to, eye_pos
 use crate::{
     combat::{DamageMessage, Dead, Noise, NoiseKind, Team},
     config::Tuning,
-    gadgets::{Reveal, RevealSource},
+    gadgets::{Reveal, RevealSource, SmokeCloud, smoke_blocks},
     physics::GameLayer,
     player::{CharacterState, Footstep, HitZone, Player, PlayerInput},
     round::{Round, RoundPhase, sites::KeepLayout},
@@ -108,21 +108,6 @@ impl TeamIntel {
                 list.push(contact);
                 true
             }
-        }
-    }
-
-    /// The freshest contact within `radius` of `pos`, at most `max_age` old.
-    pub fn nearest(&self, team: Team, pos: Vec3, radius: f32, now: f32, max_age: f32) -> Option<Contact> {
-        self.known[side(team)]
-            .iter()
-            .filter(|c| now - c.time <= max_age && c.pos.distance(pos) <= radius)
-            .min_by(|a, b| a.pos.distance(pos).total_cmp(&b.pos.distance(pos)))
-            .copied()
-    }
-
-    pub fn forget_entity(&mut self, entity: Entity) {
-        for list in &mut self.known {
-            list.retain(|c| c.entity != Some(entity));
         }
     }
 
@@ -211,7 +196,6 @@ pub struct Heard {
     pub time: f32,
     pub loudness: f32,
     pub source: Option<Entity>,
-    pub gunfire: bool,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -258,7 +242,7 @@ fn hear(
             }
             let louder = state.senses.heard.is_none_or(|h| now - h.time > 1.0 || loudness >= h.loudness);
             if louder {
-                state.senses.heard = Some(Heard { pos, time: now, loudness, source, gunfire });
+                state.senses.heard = Some(Heard { pos, time: now, loudness, source });
             }
             heard_by[side(*team)] = true;
         }
@@ -325,6 +309,7 @@ fn take_reveals(
             let what = match reveal.source {
                 RevealSource::SeismicStake => "Stake ping",
                 RevealSource::SensorDart => "Dart picked up movement",
+                RevealSource::ProximityAlarm => "Proximity alarm",
             };
             callouts.write(Callout { team: reveal.for_team, from: None, text: format!("{what}: {area}") });
         }
@@ -339,6 +324,7 @@ fn see(
         Without<Dead>,
     >,
     enemies: Query<(Entity, &Transform, &Team), (With<Player>, Without<Dead>)>,
+    clouds: Query<&SmokeCloud>,
     cache: Res<ZoneCache>,
     mut intel: ResMut<TeamIntel>,
     mut callouts: MessageWriter<Callout>,
@@ -402,7 +388,8 @@ fn see(
                 let length = delta.length();
                 let blocked = spatial
                     .cast_ray(eye, dir, length, true, &filter)
-                    .is_some_and(|hit| hit.distance < length - 0.12);
+                    .is_some_and(|hit| hit.distance < length - 0.12)
+                    || smoke_blocks(eye, target, clouds.iter(), &tuning.round.gadgets.smoke);
                 if !blocked {
                     visible[i] = Some(target);
                 }

@@ -339,7 +339,8 @@ fn control_character(
 }
 
 /// Someone else's character arrived: give it a place in the world (its
-/// model comes from `bodies.rs`) and hit zones posed from its state.
+/// model comes from `characters/body.rs`) and hit zones posed from its
+/// state.
 fn watch_character(
     trigger: On<Add<NetPlayer>>,
     characters: Query<(

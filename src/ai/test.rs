@@ -90,7 +90,7 @@ impl Plugin for AiTestPlugin {
             .insert_resource(test)
             .add_systems(Startup, set_speed)
             .add_systems(PreUpdate, test_timers)
-            .add_systems(Update, (log_test, take_screenshots, quit_test).chain());
+            .add_systems(Update, (log_test, log_bots, take_screenshots, quit_test).chain());
     }
 }
 
@@ -516,7 +516,7 @@ fn nav_test(
             let a = grid.locate(*from + Vec3::Y * 0.3, 3);
             let b = grid.locate(*to + Vec3::Y * 0.3, 3);
             for attacker in [true, false] {
-                let options = super::path::PathOptions { barricades: attacker, breach: false, max_expansions: 200_000 };
+                let options = super::path::PathOptions { barricades: Some(if attacker { 6.0 } else { 40.0 }), breach: false, max_expansions: 200_000 };
                 let path = match (a, b) {
                     (Some(a), Some(b)) => super::path::find_path(&grid, &mut scratch, a, b, options, &|_| 0.0),
                     _ => None,
@@ -550,4 +550,35 @@ fn nav_test(
     }
     info!("navtest: {failures} failures");
     exit.write(AppExit::Success);
+}
+
+/// Every 5 s of game time: one line per bot (goal, where, path, fight).
+fn log_bots(
+    bots: Query<(&Name, &Transform, &crate::combat::Team, &crate::combat::Health, &BotState, Has<Dead>), With<Bot>>,
+    round: Res<Round>,
+    time: Res<Time>,
+    mut next: Local<f32>,
+) {
+    let now = time.elapsed_secs();
+    if now < *next || !round.phase.is_live() {
+        return;
+    }
+    *next = now + 5.0;
+    for (name, transform, team, health, state, dead) in &bots {
+        if dead {
+            continue;
+        }
+        let path = state.nav.path.as_ref().map_or(0, |p| p.points.len().saturating_sub(state.nav.index));
+        info!(
+            "bot {:<8} {:?} hp {:>3.0} at {:.1} goal {:?} -> {:?} path {path} arrived {} target {}",
+            name.as_str(),
+            team,
+            health.current,
+            transform.translation,
+            state.goal.kind,
+            state.goal.at.map(|p| (p * 10.0).round() / 10.0),
+            state.nav.arrived,
+            state.combat.target.is_some()
+        );
+    }
 }

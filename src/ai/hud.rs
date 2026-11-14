@@ -83,11 +83,20 @@ fn collect_kills(
     weapons: Query<&WeaponState>,
     local: Query<&Team, With<LocalPlayer>>,
     tuning: Res<crate::config::Tuning>,
+    mode: Res<crate::session::NetMode>,
     mut feeds: ResMut<Feeds>,
     time: Res<Time>,
 ) {
     let now = time.elapsed_secs();
     let lethal: Vec<BulletHit> = hits.read().filter(|h| h.lethal).cloned().collect();
+    // A client gets the server's hits but not its deaths: shots are the
+    // kills it can show.
+    let deaths: Vec<Died> = if mode.is_authority() {
+        died.read().cloned().collect()
+    } else {
+        died.read().count();
+        lethal.iter().map(|h| Died { entity: h.target, killer: Some(h.shooter) }).collect()
+    };
     let my_team = local.single().ok().copied();
     for event in events.read() {
         if let RoundEvent::PhaseStarted { phase: crate::round::RoundPhase::OperatorSelect, .. } = event {
@@ -95,7 +104,7 @@ fn collect_kills(
             feeds.kills.clear();
         }
     }
-    for death in died.read() {
+    for death in &deaths {
         // Only characters (gadgets die too).
         if !names.contains(death.entity) || teams.get(death.entity).is_err() {
             continue;

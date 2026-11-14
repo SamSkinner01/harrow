@@ -419,8 +419,8 @@ for a while; its light turns amber. Stakes can be shot.
 **Intel display.** Reveals are team data (`Reveal` messages); the HUD only
 draws your team's (`--show-all-intel` draws both, for testing).
 
-**Not yet:** overtime, a dead-player spectator view, character models for
-other players.
+**Not yet:** overtime, a dead-player spectator view. (Other characters
+are drawn by the M7 body system.)
 
 ## M6 part two: gadgets, drones and CCTV (implemented 2026-11-14)
 
@@ -654,8 +654,194 @@ Built by `tools/scripts/build_characters.sh` from one config per operator
   these bone names and baking per operator; the clip names, masks and the
   game side stay the same.
 - **Not yet:** prone aiming and reloading, strafe/backpedal clips, hair
-  meshes (short hair is a scalp tint under the headgear), real weapon
-  models (they attach to `weapon_r`, and should hide the prop carbine).
+  meshes (short hair is a scalp tint under the headgear). Real weapon
+  models attach to `weapon_r` with the prop carbine hidden (M7
+  `characters/body.rs`).
+
+## M7 bots (implemented 2026-11-14)
+
+Bots fill both squads: 5v5 by default (you plus 4 team mates against 5).
+Code: `src/ai/` (one file per concern, overview in `ai/mod.rs`) and the
+third-person bodies in `src/characters/body.rs`. Every number is in the
+`ai` section at the end of the tuning file.
+
+**Rules bots follow.** A bot is an ordinary character (health, team,
+squad, operator, loadout, weapons, hit zones) whose controller writes the
+same intent components a player's keyboard does (`PlayerInput`,
+`WeaponInput`, `DestructionIntent`, `RoundIntent`, `GadgetIntent`). It
+never touches simulation state, so recoil, spread, reload times, the
+plant timer and destruction apply to it exactly as to a person, and a
+server runs bots like any other simulation. They only run where the
+simulation runs (`session::simulating`; never on a client). They don't
+fire before the action phase (attackers are held at their spawn in prep).
+
+**Population.** `--bots N` (total; default 9 solo or hosting, 0 on a
+dedicated server), `--no-bots`, `--difficulty easy|normal|hard`. Bots
+are spawned when a session starts (`OnEnter(InGame)`), split so squads are
+even with the local player on Blue, and pick operators on the selection
+screen, spreading each side over the roster (with two operators per side,
+duplicates are unavoidable at 5v5). Bots carry `NetPlayer` (ids from
+`0xB07_0000_0000`), so clients see, place and draw them like players. On a
+host, a joining human takes a bot's place in their squad (a dead bot
+first, never the defuser carrier); a squad left short gets a bot back
+between rounds. Bots don't count towards the server's player limit.
+
+### Navigation
+
+Generated from the level's colliders once the map has loaded (no
+hand-placed data), so a new map just works:
+
+- **Grid:** columns every 0.4 m over the bounds of every finite world
+  collider plus the spawns, 6 m margin. A sphere (r 0.1 m, so bullet holes
+  don't punch gaps) is swept down each column through every collider;
+  each upward-facing surface no steeper than `movement.max_slope` is a
+  candidate floor (up to 4 levels per column: ground, upper floor, roof).
+  The floor's height and slope at the column centre come from a ray (the
+  sphere's contact normal is skewed at edges).
+- **Clearance:** an upright capsule (r 0.22, a bit under the 0.3 m body so
+  1 m doorways always contain a cell) lifted 12 cm off the floor must fit
+  standing, else crouching (crouch-only cell). A cell blocked only by an
+  intact barricade is kept and flagged: attackers path through it and
+  break it, defenders don't.
+- **Links** to the 8 neighbours: the height change must lie between the
+  two floors' slope predictions plus a 9 cm step (so stair ramps link up
+  and down but their sides are ledges), and three horizontal rays (knee,
+  chest, head) between the cells must be clear (thin walls, railings,
+  ceilings). Where a neighbour has no floor at this height but one up to
+  4.5 m below and a body-sized sphere falls through, a one-way **drop**
+  link is added (open hatches, blown floors, walking off a ledge). Plain
+  soft walls get two-way **breach** links (for attackers carrying breach
+  charges). Only the biggest walk-connected area counts as "the map" for
+  tactics (no hold spots on crate tops).
+- **Updates:** big holes (explosions, melee crouch holes), broken hatches
+  and barricades, new or removed surfaces (defender barricades) and round
+  resets mark their area dirty; it is re-sampled and re-linked a little at
+  a time (1.5 ms a frame) after colliders are rebuilt. Paths that cross a
+  changed area are re-planned.
+- **Cost:** the keep's grid (73 x 107 columns, ~8,700 nodes) builds in
+  ~150 ms spread over frames.
+- **Paths:** A* (metres walked, crouch-only x1.8, barricade +6 m, drop
+  +1.5 m, breach +14 m, plus per-caller penalties), at most 2 searches per
+  tick across all bots, then string-pulled along walk links but never
+  across edge cells, so paths keep off walls and go through the middle of
+  doorways. Local avoidance keeps bots 0.9 m apart (sidestepping to the
+  right head-on) and attackers moving carefully keep stack spacing.
+- **Stuck:** no progress for 1.5 s while trying to move is logged and
+  counted; the bot re-plans, then sidesteps, then hits whatever is in front.
+- `--ai-debug` draws the grid (green standing, yellow crouch-only, red
+  barricaded, blue drops, magenta breaches), bot paths, goals and aim
+  lines. `--ai-navtest` plans every spawn-to-site path and logs them;
+  `--ai-navdump x0,z0,x1,z1` dumps the columns along a line.
+
+### Senses and team knowledge
+
+- **Sight** (10 times a second per bot, staggered): enemies inside the
+  view cone (`fov`) and `sight_range`, with a ray from the eye to each hit
+  zone. Stone, soft walls, floors, closed barricades and smoke block it;
+  holes and gaps don't. Someone within 2.5 m is noticed at any angle.
+- **Hearing** (every tick): footsteps and `Noise` within
+  `loudness x 22 m x difficulty.hearing` (walk 11 m, sprint 22 m,
+  crouch-walk 2.6 m, gunshot 66 m), halved on another floor.
+- **Pain:** being shot reveals roughly where from.
+- **Team knowledge:** sightings, sounds, stake pings and dart reveals are
+  shared by the team for 5-8 s. New contacts become callouts ("Enemy
+  spotted: site A (storeroom)", "Movement heard: upper floor north"),
+  shown in the HUD to your team and logged. Place names are worked out
+  from the sites and the floor (map-independent).
+
+### Behaviour
+
+- **Defenders, prep:** anchors (most) and `roamers` (Fathoms first) share
+  jobs: reinforce the reinforceable walls and hatches around the sites (2
+  each, standing on the site side, hatches from below), Fathoms hammer
+  stakes 3 m outside the entrances, then anchors barricade the site
+  doorways. Unfinished jobs carry on for 20 s into the action phase.
+- **Defenders, action:** anchors hold *hold spots* (inside a site, 2.5-10 m
+  from an entrance with a line of sight to it, preferring cover and an
+  off-angle), crouching sometimes, swapping spots every 30-50 s when
+  quiet, turning towards anything heard or pinged nearby. Roamers move
+  between indoor spots away from the sites and go after fresh contacts.
+- **Attackers:** wait at their spawn in prep while a target site is
+  picked and a route planned. In action they split into two stacks; the
+  second avoids the first's route where the map allows. They run while
+  far, then walk within `careful_range`, checking corners (a fan of rays
+  finds depth jumps; they look past the nearest one) and pre-aiming the
+  openings on their path. Barricades on the path are meleed down; Augers
+  with breach charges can take breach links (stick the charge, back off,
+  wait for team mates to clear, set it off, go through). Larks fire sensor
+  darts at the site on the way in. The carrier plants as soon as it is
+  inside a site and no enemy is in sight; the others take hold spots
+  covering the entrances, then cover the defuser. A dropped defuser is
+  fetched by the nearest attacker.
+- **Planted:** the nearest defender goes to disable it (holds F once in
+  reach and no enemy in sight); the others cover around the device.
+- **Everyone:** breaks off to cover (a nearby spot out of the threat's
+  sight) below `retreat_health` in a fight, reloading there.
+
+### Combat
+
+- **Target:** the visible enemy already being fought, else the nearest
+  (weighted by how far the view must turn).
+- **Reaction:** first shot no sooner than `reaction_time` (+/- jitter,
+  more at the edge of the view, halved when a lost target reappears).
+- **Aim:** the view turns at `turn_speed` towards the chosen zone (head
+  with `head_aim` chance, else torso, else whatever shows) plus an error
+  starting at `aim_error` degrees that settles over `aim_settle` seconds;
+  a moving target drags the aim (`tracking_error`). The trigger is only
+  pulled when the aim is on the zone.
+- **Recoil:** the look angles pull against the weapon's recoil by
+  `recoil_control`, so long sprays still climb.
+- **Bursts:** `burst_close` rounds up close to `burst_far` at 25 m, with
+  `burst_pause` between; the sidearm is clicked.
+- **Stance:** aim down sights when fighting; crouch (`crouch_chance`) when
+  holding still; lean out from beside a wall (`lean_chance`).
+- **Ammo:** reload when empty (switch to the sidearm instead up close),
+  top up after the fight.
+- **Friendly fire:** no shot with a team mate in the line of fire.
+- **Through walls:** never at someone it can't see, except, rarely
+  (`wallbang_chance`, 0 on easy), a short burst at an enemy it just heard
+  behind a soft wall; the line is checked first and must cross only soft
+  surfaces. Shots at targets are spot-checked for stone in the way (logged
+  as `stone-shots`, which stays 0).
+
+| Preset | Reaction | Aim error / settle | Turn | Recoil control | Head | FOV / range | Wallbang |
+|---|---|---|---|---|---|---|---|
+| easy | 0.65 s | 7 deg / 0.6 s | 200 deg/s | 45% | 10% | 100 deg / 40 m | never |
+| normal | 0.4 s | 4.5 deg / 0.4 s | 300 deg/s | 70% | 30% | 110 deg / 60 m | 3%/s |
+| hard | 0.25 s | 2.5 deg / 0.25 s | 420 deg/s | 88% | 55% | 120 deg / 80 m | 12%/s |
+
+### HUD
+
+A kill feed (top left: killer, weapon, victim, headshot; your side's
+deaths in orange) and your team's callouts under it. On a client the
+feed is built from the server's forwarded hits.
+
+### Third-person bodies (`characters/body.rs`)
+
+Every `Player` without `LocalPlayer` (and without the opt-out `NoBody`)
+gets its operator model as a child, swapped when its round operator or
+side changes; a dedicated server draws none. Each frame it reads only:
+the (interpolated) transform, `CharacterState` (stance from height, lean),
+the drawn ground speed (or `LinearVelocity`), `PlayerInput.pitch` or
+`net::NetAim.pitch` (spine bend), `WeaponState` (active weapon, aiming,
+firing, reloading, lowered while holstering or holding the defuser) and
+`Dead` (tips over backwards, stands up when revived). The prop carbine is
+hidden and the active slot's real weapon `.glb` (the tuning file's
+`weapons.<slot>.model`, the same as the first-person view) is attached to
+the `weapon_r` bone (+90 degrees about X: the bone's +Y runs along the
+barrel). Shots show a muzzle flash, a flicker of light and a tracer on
+every other shot. So a remote player only needs those components
+replicated; nothing else is required.
+
+### Tests and cost
+
+`--ai-test` plays bot-only matches (the local player is a bot too) with
+`ai.test_timers`, logging every kill, plant, defuse, reinforcement,
+breach and stuck bot, a summary per round and match, and the frame rate;
+`--ai-matches N`, `--ai-speed X` (game clock speed), `--ai-shots DIR`
+(screenshots from a chase camera on a bot that is fighting), and
+`--ai-spectate`. Bot cost is measured every frame and logged every 10 s
+(`ai: cost ...`).
 
 ## M8 networking (implemented 2026-11-14)
 
@@ -743,11 +929,10 @@ next step for snappier shooting.
 
 Other characters are shown ~100 ms in the past, blended between server
 updates: `SimPosition`, `NetAim` (yaw/pitch), and `CharacterState`
-(height, lean). `net/bodies.rs` gives them their M5 operator model and
-drives `CharacterAnim` (speed, stance, lean) every frame; it is a seam to
-be replaced by the generic third-person body system (`characters/body.rs`,
-M7), which should read look angles from `NetAim` where a character has no
-`PlayerInput`. Hit zones exist on every machine, posed from the (predicted
+(height, lean). The generic third-person body system
+(`characters/body.rs`, M7; see "M7 bots") gives them their M5 operator
+model, drives `CharacterAnim` every frame and bends the spine to the look
+pitch, reading it from `NetAim` where a character has no `PlayerInput`. Hit zones exist on every machine, posed from the (predicted
 or interpolated) state.
 
 ### What is replicated

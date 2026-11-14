@@ -28,7 +28,7 @@ use super::{
     brain::{GoalKind, Pace, TeamPlans},
     eye_position, look_dir,
     nav::{LinkKind, NavGrid},
-    path::{Path, PathOptions, PathScratch, find_path},
+    path::{COST_BARRICADE, COST_BARRICADE_DEFENDER, Path, PathOptions, PathScratch, find_path},
     test::AiStats,
 };
 use crate::{
@@ -218,7 +218,7 @@ fn drive(
                 let from = grid.locate(feet, 3);
                 let to = grid.locate(target + Vec3::Y * 0.3, 3);
                 let options = PathOptions {
-                    barricades: *team == Team::Attackers,
+                    barricades: Some(if *team == Team::Attackers { COST_BARRICADE } else { COST_BARRICADE_DEFENDER }),
                     breach: *team == Team::Attackers
                         && charges_left.is_some_and(|c| c.0 > 0)
                         && now > state.nav.no_breach_until,
@@ -245,7 +245,11 @@ fn drive(
                         state.nav.failures += 1;
                         state.nav.next_plan = now + 1.0;
                         if state.nav.failures == 1 || state.nav.failures % 10 == 0 {
-                            debug!("ai: {name}: no path from {feet:.1} to {target:.1}");
+                            info!(
+                                "ai: {name}: no path from {feet:.1} (node {:?}) to {target:.1} (node {:?})",
+                                from.map(|n| grid.pos(n)),
+                                to.map(|n| grid.pos(n))
+                            );
                         }
                         stats.no_path += 1;
                     }
@@ -320,7 +324,9 @@ fn drive(
                                     .unwrap_or(from + away_dir * 3.0);
                                 state.nav.breach = BreachStep::BackingOff { since: now, from, away };
                                 state.buttons.charge = false;
-                            } else if now - since > 4.0 {
+                            } else if now - since > 4.0
+                                || surfaces.get(link.surface).is_ok_and(|(s, _)| s.is_reinforced())
+                            {
                                 info!("ai: {name} couldn't place a breach charge; going round");
                                 state.nav.breach = BreachStep::None;
                                 state.nav.no_breach_until = now + 30.0;
@@ -382,10 +388,16 @@ fn drive(
                 let d = away.length();
                 if d < b.avoid_radius {
                     let dir = if d > 1e-3 { away / d } else { Vec3::new(steer.z, 0.0, -steer.x) };
-                    push += dir * (1.0 - d / b.avoid_radius);
-                    // Head-on: both sidestep to their right.
-                    if steer.dot(-dir) > 0.7 {
-                        push += Vec3::new(-steer.z, 0.0, steer.x) * 0.5;
+                    let closeness = 1.0 - d / b.avoid_radius;
+                    let ahead = steer.dot(-dir);
+                    if ahead > 0.2 {
+                        // In the way: step round them (to whichever side
+                        // needs the smaller turn) rather than back off.
+                        let right = Vec3::new(-steer.z, 0.0, steer.x);
+                        let side = if right.dot(dir) >= 0.0 { right } else { -right };
+                        push += side * closeness * 0.8 + dir * closeness * 0.3;
+                    } else {
+                        push += dir * closeness * 0.6;
                     }
                 }
                 if *other_team == *team
@@ -398,10 +410,21 @@ fn drive(
                     slow = slow.min(0.35);
                 }
             }
-            steer = steer * slow + push * 1.3;
+            // Gentle on ramps and ledges: a shove there means a fall.
+            let footing = grid
+                .locate(feet, 0)
+                .map_or(0, |n| grid.node(n).flags & (super::nav::SLOPE | super::nav::LEDGE));
+            let push_weight = if footing != 0 { 0.35 } else { 1.0 };
+            steer = steer * slow + push * push_weight;
             if steer.length() > 1.0 {
                 steer = steer.normalize();
             }
+        }
+
+        // Standing still to shoot isn't being stuck.
+        let fighting = state.combat.target.is_some();
+        if fighting && state.combat.stand_still {
+            steer = Vec3::ZERO;
         }
 
         // --- Stuck -----------------------------------------------------------------
@@ -414,7 +437,13 @@ fn drive(
                 state.nav.stuck_count += 1;
                 stats.stuck += 1;
                 let n = state.nav.stuck_count;
-                info!("ai: {name} stuck at {feet:.2} (try {n}); goal {:?}", goal.at.map(|g| (g * 10.0).round() / 10.0));
+                let next = state.nav.path.as_ref().and_then(|p| p.points.get(state.nav.index)).map(|w| (w.pos, w.kind, w.crouch));
+                info!(
+                    "ai: {name} stuck at {feet:.2} (try {n}); goal {:?}, waypoint {:?}, steer {:.2}",
+                    goal.at.map(|g| (g * 10.0).round() / 10.0),
+                    next,
+                    steer
+                );
                 state.nav.path = None;
                 state.nav.next_plan = now;
                 if n >= 2 {
@@ -442,13 +471,9 @@ fn drive(
         }
 
         // --- Pace ------------------------------------------------------------------
-        let fighting = state.combat.target.is_some();
         let look = look_dir(input.yaw, 0.0);
         let forward = steer.dot(look) > 0.85;
         state.nav.sprint = matches!(goal.pace, Pace::Run) && !fighting && forward && !state.nav.crouch;
-        if fighting && state.combat.stand_still {
-            steer = Vec3::ZERO;
-        }
         state.nav.move_dir = steer;
 
         // --- Activities at the goal -------------------------------------------------

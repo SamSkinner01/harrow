@@ -871,9 +871,10 @@
         nav: (
             // Grid spacing, metres.
             cell: 0.4,
-            // Clearance radius tested at each cell (a bit under the 0.3 m
-            // body, so 1 m doorways always have a cell in them).
-            agent_radius: 0.22,
+            // Clearance radius tested at each cell (a little under the
+            // 0.3 m body: with 0.4 m cells, 1 m doorways still always have
+            // a cell in them, and gaps the body can't fit through don't).
+            agent_radius: 0.27,
             // Highest ledge a bot walks up without a ramp, metres.
             max_step: 0.09,
             // Furthest a bot will drop through a hole or hatch, metres.

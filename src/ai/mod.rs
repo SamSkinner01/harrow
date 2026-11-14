@@ -51,15 +51,18 @@ use avian3d::prelude::*;
 use bevy::prelude::*;
 
 use crate::{
-    combat::{Health, Team},
+    combat::{Dead, Health, Team},
     config::Tuning,
-    physics::GameLayer,
-    player::{CharacterState, HitZone, LocalPlayer, Player, PlayerInput, Stance},
+    net::NetPlayer,
+    player::{CharacterState, LocalPlayer, Player, PlayerInput, spawn_hitboxes},
     round::{
-        Round, RoundIntent, RoundPhase, RoundSettings, Squad, other_team,
+        Round, RoundIntent, RoundPhase, RoundSettings, Squad,
+        defuser::DefuserCarrier,
+        other_team,
         operators::{OperatorChoice, OperatorId},
         sites::KeepLayout,
     },
+    session::{AppState, NetMode, is_authority, simulating},
 };
 use tuning::DifficultyLevel;
 
@@ -71,7 +74,13 @@ impl Plugin for AiPlugin {
             .world()
             .get_resource::<RoundSettings>()
             .is_some_and(|s| s.enabled);
-        let settings = AiSettings::from_args(round_enabled);
+        // Bots fill teams by default for solo play and hosting; a dedicated
+        // server only gets them with `--bots`, a client never runs them.
+        let default_fill = app
+            .world()
+            .get_resource::<NetMode>()
+            .is_none_or(|m| matches!(m, NetMode::Offline | NetMode::Host { .. }));
+        let settings = AiSettings::from_args(round_enabled && default_fill);
         info!(
             "ai: {} bots, difficulty {:?}{}",
             settings.bots,
@@ -81,12 +90,21 @@ impl Plugin for AiPlugin {
         app.insert_resource(settings)
             .configure_sets(
                 FixedPreUpdate,
-                (AiSystems::Senses, AiSystems::Think, AiSystems::Act).chain(),
+                (AiSystems::Senses, AiSystems::Think, AiSystems::Act)
+                    .chain()
+                    // Bots only run where the simulation runs (never on a
+                    // client).
+                    .run_if(simulating),
             )
-            .add_systems(Startup, spawn_bots)
+            .init_resource::<BotRoster>()
+            .add_observer(take_over_local_player)
+            .add_systems(
+                OnEnter(AppState::InGame),
+                spawn_bots.run_if(is_authority),
+            )
             .add_systems(
                 FixedPreUpdate,
-                pick_operators.in_set(AiSystems::Think),
+                (pick_operators, keep_squads_filled).in_set(AiSystems::Think),
             )
             .add_plugins((
                 nav::NavPlugin,
@@ -152,6 +170,8 @@ impl AiSettings {
             "--lineup-state",
             "--screenshot-on-hit",
             "--dummies",
+            "--net-shoot-test",
+            "--gadget-test",
         ];
         let default_bots = if round_enabled && !solo_tests.iter().any(|f| has(f)) { 9 } else { 0 };
         let bots = if has("--no-bots") {
@@ -251,37 +271,40 @@ const RED_NAMES: [&str; 10] = [
     "Corvid", "Ember", "Flint", "Gorse", "Marten", "Pike", "Thorn", "Vesper", "Yarrow", "Zinc",
 ];
 
+/// `NetPlayer` ids for bots: far from netcode's client ids and the host's 0.
+const BOT_ID_BASE: u64 = 0xB07_0000_0000;
+
+/// Bots taking part this session, and the squad size they keep up.
+#[derive(Resource, Debug, Default)]
+pub struct BotRoster {
+    /// Players per squad the bots fill up to (humans count).
+    pub squad_size: u32,
+    /// Bots spawned so far (numbers names and ids).
+    pub spawned: u32,
+}
+
+/// A new session: fill both squads with bots (authority only).
+#[allow(clippy::too_many_arguments)]
 fn spawn_bots(
     mut commands: Commands,
     settings: Res<AiSettings>,
     round: Option<Res<RoundSettings>>,
     layout: Option<Res<KeepLayout>>,
     tuning: Res<Tuning>,
-    local: Query<Entity, With<LocalPlayer>>,
+    mode: Res<NetMode>,
+    mut roster: ResMut<BotRoster>,
 ) {
-    if settings.local_bot {
-        for entity in &local {
-            commands.entity(entity).insert((
-                Bot {
-                    index: 0,
-                    rng: Rng::new(7),
-                    next_sense: 0.0,
-                    next_think: 0.0,
-                },
-                BotState::default(),
-            ));
-        }
-    }
+    *roster = BotRoster::default();
     if settings.bots == 0 {
         return;
     }
-    // Even teams: the other squad gets the extra bot.
-    let red = settings.bots.div_ceil(2).max(1).min(settings.bots + 1);
-    let red = if settings.bots == 0 { 0 } else { red.min(settings.bots) };
+    // Even squads, with the local player (if any) on Blue: 9 bots = 5v5.
+    let humans = u32::from(mode.has_local_player());
+    roster.squad_size = (settings.bots + humans).div_ceil(2);
+    let red = roster.squad_size.min(settings.bots);
     let blue = settings.bots - red;
     let blue_side = round.map_or(Team::Attackers, |r| r.start_side);
-    let mut index = 1;
-    for (squad, count, names) in [(Squad::Blue, blue, &BLUE_NAMES), (Squad::Red, red, &RED_NAMES)] {
+    for (squad, count) in [(Squad::Blue, blue), (Squad::Red, red)] {
         let team = if squad == Squad::Blue { blue_side } else { other_team(blue_side) };
         for i in 0..count {
             let spawn = layout
@@ -291,30 +314,86 @@ fn spawn_bots(
             let (position, yaw) = spawn
                 .map(|s| (s.position, s.yaw))
                 .unwrap_or((Vec3::new(i as f32 * 1.5, 0.0, 14.0), 0.0));
-            let name = names[i as usize % names.len()];
-            spawn_bot(&mut commands, &tuning, name, squad, team, position, yaw, index);
-            index += 1;
+            spawn_bot(&mut commands, &tuning, &mut roster, squad, team, position, yaw);
         }
     }
-    info!("ai: spawned {blue} team mates and {red} opponents");
+    info!("ai: spawned {blue} team mates and {red} opponents ({} a side)", roster.squad_size);
+}
+
+/// `--ai-test` / `--ai-player`: the local player is driven by a bot brain.
+fn take_over_local_player(
+    add: On<Add<LocalPlayer>>,
+    settings: Res<AiSettings>,
+    mode: Res<NetMode>,
+    mut commands: Commands,
+) {
+    if settings.local_bot && mode.is_authority() {
+        commands.entity(add.entity).insert((
+            Bot {
+                index: 0,
+                rng: Rng::new(7),
+                next_sense: 0.0,
+                next_think: 0.0,
+            },
+            BotState::default(),
+        ));
+    }
+}
+
+/// Hosting: keep the squads at their size as people join and leave. A
+/// human joining takes a bot's place (a dead one first, never the defuser
+/// carrier); a squad left short gets a bot back between rounds.
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
+fn keep_squads_filled(
+    mode: Res<NetMode>,
+    round: Res<Round>,
+    mut roster: ResMut<BotRoster>,
+    members: Query<(Entity, &Squad, Has<Bot>, Has<LocalPlayer>, Has<Dead>, Has<DefuserCarrier>), With<Player>>,
+    layout: Option<Res<KeepLayout>>,
+    tuning: Res<Tuning>,
+    mut commands: Commands,
+) {
+    if !mode.is_server() || roster.squad_size == 0 {
+        return;
+    }
+    for squad in [Squad::Blue, Squad::Red] {
+        let mut in_squad: Vec<_> = members.iter().filter(|m| *m.1 == squad).collect();
+        let count = in_squad.len() as u32;
+        if count > roster.squad_size {
+            in_squad.sort_by_key(|m| (!m.4, m.5, std::cmp::Reverse(m.0)));
+            if let Some(bot) = in_squad.iter().find(|m| m.2 && !m.3 && !m.5) {
+                info!("ai: a player joined squad {squad:?}; bot {} leaves", bot.0);
+                commands.entity(bot.0).try_despawn();
+            }
+        } else if count < roster.squad_size
+            && matches!(round.phase, RoundPhase::OperatorSelect | RoundPhase::Inactive)
+        {
+            let team = round.side_of(squad);
+            let spawn = layout.as_ref().and_then(|l| l.spawns(team).get(count as usize % 5).copied());
+            let (position, yaw) = spawn.map(|s| (s.position, s.yaw)).unwrap_or((Vec3::new(0.0, 0.0, 14.0), 0.0));
+            info!("ai: squad {squad:?} is short; a bot joins");
+            spawn_bot(&mut commands, &tuning, &mut roster, squad, team, position, yaw);
+        }
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
 fn spawn_bot(
     commands: &mut Commands,
     tuning: &Tuning,
-    name: &str,
+    roster: &mut BotRoster,
     squad: Squad,
     team: Team,
     position: Vec3,
     yaw: f32,
-    index: u32,
 ) {
-    let height = tuning.body.stand_height;
+    roster.spawned += 1;
+    let index = roster.spawned;
+    let names = if squad == Squad::Blue { &BLUE_NAMES } else { &RED_NAMES };
+    let name = names[(index as usize - 1) % names.len()];
     commands
         .spawn((
             Name::new(name.to_string()),
-            Player,
             Bot {
                 index,
                 rng: Rng::new(index * 7919 + 13),
@@ -322,22 +401,18 @@ fn spawn_bot(
                 next_think: 0.0,
             },
             BotState::default(),
+            // Networked like a player, so clients see and place it.
+            NetPlayer {
+                id: BOT_ID_BASE + index as u64,
+                name: name.to_string(),
+            },
             squad,
             team,
             PlayerInput {
                 yaw,
                 ..default()
             },
-            CharacterState {
-                stance: Stance::Stand,
-                height,
-                lean: 0.0,
-                prev_height: height,
-                prev_lean: 0.0,
-                grounded: false,
-                sprinting: false,
-                stride: 0.0,
-            },
+            CharacterState::new(tuning.body.stand_height),
             Health::new(100.0),
             Transform::from_translation(position).with_rotation(Quat::from_rotation_y(yaw)),
             Visibility::default(),
@@ -348,21 +423,10 @@ fn spawn_bot(
                 LinearVelocity::ZERO,
             ),
         ))
-        .with_children(|parent| {
-            // Hit zones, like the local player's (placed every tick by the
-            // player module from `CharacterState`).
-            for zone in [HitZone::Head, HitZone::Torso, HitZone::Legs] {
-                let (radius, length) = zone.shape();
-                parent.spawn((
-                    Name::new(format!("{zone:?} hit zone")),
-                    zone,
-                    Collider::capsule(radius, length),
-                    Sensor,
-                    CollisionLayers::new(GameLayer::Hitbox, LayerMask::NONE),
-                    Transform::default(),
-                ));
-            }
-        });
+        // `Player` last, so its observers (weapons, round, gadgets,
+        // networking) see everything above.
+        .insert(Player)
+        .with_children(spawn_hitboxes);
 }
 
 /// On the selection screen every bot picks an operator, spreading each
