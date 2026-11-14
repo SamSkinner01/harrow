@@ -23,6 +23,10 @@ Models made in code (no external assets): the defuser device
 (`src/round/defuser.rs`), sensor darts and seismic stakes (`src/gadgets/`),
 and the bomb-site floor markings (`src/round/sites.rs`).
 
+Destruction (M4) is procedural (cell-grid meshes, debris, dust, the breach
+charge and reinforcement plates) and reuses the library materials above; it
+adds no external assets.
+
 ## Tools (not shipped with the game)
 
 | Tool | Licence | Notes |
