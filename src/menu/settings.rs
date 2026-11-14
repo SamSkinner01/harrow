@@ -48,7 +48,10 @@ impl MenuSettings {
         };
         match std::fs::read_to_string(&path) {
             Ok(text) => ron::from_str(&text).unwrap_or_else(|err| {
-                warn!("menu settings {} unreadable ({err}); using defaults", path.display());
+                warn!(
+                    "menu settings {} unreadable ({err}); using defaults",
+                    path.display()
+                );
                 Self::default()
             }),
             Err(_) => Self::default(),

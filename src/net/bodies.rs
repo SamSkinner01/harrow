@@ -96,12 +96,7 @@ fn attach_bodies(
 /// Drive the animation graph from the networked state.
 #[allow(clippy::type_complexity)]
 fn animate_bodies(
-    characters: Query<(
-        &RemoteBody,
-        &Transform,
-        Option<&CharacterState>,
-        Has<Dead>,
-    )>,
+    characters: Query<(&RemoteBody, &Transform, Option<&CharacterState>, Has<Dead>)>,
     mut models: Query<(&mut CharacterAnim, &mut Visibility), With<Character>>,
     mut last: Local<bevy::platform::collections::HashMap<Entity, Vec3>>,
     time: Res<Time>,
@@ -111,7 +106,11 @@ fn animate_bodies(
         let Ok((mut anim, mut visibility)) = models.get_mut(body.model) else {
             continue;
         };
-        visibility.set_if_neq(if dead { Visibility::Hidden } else { Visibility::Inherited });
+        visibility.set_if_neq(if dead {
+            Visibility::Hidden
+        } else {
+            Visibility::Inherited
+        });
         // Ground speed from how far the (interpolated) body moved.
         let at = transform.translation;
         let previous = last.insert(body.model, at).unwrap_or(at);

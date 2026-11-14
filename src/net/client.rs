@@ -194,7 +194,10 @@ fn receive_welcome(
                 next.set(AppState::MainMenu);
                 return;
             }
-            info!("net: joined \"{}\" at {}", welcome.server_name, client.server);
+            info!(
+                "net: joined \"{}\" at {}",
+                welcome.server_name, client.server
+            );
             commands.insert_resource(ServerInfo {
                 name: welcome.server_name,
                 address: client.server,
@@ -279,11 +282,17 @@ fn close_client(
     clients: Query<Entity, With<NetClient>>,
     replicated: Query<Entity, With<Remote>>,
     mut mode: ResMut<NetMode>,
+    time: Res<Time>,
     mut commands: Commands,
 ) {
     for client in &clients {
         commands.trigger(Disconnect { entity: client });
-        commands.entity(client).try_despawn();
+        // Keep the link a moment so the disconnect packets go out (the
+        // server sees "left" at once instead of a timeout).
+        commands
+            .entity(client)
+            .remove::<NetClient>()
+            .insert(super::DespawnAt(time.elapsed_secs() + 0.5));
     }
     for entity in &replicated {
         commands.entity(entity).try_despawn();
@@ -317,26 +326,28 @@ fn control_character(
         entity.insert(HasHitZones).with_children(spawn_hitboxes);
     }
     entity.insert((
-            LocalPlayer,
-            PlayerInput {
-                yaw,
-                ..default()
-            },
-            InputMarker::<NetInput>::default(),
-            DestructionIntent::default(),
-            Transform::from_translation(feet).with_rotation(Quat::from_rotation_y(yaw)),
-            Visibility::default(),
-            RigidBody::Kinematic,
-            CustomPositionIntegration,
-            TransformInterpolation,
-        ));
+        LocalPlayer,
+        PlayerInput { yaw, ..default() },
+        InputMarker::<NetInput>::default(),
+        DestructionIntent::default(),
+        Transform::from_translation(feet).with_rotation(Quat::from_rotation_y(yaw)),
+        Visibility::default(),
+        RigidBody::Kinematic,
+        CustomPositionIntegration,
+        TransformInterpolation,
+    ));
 }
 
 /// Someone else's character arrived: give it a place in the world (its
 /// model comes from `bodies.rs`) and hit zones posed from its state.
 fn watch_character(
     trigger: On<Add<NetPlayer>>,
-    characters: Query<(Has<Controlled>, Has<Remote>, Has<HasHitZones>, Option<&SimPosition>)>,
+    characters: Query<(
+        Has<Controlled>,
+        Has<Remote>,
+        Has<HasHitZones>,
+        Option<&SimPosition>,
+    )>,
     mut commands: Commands,
 ) {
     let Ok((controlled, remote, zoned, position)) = characters.get(trigger.entity) else {
@@ -357,7 +368,9 @@ fn watch_character(
 
 /// Start of every tick (including replayed ones): the predicted feet
 /// position is the truth.
-fn restore_predicted_position(mut players: Query<(&SimPosition, &mut Transform), With<Controlled>>) {
+fn restore_predicted_position(
+    mut players: Query<(&SimPosition, &mut Transform), With<Controlled>>,
+) {
     for (sim, mut transform) in &mut players {
         if transform.translation != sim.0 {
             transform.translation = sim.0;

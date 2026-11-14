@@ -29,7 +29,10 @@ use bevy::{
 };
 use lightyear::{
     input::native::prelude::{ActionState, InputMarker},
-    prelude::{client::input::InputSystems as ClientInputSystems, server::input::InputSystems as ServerInputSystems},
+    prelude::{
+        client::input::InputSystems as ClientInputSystems,
+        server::input::InputSystems as ServerInputSystems,
+    },
 };
 use serde::{Deserialize, Serialize};
 
@@ -148,10 +151,7 @@ impl Plugin for NetInputPlugin {
             FixedPreUpdate,
             (
                 capture_local_input.in_set(CaptureInputSystems),
-                (
-                    apply_movement_input,
-                    apply_buttons.run_if(is_authority),
-                )
+                (apply_movement_input, apply_buttons.run_if(is_authority))
                     .in_set(ApplyInputSystems),
             ),
         );
@@ -249,7 +249,11 @@ fn capture_local_input(
 /// local player (outside rollbacks this copies the same values back).
 fn apply_movement_input(
     replay: Replay,
-    mut players: Query<(&ActionState<NetInput>, &mut PlayerInput, Has<InputMarker<NetInput>>)>,
+    mut players: Query<(
+        &ActionState<NetInput>,
+        &mut PlayerInput,
+        Has<InputMarker<NetInput>>,
+    )>,
 ) {
     for (action, mut input, local) in &mut players {
         // Our own input is already in `PlayerInput`, except while replaying.

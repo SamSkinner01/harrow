@@ -14,7 +14,10 @@ mod settings;
 
 use bevy::{
     app::AppExit,
-    input::{ButtonState, keyboard::{Key, KeyboardInput}},
+    input::{
+        ButtonState,
+        keyboard::{Key, KeyboardInput},
+    },
     picking::hover::Hovered,
     prelude::*,
     ui::Pressed,
@@ -38,8 +41,14 @@ impl Plugin for MenuPlugin {
             .init_resource::<Paused>()
             .add_message::<MenuAction>()
             .add_observer(activated)
-            .add_systems(OnEnter(AppState::MainMenu), (spawn_main_menu, free_cursor, menu_backdrop))
-            .add_systems(OnEnter(AppState::Connecting), (spawn_connecting, free_cursor))
+            .add_systems(
+                OnEnter(AppState::MainMenu),
+                (spawn_main_menu, free_cursor),
+            )
+            .add_systems(
+                OnEnter(AppState::Connecting),
+                (spawn_connecting, free_cursor),
+            )
             .add_systems(OnEnter(AppState::InGame), capture_cursor_unless_automated)
             .add_systems(OnExit(AppState::InGame), close_pause)
             .add_systems(
@@ -50,6 +59,9 @@ impl Plugin for MenuPlugin {
                     run_menu_actions,
                     update_notice,
                     update_connecting_text.run_if(in_state(AppState::Connecting)),
+                    // Every frame: at startup the camera appears after the
+                    // first state is entered.
+                    menu_backdrop.run_if(not(in_state(AppState::InGame))),
                     (toggle_pause, recapture_on_click).run_if(in_state(AppState::InGame)),
                 ),
             );
@@ -125,6 +137,7 @@ fn panel(children: impl Bundle) -> impl Bundle {
             row_gap: px(10.0),
             padding: UiRect::all(px(24.0)),
             min_width: px(420.0),
+            max_width: px(620.0),
             ..default()
         },
         BackgroundColor(PANEL),
@@ -234,7 +247,12 @@ fn spawn_connecting(mut commands: Commands) {
     commands.spawn(screen(
         (Name::new("Connecting"), DespawnOnExit(AppState::Connecting)),
         children![panel(children![
-            (ConnectingText, Text::new("Connecting..."), font(22.0), TextColor(TEXT)),
+            (
+                ConnectingText,
+                Text::new("Connecting..."),
+                font(22.0),
+                TextColor(TEXT)
+            ),
             button(MenuButton::Cancel, "Cancel"),
         ])],
     ));
@@ -254,12 +272,15 @@ fn spawn_pause(commands: &mut Commands) {
 
 /// The main menu looks over the courtyard at the keep.
 fn menu_backdrop(mut camera: Query<&mut Transform, With<PlayerCamera>>) {
+    let view = Transform::from_xyz(15.5, 5.5, 21.0).looking_at(Vec3::new(6.0, 2.0, -3.0), Vec3::Y);
     for mut transform in &mut camera {
-        *transform = Transform::from_xyz(15.5, 5.5, 21.0).looking_at(Vec3::new(6.0, 2.0, -3.0), Vec3::Y);
+        transform.set_if_neq(view);
     }
 }
 
-fn button_colors(mut buttons: Query<(&Hovered, Has<Pressed>, &mut BackgroundColor), With<MenuButton>>) {
+fn button_colors(
+    mut buttons: Query<(&Hovered, Has<Pressed>, &mut BackgroundColor), With<MenuButton>>,
+) {
     for (hovered, pressed, mut color) in &mut buttons {
         let wanted = if pressed {
             BUTTON_PRESS
@@ -335,16 +356,18 @@ fn run_menu_actions(
                 *mode = NetMode::Offline;
                 next.set(AppState::InGame);
             }
-            (MenuButton::Host, AppState::MainMenu) => match field_value(FieldKind::Port, &fields).parse::<u16>() {
-                Ok(port) if port > 0 => {
-                    notice.0 = None;
-                    settings.host_port = port;
-                    settings.save();
-                    *mode = NetMode::Host { port };
-                    next.set(AppState::InGame);
+            (MenuButton::Host, AppState::MainMenu) => {
+                match field_value(FieldKind::Port, &fields).parse::<u16>() {
+                    Ok(port) if port > 0 => {
+                        notice.0 = None;
+                        settings.host_port = port;
+                        settings.save();
+                        *mode = NetMode::Host { port };
+                        next.set(AppState::InGame);
+                    }
+                    _ => notice.0 = Some("The port must be a number from 1 to 65535".into()),
                 }
-                _ => notice.0 = Some("The port must be a number from 1 to 65535".into()),
-            },
+            }
             (MenuButton::Join, AppState::MainMenu) => {
                 let raw = field_value(FieldKind::Address, &fields);
                 match resolve_address(&raw) {
@@ -488,7 +511,11 @@ fn set_paused(
         spawn_pause(commands);
     }
     for mut cursor in cursor.iter_mut() {
-        cursor.grab_mode = if open { CursorGrabMode::None } else { CursorGrabMode::Locked };
+        cursor.grab_mode = if open {
+            CursorGrabMode::None
+        } else {
+            CursorGrabMode::Locked
+        };
         cursor.visible = open;
     }
 }
@@ -523,7 +550,11 @@ fn recapture_on_click(
     }
 }
 
-fn close_pause(mut paused: ResMut<Paused>, menus: Query<Entity, With<PauseMenu>>, mut commands: Commands) {
+fn close_pause(
+    mut paused: ResMut<Paused>,
+    menus: Query<Entity, With<PauseMenu>>,
+    mut commands: Commands,
+) {
     paused.0 = false;
     for menu in &menus {
         commands.entity(menu).despawn();

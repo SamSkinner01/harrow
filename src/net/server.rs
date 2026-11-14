@@ -60,7 +60,13 @@ impl Plugin for ServerPlugin {
             .add_observer(network_character)
             .add_systems(
                 Update,
-                (receive_hello, kick_refused, idle_empty_server, check_started).run_if(is_server),
+                (
+                    receive_hello,
+                    kick_refused,
+                    idle_empty_server,
+                    check_started,
+                )
+                    .run_if(is_server),
             )
             .add_systems(
                 FixedUpdate,
@@ -141,10 +147,14 @@ fn start_server(
     commands.insert_resource(ReplicationMetadata::new(super::tick_duration()));
 }
 
-fn stop_server(servers: Query<Entity, With<NetServer>>, mut commands: Commands) {
+fn stop_server(servers: Query<Entity, With<NetServer>>, time: Res<Time>, mut commands: Commands) {
     for server in &servers {
         commands.trigger(Stop { entity: server });
-        commands.entity(server).despawn();
+        // A moment to tell the clients before the endpoint goes away.
+        commands
+            .entity(server)
+            .remove::<NetServer>()
+            .insert(super::DespawnAt(time.elapsed_secs() + 0.5));
         info!("net: server stopped");
     }
 }
@@ -187,7 +197,9 @@ fn client_connected(
         return;
     };
     info!("net: client {} connected, waiting for hello", remote.0);
-    commands.entity(trigger.entity).insert(ClientInfo::default());
+    commands
+        .entity(trigger.entity)
+        .insert(ClientInfo::default());
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -212,8 +224,12 @@ fn receive_hello(
     time: Res<Time>,
     mut commands: Commands,
 ) {
-    let server_name = config.as_ref().map_or_else(|| "Harrow".to_string(), |c| c.name.clone());
+    let server_name = config
+        .as_ref()
+        .map_or_else(|| "Harrow".to_string(), |c| c.name.clone());
     let max_players = config.as_ref().map_or(10, |c| c.max_players);
+    // Characters spawned this frame aren't in `players` yet.
+    let mut joined = [0usize; 2];
     for (link, remote, mut hello, mut welcome, mut refused, mut info) in &mut links {
         for message in hello.receive() {
             if info.character.is_some() {
@@ -226,7 +242,9 @@ fn receive_hello(
                      Everyone needs the same build (same commit).",
                     message.build
                 ))
-            } else if players.iter().filter(|p| p.2).count() as u32 >= max_players {
+            } else if (players.iter().filter(|p| p.2).count() + joined[0] + joined[1]) as u32
+                >= max_players
+            {
                 Some(format!("Server full ({max_players} players)"))
             } else {
                 None
@@ -234,20 +252,23 @@ fn receive_hello(
             if let Some(reason) = reason {
                 warn!("net: refusing {name} ({}): {reason}", remote.0);
                 refused.send::<ControlChannel>(Refused { reason });
-                commands.entity(link).insert(KickAt(time.elapsed_secs() + 0.5));
+                commands
+                    .entity(link)
+                    .insert(KickAt(time.elapsed_secs() + 0.5));
                 continue;
             }
             // Balance squads: join the smaller one (ties: Red, since the
             // host is Blue).
-            let blue = players.iter().filter(|p| p.1 == Some(&Squad::Blue)).count();
-            let red = players.iter().filter(|p| p.1 == Some(&Squad::Red)).count();
+            let blue = players.iter().filter(|p| p.1 == Some(&Squad::Blue)).count() + joined[0];
+            let red = players.iter().filter(|p| p.1 == Some(&Squad::Red)).count() + joined[1];
             let squad = if blue < red { Squad::Blue } else { Squad::Red };
+            joined[usize::from(squad == Squad::Red)] += 1;
             let team = round.side_of(squad);
             let late = matches!(
                 round.phase,
                 RoundPhase::Prep | RoundPhase::Action | RoundPhase::Planted | RoundPhase::RoundEnd
             );
-            let index = players.iter().filter(|p| p.1.is_some()).count();
+            let index = blue + red;
             let (position, yaw) = spawn_spot(&round, &layout, &spawn_point, team, index);
             let character = spawn_client_character(
                 &mut commands,
@@ -273,7 +294,11 @@ fn receive_hello(
             info!(
                 "net: {name} ({}) joined squad {squad:?} ({team:?}){}",
                 remote.0,
-                if late { ", spectating until the next round" } else { "" }
+                if late {
+                    ", spectating until the next round"
+                } else {
+                    ""
+                }
             );
         }
     }
@@ -281,7 +306,13 @@ fn receive_hello(
 
 /// Where a new character appears: its team's spawns during a round, near
 /// the map's spawn point in free play.
-fn spawn_spot(round: &Round, layout: &KeepLayout, spawn: &SpawnPoint, team: Team, index: usize) -> (Vec3, f32) {
+fn spawn_spot(
+    round: &Round,
+    layout: &KeepLayout,
+    spawn: &SpawnPoint,
+    team: Team,
+    index: usize,
+) -> (Vec3, f32) {
     let spawns = layout.spawns(team);
     if round.phase != RoundPhase::Inactive && !spawns.is_empty() {
         let s = spawns[(index + 1) % spawns.len()];
@@ -328,10 +359,7 @@ fn spawn_client_character(
         },
         squad,
         team,
-        PlayerInput {
-            yaw,
-            ..default()
-        },
+        PlayerInput { yaw, ..default() },
         ActionState::<NetInput>::default(),
         SeenPresses::default(),
         CharacterState::new(tuning.body.stand_height),
@@ -369,7 +397,13 @@ fn spawn_client_character(
 fn network_character(
     trigger: On<Add<Player>>,
     mode: Res<NetMode>,
-    characters: Query<(&Transform, Option<&PlayerInput>, Has<LocalPlayer>, Has<ControlledBy>, Has<NetPlayer>)>,
+    characters: Query<(
+        &Transform,
+        Option<&PlayerInput>,
+        Has<LocalPlayer>,
+        Has<ControlledBy>,
+        Has<NetPlayer>,
+    )>,
     launch: Res<Launch>,
     mut commands: Commands,
 ) {
@@ -404,7 +438,9 @@ fn network_character(
 
 /// After every tick: the networked copies of movement state (feet
 /// position, look angles) of every character simulated here.
-fn write_sim_state(mut characters: Query<(&Transform, &PlayerInput, &mut SimPosition, &mut NetAim)>) {
+fn write_sim_state(
+    mut characters: Query<(&Transform, &PlayerInput, &mut SimPosition, &mut NetAim)>,
+) {
     for (transform, input, mut sim, mut aim) in &mut characters {
         sim.set_if_neq(SimPosition(transform.translation));
         aim.set_if_neq(NetAim {
@@ -437,7 +473,11 @@ fn client_disconnected(
     };
     info!(
         "net: {} ({}) left: {}",
-        if info.name.is_empty() { "a client" } else { &info.name },
+        if info.name.is_empty() {
+            "a client"
+        } else {
+            &info.name
+        },
         remote.map_or_else(|| "?".to_string(), |r| r.0.to_string()),
         disconnected.reason
     );
@@ -447,7 +487,13 @@ fn client_disconnected(
     if let Ok((transform, carrier)) = characters.get(character) {
         if carrier && let Some(assets) = assets {
             let position = transform.translation;
-            spawn_device_model(&mut commands, &assets, position, 0.0, (Name::new("Dropped defuser"), DroppedDefuser));
+            spawn_device_model(
+                &mut commands,
+                &assets,
+                position,
+                0.0,
+                (Name::new("Dropped defuser"), DroppedDefuser),
+            );
             events.write(RoundEvent::DefuserDropped { position });
         }
         commands.entity(character).try_despawn();
@@ -461,14 +507,23 @@ fn revive_spectators(
     spectators: Query<Entity, (With<Player>, With<Dead>, Without<Health>)>,
     mut commands: Commands,
 ) {
-    let new_round = events
-        .read()
-        .any(|e| matches!(e, RoundEvent::PhaseStarted { phase: RoundPhase::OperatorSelect, .. }));
+    let new_round = events.read().any(|e| {
+        matches!(
+            e,
+            RoundEvent::PhaseStarted {
+                phase: RoundPhase::OperatorSelect,
+                ..
+            }
+        )
+    });
     if !new_round {
         return;
     }
     for entity in &spectators {
-        commands.entity(entity).remove::<Dead>().insert(Health::new(100.0));
+        commands
+            .entity(entity)
+            .remove::<Dead>()
+            .insert(Health::new(100.0));
         info!("net: {entity} joins the round");
     }
 }

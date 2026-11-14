@@ -32,12 +32,12 @@ use crate::{
     combat::{Dead, Health, Team},
     gadgets::{GadgetEvent, GadgetOwner, Reveal, SeismicStake, SensorDart, UniqueGadget},
     player::{CharacterState, Player},
-    weapons::{BulletHit, MoveSpeedScale, ShotFired, WeaponEvent, WeaponState},
     round::{
         MovementLock, ObjectiveInteraction, Round, RoundEvent, Squad,
         defuser::{DefuserCarrier, DefuserDevice, DroppedDefuser},
         operators::{Operator, OperatorChoice},
     },
+    weapons::{BulletHit, MoveSpeedScale, ShotFired, WeaponEvent, WeaponState},
 };
 
 pub struct ProtocolPlugin;

@@ -44,11 +44,7 @@ pub mod tuning_sync;
 use std::time::Duration;
 
 use bevy::{ecs::system::SystemParam, prelude::*};
-use lightyear::prelude::{
-    PredictionManager,
-    client::ClientPlugins,
-    server::ServerPlugins,
-};
+use lightyear::prelude::{PredictionManager, client::ClientPlugins, server::ServerPlugins};
 
 pub use protocol::{NetAim, NetPlayer, RoundSync, SimPosition};
 
@@ -138,7 +134,49 @@ impl Plugin for NetPlugin {
             PreUpdate,
             PlayerInputSystems.after(lightyear::prelude::PredictionSystems::Rollback),
         )
-        .add_systems(OnExit(AppState::InGame), forget_prediction);
+        .add_systems(OnExit(AppState::InGame), forget_prediction)
+        .add_systems(Update, despawn_closed_links)
+        .add_systems(
+            PostUpdate,
+            say_goodbye_on_exit.before(lightyear::prelude::LinkSystems::Send),
+        );
+    }
+}
+
+/// Quitting (window closed, Ctrl+C, SIGTERM): tell the other side now, so
+/// it doesn't wait for a timeout. The goodbye packets go out with this
+/// frame's last send.
+fn say_goodbye_on_exit(
+    mut exit: MessageReader<AppExit>,
+    clients: Query<Entity, (With<lightyear::prelude::client::Client>, With<lightyear::prelude::Connected>)>,
+    servers: Query<Entity, With<lightyear::prelude::server::Started>>,
+    mut commands: Commands,
+) {
+    if exit.read().next().is_none() {
+        return;
+    }
+    for client in &clients {
+        commands.trigger(lightyear::prelude::client::Disconnect { entity: client });
+    }
+    for server in &servers {
+        commands.trigger(lightyear::prelude::server::Stop { entity: server });
+    }
+}
+
+/// A closed link or server endpoint, despawned once its goodbye packets
+/// are out.
+#[derive(Component)]
+struct DespawnAt(f32);
+
+fn despawn_closed_links(
+    links: Query<(Entity, &DespawnAt)>,
+    time: Res<Time>,
+    mut commands: Commands,
+) {
+    for (entity, at) in &links {
+        if time.elapsed_secs() >= at.0 {
+            commands.entity(entity).try_despawn();
+        }
     }
 }
 

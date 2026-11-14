@@ -13,7 +13,8 @@
 //!   what the server replicates; see `src/net/`.
 //! - [`Launch`]: the command line. Any `--flag` skips the menu and goes
 //!   straight in (solo unless `--host`, `--connect` or `--server` says
-//!   otherwise), so every automated test keeps working unchanged.
+//!   otherwise), so every automated test keeps working unchanged;
+//!   `--menu` starts at the menu anyway.
 //!
 //! Gameplay modules gate their fixed-tick simulation with the run
 //! conditions here ([`simulating`]); `NetPlugin` already applies them to
@@ -135,6 +136,8 @@ pub struct Launch {
     pub mode: Option<NetMode>,
     /// Any `--flag` was given: skip the main menu.
     pub skip_menu: bool,
+    /// `--menu`: start at the main menu anyway (e.g. with `--screenshot`).
+    pub force_menu: bool,
     /// `--server`: headless, no window/audio/input devices.
     pub dedicated: bool,
     /// `--config path` (dedicated server settings).
@@ -205,6 +208,7 @@ impl Launch {
         } else if has("--solo") {
             launch.mode = Some(NetMode::Offline);
         }
+        launch.force_menu = has("--menu") && !launch.dedicated;
         launch.config = value("--config").map(Into::into);
         launch.name = value("--name");
         launch.shoot_test = has("--net-shoot-test");
@@ -227,6 +231,9 @@ impl Launch {
     }
 
     fn initial_state(&self) -> AppState {
+        if self.force_menu {
+            return AppState::MainMenu;
+        }
         match (&self.mode, self.skip_menu) {
             (Some(NetMode::Client { .. }), _) => AppState::Connecting,
             (Some(_), _) | (None, true) => AppState::InGame,
@@ -259,7 +266,12 @@ pub fn resolve_address(raw: &str) -> Result<SocketAddr, String> {
         .ok_or_else(|| format!("can't resolve {raw:?}"))
 }
 
-fn log_state_changes(state: Res<State<AppState>>, mode: Res<NetMode>, launch: Res<Launch>, mut once: Local<bool>) {
+fn log_state_changes(
+    state: Res<State<AppState>>,
+    mode: Res<NetMode>,
+    launch: Res<Launch>,
+    mut once: Local<bool>,
+) {
     if !*once {
         *once = true;
         for err in &launch.errors {

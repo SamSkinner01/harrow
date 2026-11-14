@@ -10,22 +10,24 @@ use lightyear::prelude::PredictionMetrics;
 
 use super::NetPlayer;
 use crate::{
-    destruction::SurfaceChanged,
-    weapons::{BulletHit, ShotFired},
-};
-use crate::{
     combat::{Dead, Health, Team},
     player::LocalPlayer,
     round::Round,
     session::{AppState, NetMode},
+};
+use crate::{
+    destruction::SurfaceChanged,
+    weapons::{BulletHit, ShotFired},
 };
 
 pub(super) struct NetTracePlugin;
 
 impl Plugin for NetTracePlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<Counts>()
-            .add_systems(Update, (count, trace.run_if(on_timer(Duration::from_secs(1)))).chain());
+        app.init_resource::<Counts>().add_systems(
+            Update,
+            (count, trace.run_if(on_timer(Duration::from_secs(1)))).chain(),
+        );
     }
 }
 

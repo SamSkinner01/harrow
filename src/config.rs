@@ -209,6 +209,7 @@ pub struct WeaponEffectsTuning {
     pub impact_time: f32,
     pub max_impacts: usize,
     pub hit_marker_time: f32,
+    #[cfg_attr(not(feature = "client"), allow(dead_code))] // sounds only
     pub volume: f32,
 }
 
@@ -360,6 +361,7 @@ pub struct RoundTuning {
     pub darts: DartTuning,
     pub stakes: StakeTuning,
     pub intel: IntelTuning,
+    #[cfg_attr(not(feature = "client"), allow(dead_code))] // sounds only
     pub volume: f32,
 }
 

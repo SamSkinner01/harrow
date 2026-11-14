@@ -19,9 +19,12 @@ use std::{io::IsTerminal, path::Path, time::Duration};
 
 use bevy::{
     app::ScheduleRunnerPlugin,
-    log::{BoxedFmtLayer, LogPlugin, Level, tracing_subscriber},
+    log::{BoxedFmtLayer, Level, LogPlugin, tracing_subscriber},
     prelude::*,
-    render::{RenderPlugin, settings::{RenderCreation, WgpuSettings}},
+    render::{
+        RenderPlugin,
+        settings::{RenderCreation, WgpuSettings},
+    },
     window::ExitCondition,
 };
 use serde::Deserialize;
@@ -117,7 +120,8 @@ impl ServerConfig {
     fn load(path: &Path) -> Result<Self, String> {
         let text = std::fs::read_to_string(path)
             .map_err(|err| format!("can't read server config {}: {err}", path.display()))?;
-        ron::from_str(&text).map_err(|err| format!("server config {} is invalid: {err}", path.display()))
+        ron::from_str(&text)
+            .map_err(|err| format!("server config {} is invalid: {err}", path.display()))
     }
 
     fn level(&self) -> Level {
@@ -152,13 +156,24 @@ pub fn headless_plugins(config: &ServerConfig) -> impl PluginGroup {
             fmt_layer: plain_stdout_logs,
             ..default()
         })
-        .add(ScheduleRunnerPlugin::run_loop(Duration::from_secs_f64(1.0 / TICK_HZ)));
+        .add(ScheduleRunnerPlugin::run_loop(Duration::from_secs_f64(
+            1.0 / TICK_HZ,
+        )));
     #[cfg(feature = "client")]
     let plugins = plugins
         .disable::<bevy::winit::WinitPlugin>()
         .disable::<bevy::audio::AudioPlugin>()
         .disable::<bevy::gilrs::GilrsPlugin>();
     plugins
+}
+
+/// A server has no ears: sounds started by presentation code (client build
+/// only) are removed instead of piling up.
+#[cfg(feature = "client")]
+pub fn drop_sounds(sounds: Query<Entity, With<bevy::audio::AudioPlayer>>, mut commands: Commands) {
+    for sound in &sounds {
+        commands.entity(sound).despawn();
+    }
 }
 
 /// Log lines to stdout; colours only on a terminal (journald gets plain
@@ -194,8 +209,16 @@ impl Plugin for ServerConfigPlugin {
                 config.map,
                 config.port,
                 config.max_players,
-                if config.round_loop { "on" } else { "off (free play)" },
-                if config.round.test_timers { " (test timers)" } else { "" },
+                if config.round_loop {
+                    "on"
+                } else {
+                    "off (free play)"
+                },
+                if config.round.test_timers {
+                    " (test timers)"
+                } else {
+                    ""
+                },
             )
         });
     }
@@ -207,7 +230,11 @@ fn apply_round_settings(config: Res<ServerConfig>, mut settings: ResMut<RoundSet
     settings.enabled = false;
 }
 
-fn apply_round_tuning(config: Res<ServerConfig>, mut tuning: ResMut<Tuning>, mut done: Local<bool>) {
+fn apply_round_tuning(
+    config: Res<ServerConfig>,
+    mut tuning: ResMut<Tuning>,
+    mut done: Local<bool>,
+) {
     if *done && !tuning.is_changed() {
         return;
     }

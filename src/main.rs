@@ -41,13 +41,13 @@ fn main() -> AppExit {
         launch.mode = Some(NetMode::Dedicated { port: config.port });
         app.add_plugins(net::dedicated::headless_plugins(&config))
             .insert_resource(map::MapOverride(config.map.clone()))
-            // Nobody to play sounds for; no mouse to grab.
-            .insert_resource(player::AutomatedRun)
             .add_plugins(ServerConfigPlugin { config, error });
         // The client build compiles the sound code: give it somewhere to
-        // put the (never played) sounds, since the audio plugin is off.
+        // put the sounds and drop any that get started, since the audio
+        // plugin is off.
         #[cfg(feature = "client")]
-        app.init_asset::<bevy::audio::AudioSource>();
+        app.init_asset::<bevy::audio::AudioSource>()
+            .add_systems(Last, net::dedicated::drop_sounds);
     } else {
         #[cfg(feature = "client")]
         app.add_plugins(DefaultPlugins.set(WindowPlugin {

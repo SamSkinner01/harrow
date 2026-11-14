@@ -13,7 +13,9 @@ use lightyear::prelude::*;
 
 use super::RoundSync;
 use crate::{
-    gadgets::{DartState, GadgetAssets, SeismicStake, SensorDart, attach_dart_model, attach_stake_model},
+    gadgets::{
+        DartState, GadgetAssets, SeismicStake, SensorDart, attach_dart_model, attach_stake_model,
+    },
     round::{
         Round,
         defuser::{DefuserAssets, DefuserDevice, DroppedDefuser, attach_device_model},
@@ -25,24 +27,27 @@ pub(super) struct RoundSyncPlugin;
 
 impl Plugin for RoundSyncPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(OnEnter(AppState::InGame), spawn_round_sync.run_if(is_server))
-            .add_systems(OnExit(AppState::InGame), despawn_round_sync)
-            .add_systems(Update, publish_round.run_if(is_server))
-            .add_systems(
-                PreUpdate,
-                apply_round
-                    .run_if(is_client)
-                    .after(ReplicationSystems::Receive),
-            )
-            .add_systems(Update, show_dart_lights.run_if(is_client))
-            .add_observer(replicate_spawned::<DefuserDevice>)
-            .add_observer(replicate_spawned::<DroppedDefuser>)
-            .add_observer(replicate_spawned::<SensorDart>)
-            .add_observer(replicate_spawned::<SeismicStake>)
-            .add_observer(device_arrived)
-            .add_observer(dropped_arrived)
-            .add_observer(dart_arrived)
-            .add_observer(stake_arrived);
+        app.add_systems(
+            OnEnter(AppState::InGame),
+            spawn_round_sync.run_if(is_server),
+        )
+        .add_systems(OnExit(AppState::InGame), despawn_round_sync)
+        .add_systems(Update, publish_round.run_if(is_server))
+        .add_systems(
+            PreUpdate,
+            apply_round
+                .run_if(is_client)
+                .after(ReplicationSystems::Receive),
+        )
+        .add_systems(Update, show_dart_lights.run_if(is_client))
+        .add_observer(replicate_spawned::<DefuserDevice>)
+        .add_observer(replicate_spawned::<DroppedDefuser>)
+        .add_observer(replicate_spawned::<SensorDart>)
+        .add_observer(replicate_spawned::<SeismicStake>)
+        .add_observer(device_arrived)
+        .add_observer(dropped_arrived)
+        .add_observer(dart_arrived)
+        .add_observer(stake_arrived);
     }
 }
 
@@ -81,7 +86,11 @@ fn apply_round(sync: Query<Ref<RoundSync>>, mut round: ResMut<Round>) {
 
 /// Server: objective and gadget entities are replicated to everyone. Their
 /// mesh children are local (clients build their own).
-fn replicate_spawned<C: Component>(trigger: On<Add<C>>, mode: Res<NetMode>, mut commands: Commands) {
+fn replicate_spawned<C: Component>(
+    trigger: On<Add<C>>,
+    mode: Res<NetMode>,
+    mut commands: Commands,
+) {
     if mode.is_server() {
         commands.entity(trigger.entity).insert_if_new((
             Replicate::to_clients(NetworkTarget::All),
@@ -144,7 +153,11 @@ fn show_dart_lights(
         let on = matches!(dart.state, DartState::Listening { .. });
         for child in children.iter() {
             if let Ok(mut visibility) = lights.get_mut(child) {
-                visibility.set_if_neq(if on { Visibility::Inherited } else { Visibility::Hidden });
+                visibility.set_if_neq(if on {
+                    Visibility::Inherited
+                } else {
+                    Visibility::Hidden
+                });
             }
         }
     }

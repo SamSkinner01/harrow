@@ -77,7 +77,9 @@ impl SurfaceKey {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum SurfaceEdit {
     /// A new round: every surface back to intact.
-    Reset { round: u32 },
+    Reset {
+        round: u32,
+    },
     Impact {
         surface: SurfaceKey,
         point: Vec3,
@@ -90,7 +92,10 @@ pub enum SurfaceEdit {
         centre: Vec3,
         radius: f32,
     },
-    Reinforce { surface: SurfaceKey, from: Vec3 },
+    Reinforce {
+        surface: SurfaceKey,
+        from: Vec3,
+    },
 }
 
 /// Edits since the last round reset (server), for late joiners.
@@ -156,7 +161,11 @@ fn record_edits(
             sender.send::<EventChannel>(edit.clone());
         }
     }
-    log.0.extend(edits.into_iter().filter(|e| !matches!(e, SurfaceEdit::Reset { .. })));
+    log.0.extend(
+        edits
+            .into_iter()
+            .filter(|e| !matches!(e, SurfaceEdit::Reset { .. })),
+    );
 }
 
 /// Server: a client that just joined gets the round's edits so far.
@@ -169,7 +178,10 @@ fn catch_up_new_clients(
             sender.send::<EventChannel>(edit.clone());
         }
         if !log.0.is_empty() {
-            info!("net: sent {} destruction edits to a new client", log.0.len());
+            info!(
+                "net: sent {} destruction edits to a new client",
+                log.0.len()
+            );
         }
     }
 }

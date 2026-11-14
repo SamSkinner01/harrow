@@ -176,7 +176,13 @@ pub struct RewoundHitboxes {
 
 impl RewoundHitboxes {
     /// Nearest zone along a ray, skipping `exclude`'s own zones.
-    pub fn cast_ray(&self, origin: Vec3, direction: Dir3, max_distance: f32, exclude: Option<Entity>) -> Option<ZoneHit> {
+    pub fn cast_ray(
+        &self,
+        origin: Vec3,
+        direction: Dir3,
+        max_distance: f32,
+        exclude: Option<Entity>,
+    ) -> Option<ZoneHit> {
         self.zones
             .iter()
             .filter(|z| Some(z.character) != exclude)
@@ -217,9 +223,14 @@ pub struct ZoneHit {
 /// What a lag-compensated ray hit first.
 #[derive(Clone, Copy, Debug)]
 pub enum HitTarget {
-    Character { entity: Entity, zone: HitZone },
+    Character {
+        entity: Entity,
+        zone: HitZone,
+    },
     /// Level geometry (or anything else on the world layer).
-    World { collider: Entity },
+    World {
+        collider: Entity,
+    },
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -270,7 +281,10 @@ impl LagCompensation<'_, '_> {
                         fraction: 0.0,
                     }
                 } else {
-                    ViewTime { tick: tick.0, fraction }
+                    ViewTime {
+                        tick: tick.0,
+                        fraction,
+                    }
                 }
             }
             None => self.now(),
@@ -288,7 +302,11 @@ impl LagCompensation<'_, '_> {
     }
 
     /// Run `f` with every character's hit zones as they were at `view`.
-    pub fn with_rewound_hitboxes<R>(&self, view: ViewTime, f: impl FnOnce(&RewoundHitboxes) -> R) -> R {
+    pub fn with_rewound_hitboxes<R>(
+        &self,
+        view: ViewTime,
+        f: impl FnOnce(&RewoundHitboxes) -> R,
+    ) -> R {
         let mut zones = Vec::new();
         for (character, history) in &self.histories {
             let Some(pose) = history.at(view) else {
@@ -325,7 +343,9 @@ impl LagCompensation<'_, '_> {
             &SpatialQueryFilter::from_mask(GameLayer::World),
         );
         let reach = world.map_or(max_distance, |w| w.distance);
-        let zone = self.with_rewound_hitboxes(view, |zones| zones.cast_ray(origin, direction, reach, Some(shooter)));
+        let zone = self.with_rewound_hitboxes(view, |zones| {
+            zones.cast_ray(origin, direction, reach, Some(shooter))
+        });
         match (zone, world) {
             (Some(z), _) => Some(LagCompHit {
                 target: HitTarget::Character {
@@ -351,7 +371,17 @@ impl LagCompensation<'_, '_> {
 /// one's rewound torso; log the rewound result next to the live one.
 fn shoot_test(
     lag: LagCompensation,
-    shooters: Query<(Entity, &Transform, &CharacterState, &PlayerInput, Option<&NetPlayer>, Has<ControlledBy>), With<Player>>,
+    shooters: Query<
+        (
+            Entity,
+            &Transform,
+            &CharacterState,
+            &PlayerInput,
+            Option<&NetPlayer>,
+            Has<ControlledBy>,
+        ),
+        With<Player>,
+    >,
     tuning: Res<Tuning>,
     mut ticks: Local<u32>,
 ) {
@@ -367,10 +397,21 @@ fn shoot_test(
         info!("lag-comp test: need two players");
         return;
     };
-    let name = |p: &(Entity, &Transform, &CharacterState, &PlayerInput, Option<&NetPlayer>, bool)| {
-        p.4.map_or_else(|| format!("{}", p.0), |n| n.name.clone())
-    };
-    let (eye, _) = crate::gadgets::eye_and_look(shooter.1, shooter.2, shooter.3, &tuning.body, tuning.lean.offset);
+    let name = |p: &(
+        Entity,
+        &Transform,
+        &CharacterState,
+        &PlayerInput,
+        Option<&NetPlayer>,
+        bool,
+    )| { p.4.map_or_else(|| format!("{}", p.0), |n| n.name.clone()) };
+    let (eye, _) = crate::gadgets::eye_and_look(
+        shooter.1,
+        shooter.2,
+        shooter.3,
+        &tuning.body,
+        tuning.lean.offset,
+    );
     let view = lag.view_time(shooter.0);
     let Some(then) = lag.pose_at(target.0, view) else {
         return;

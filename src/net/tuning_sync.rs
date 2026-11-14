@@ -10,7 +10,9 @@
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::config::{BodyTuning, FootstepTuning, LeanTuning, MovementTuning, Tuning, TuningSystems};
+use crate::config::{
+    BodyTuning, FootstepTuning, LeanTuning, MovementTuning, Tuning, TuningSystems,
+};
 
 pub struct TuningSyncPlugin;
 

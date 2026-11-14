@@ -25,7 +25,12 @@ impl Plugin for EventsPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
             PostUpdate,
-            (forward_events, forward::<ShotFired>, forward::<WeaponEvent>, forward::<BulletHit>)
+            (
+                forward_events,
+                forward::<ShotFired>,
+                forward::<WeaponEvent>,
+                forward::<BulletHit>,
+            )
                 .run_if(is_server)
                 .before(MessageSystems::Send),
         )
@@ -152,7 +157,9 @@ impl MapEntities for GadgetEvent {
                 map(stake, mapper)
             }
             GadgetEvent::Destroyed { entity, .. } => map(entity, mapper),
-            GadgetEvent::DartStuck { .. } | GadgetEvent::DartLost | GadgetEvent::DartExpired { .. } => {}
+            GadgetEvent::DartStuck { .. }
+            | GadgetEvent::DartLost
+            | GadgetEvent::DartExpired { .. } => {}
         }
     }
 }

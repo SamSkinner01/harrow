@@ -141,7 +141,7 @@ Hold/toggle options live in the tuning file.
 | 5 | Defuser (attackers) | round (M6) |
 | F (hold) | Interact: reinforce, barricade, plant/disable defuser | destruction / round |
 | Mouse wheel | Cycle weapon | weapons |
-| Esc | Free mouse | player |
+| Esc | Pause menu (frees the mouse) | menu (M8) |
 | F1-F12 | Debug and help keys | debug / ui |
 
 Input code: each module creates its own input context entity (see
@@ -507,6 +507,158 @@ Built by `tools/scripts/build_characters.sh` from one config per operator
 - **Not yet:** prone aiming and reloading, strafe/backpedal clips, hair
   meshes (short hair is a scalp tint under the headgear), real weapon
   models (they attach to `weapon_r`, and should hide the prop carbine).
+
+## M8 networking (implemented 2026-11-14)
+
+Lightyear 0.31 (netcode over UDP; replication on bevy_replicon), at the
+64 Hz fixed tick. Code: `src/session.rs` (app flow), `src/net/`
+(networking), `src/menu/` (menus). How to play it: README "Multiplayer".
+
+### Modes and app flow
+
+`AppState`: `MainMenu` -> (`Connecting`) -> `InGame` -> back. The map is
+built once at startup and stays loaded (it is the menu backdrop);
+everything belonging to a session (characters, round state, gadgets,
+defusers, links) is created on entering `InGame` and removed on leaving.
+
+| Mode (`NetMode`) | Simulates | Local player | Window |
+|---|---|---|---|
+| `Offline` (solo) | everything | yes | yes |
+| `Host` (listen server) | everything | yes | yes |
+| `Dedicated` | everything | no | no (no GPU, audio, input) |
+| `Client` | its own movement only (predicted) | yes (replicated) | yes |
+
+Solo, host and dedicated run the *same* gameplay code; a host is solo
+plus a UDP server, and its own character is an ordinary local player that
+also gets replicated. The authority's fixed-tick simulation is gated with
+`session::simulating` (`RoundSystems`, `GadgetSystems`,
+`WeaponSystems::Simulate`, `DestructionSystems::{Actions, Explosions}`,
+`CombatSystems`), so a client never decides rounds, damage, shots or
+destruction.
+
+### Connecting
+
+netcode with a fixed protocol id and a **development key** (every build
+has it; it filters stray packets but isn't a secret). Token address
+checks are off, so clients can use any address that reaches the server
+(LAN IP, public IP, VPN name). Handshake: the client sends `Hello` (build
+id = crate version + git commit, name); the server answers `Welcome`
+(server name, map, movement tuning) or `Refused` ("Version mismatch",
+"Server full") and disconnects. Only after `Welcome` does the link get
+`ReplicationSender`, so mismatched builds never exchange world data. The
+client times out after 12 s ("Server not responding") and goes back to
+the menu on any disconnect with the reason.
+
+Teams: each client joins the squad with fewer players (the host is Blue)
+and plays that squad's side. Joining in operator selection or free play
+puts you straight in; joining mid-round makes you a spectator (`Dead`,
+no `Health`, so you don't count for wipes) until the next round. Leaving
+removes the character (dropping the defuser if it had it). A dedicated
+server idles its round loop while empty.
+
+### Input
+
+`NetInput` (`net/input.rs`) carries every intent component of a
+character: `PlayerInput` (move axis, look angles, sprint, stance, lean),
+`RoundIntent` (F, 5, operator picks), `GadgetIntent` (3),
+`DestructionIntent` (V, F, 4), `WeaponInput` (trigger, aim, reload,
+slot). The client copies its intents in every tick; Lightyear sends them
+with redundancy (the last 10 ticks in every packet) plus the client's
+interpolation delay (for lag compensation); the server copies them back
+into the same components, so gameplay code can't tell a remote player
+from a local one. Held state is copied as-is; M6's latched presses
+(`equip_defuser`, `pick_operator`, `use_unique`) travel as press counters,
+which survive loss and repeats.
+
+### Prediction (your own character)
+
+Movement (`player/movement.rs`) is deterministic given input and state,
+and every input to it is networked: `SimPosition` (the feet at the end of
+the tick; `Transform` itself is eased between ticks for rendering, so it
+can't be sent), `LinearVelocity` and `CharacterState` are replicated and
+predicted (small rollback tolerances for floats); `MovementLock` and
+`MoveSpeedScale` are replicated; the server's movement tuning replaces
+the client's (`net/tuning_sync.rs`). When the server's state for a tick
+differs from the prediction, Lightyear restores it and replays the ticks
+since with the buffered inputs. Replays don't re-emit footsteps or input,
+and local mouse/keyboard is read after replays so no input is lost. Under
+80 ms simulated RTT, 10 ms jitter and 2 % loss a moving client had no
+rollbacks after the initial one.
+
+Not predicted (yet): weapon fire. The server fires; the client sees its
+shots (tracer, sounds, hit marker) and weapon state (ammo, reload, recoil
+view) one round trip later. Predicting `WeaponState` with rollback is the
+next step for snappier shooting.
+
+### Interpolation (everyone else)
+
+Other characters are shown ~100 ms in the past, blended between server
+updates: `SimPosition`, `NetAim` (yaw/pitch), and `CharacterState`
+(height, lean). `net/bodies.rs` gives them their M5 operator model and
+drives `CharacterAnim` (speed, stance, lean) every frame; it is a seam to
+be replaced by the generic third-person body system (`characters/body.rs`,
+M7), which should read look angles from `NetAim` where a character has no
+`PlayerInput`. Hit zones exist on every machine, posed from the (predicted
+or interpolated) state.
+
+### What is replicated
+
+- Characters: `Player`, `NetPlayer` (id, name), the movement state above,
+  `Health`, `Team`, `Squad`, `Dead`, `MovementLock`, `Operator`,
+  `OperatorChoice`, `UniqueGadget`, `DefuserCarrier`,
+  `ObjectiveInteraction`, `WeaponState`, `MoveSpeedScale`. Hit zones and
+  models are local children (`DisableReplicateHierarchy`).
+- Match: `Round` as a `RoundSync` component on one entity; clients copy
+  it into their `Round` resource, so HUD, sounds and `RoundPhase` work
+  unchanged.
+- Entities the server spawns: planted and dropped defusers, sensor darts,
+  seismic stakes (state + `Transform`); clients attach the same models.
+- Events, forwarded in order: `RoundEvent`, `GadgetEvent`, `ShotFired`,
+  `WeaponEvent`, `BulletHit` to everyone; `Reveal` only to the team it's
+  for.
+- Destruction: M4 is deterministic, so the server forwards every surface
+  edit it applies (impacts, hard breaches, reinforcement, round resets)
+  keyed by the piece's placement, and clients replay them through M4's own
+  code: identical holes, debris and dust. Late joiners get the round's
+  edit log. Not yet: barricades and breach charges placed at runtime
+  (their effect on walls is synced, the entities aren't).
+
+### Lag compensation
+
+The server keeps ~300 ms (20 ticks) of every character's pose (feet, yaw,
+stance height, lean) in `PoseHistory`. For a client's shot it rebuilds
+all hit zones at that client's view time (the shot's tick minus the
+interpolation delay it reported, clamped to the history) with the same
+`zone_pose` the live zones use, and the bullet trace (`weapons/
+ballistics.rs`, with penetration) tests those instead of the live zone
+colliders; walls are tested as they are now. Solo, the host's own shots
+and bots use the live zones. API: `net::lag_comp::LagCompensation`
+(`view_time`, `cast_ray`, `with_rewound_hitboxes`, `pose_at`).
+`--net-shoot-test` logs rewound vs live results between two players.
+
+### Plugging in a feature
+
+- **Intent**: a component written by input, read by the fixed tick. Add
+  a field to `NetInput` and one `sync_intent::<C>(app, |i| &mut i.field)`
+  line. Use held state or press counters, never "cleared by the sim".
+- **State shown to players**: `app.component::<C>().replicate()` in
+  `net/protocol.rs` (`Serialize + Deserialize`; mark entity fields
+  `#[entities]`). Insert such components with `insert_if_new` in `Add`
+  observers, so a replicated value isn't overwritten on clients.
+- **State the local player's movement reads**: also `.predict()`.
+- **Simulation**: put it in a system set and gate the set with
+  `session::simulating` in `NetPlugin` (clients must not decide outcomes).
+- **One-off happenings** (sounds, effects): forward the message
+  (`net/events.rs`, `forward::<M>`/`receive::<M>`).
+- **Entities the server spawns**: `replicate_spawned::<Marker>` in
+  `net/round_sync.rs`, plus an observer that attaches the model on clients.
+
+### Dedicated server
+
+Same binary with `--server` (Bevy without window/audio/gamepad plugins,
+the render plugin with no backend, a 64 Hz loop), or a lean build without
+those libraries (`--no-default-features --features dedicated`). Config
+file: `--config` (RON). Logs to stdout; SIGTERM exits cleanly.
 
 ## Fortress kit (M2)
 

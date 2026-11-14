@@ -11,7 +11,9 @@ use std::f32::consts::FRAC_PI_2;
 
 use bevy::{color::palettes::css, prelude::*};
 
-use super::{GadgetEvent, Reveal, RevealSource};
+#[cfg(feature = "client")]
+use super::GadgetEvent;
+use super::{Reveal, RevealSource};
 use crate::{
     combat::Team,
     config::Tuning,
