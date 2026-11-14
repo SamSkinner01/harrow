@@ -59,18 +59,18 @@ case $MODE in
         fi
         # Crates for the lockfile, so the container can build offline.
         cargo fetch --locked >/dev/null
-        if ! $ENGINE image exists harrow-server-build 2>/dev/null \
-            && ! $ENGINE image inspect harrow-server-build >/dev/null 2>&1; then
+        if ! $ENGINE image inspect harrow-server-build >/dev/null 2>&1; then
             echo "== creating the build image (ubuntu:22.04 + gcc), once"
             printf 'FROM docker.io/library/ubuntu:22.04\nRUN apt-get update && apt-get install -y --no-install-recommends gcc libc6-dev && rm -rf /var/lib/apt/lists/*\n' \
                 | $ENGINE build -t harrow-server-build -f - .
         fi
         echo "== building the dedicated server in ubuntu:22.04 (build $COMMIT, -j $JOBS)"
         mkdir -p target/vps
-        $ENGINE run --rm \
-            -v "$ROOT:/src:z" \
-            -v "$TOOLCHAIN_DIR:/rust:ro,z" \
-            -v "$CARGO_HOME/registry:/cargo/registry:ro,z" \
+        # label=disable: no SELinux relabelling of the (huge) mounted trees.
+        $ENGINE run --rm --security-opt label=disable \
+            -v "$ROOT:/src" \
+            -v "$TOOLCHAIN_DIR:/rust:ro" \
+            -v "$CARGO_HOME/registry:/cargo/registry:ro" \
             -e CARGO_HOME=/cargo \
             -e HARROW_BUILD_COMMIT="$COMMIT" \
             -e PATH=/rust/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
