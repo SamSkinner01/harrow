@@ -133,7 +133,12 @@ fn merge_static_pieces(
             Transform::IDENTITY,
         ));
     }
-    for entity in merged_parts.iter().chain(&unused_sources) {
+    // The merged mesh entities go entirely: with only their mesh removed
+    // they would still be frustum-tested for every view, every frame.
+    for entity in &merged_parts {
+        commands.entity(*entity).try_despawn();
+    }
+    for entity in &unused_sources {
         commands.entity(*entity).remove::<Mesh3d>();
     }
     info!(
