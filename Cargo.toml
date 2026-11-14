@@ -1,0 +1,25 @@
+[package]
+name = "harrow"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.97.1"
+publish = false
+
+# Versions are pinned exactly on purpose: Bevy's API changes between releases,
+# and Avian / bevy_enhanced_input / Lightyear must match the Bevy version.
+# See README.md ("Pinned versions") before changing any of these.
+[dependencies]
+bevy = { version = "=0.20.1", features = ["bevy_dev_tools", "render_dev_tools"] }
+avian3d = "=0.8.0"
+bevy_enhanced_input = "=0.27.2"
+
+# Faster iteration: lightly optimise our code, fully optimise dependencies.
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.release]
+codegen-units = 1
+lto = "thin"
