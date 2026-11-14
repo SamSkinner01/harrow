@@ -8,6 +8,8 @@
 //! server (`--server`); see `session.rs` and `net/`.
 
 mod ai;
+#[cfg(feature = "client")]
+mod audio;
 mod characters;
 mod combat;
 mod config;

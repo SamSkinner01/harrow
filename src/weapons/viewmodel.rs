@@ -25,7 +25,10 @@
 //! the magazine, insert a new one, rack the slide/bolt when empty) and a
 //! lower/raise animation when switching.
 
-use std::f32::consts::{PI, TAU};
+use std::{
+    collections::HashSet,
+    f32::consts::{PI, TAU},
+};
 
 use avian3d::prelude::*;
 use bevy::{
@@ -74,9 +77,9 @@ impl Plugin for ViewmodelPlugin {
 #[derive(Component)]
 struct ViewmodelCamera;
 
-/// Parent of the weapon models, posed every frame.
+/// Parent of the weapon models (and the first-person arms), posed every frame.
 #[derive(Component)]
-struct ViewmodelRig;
+pub(super) struct ViewmodelRig;
 
 /// One weapon model in the rig.
 #[derive(Component)]
@@ -355,6 +358,10 @@ fn prepare_weapon_model(
     library: Res<WeaponMaterials>,
     flash: Res<FlashAssets>,
     tuning: Res<Tuning>,
+    own_materials: Query<&MeshMaterial3d<StandardMaterial>>,
+    materials: Res<Assets<StandardMaterial>>,
+    mut images: ResMut<Assets<Image>>,
+    mut mipped: Local<HashSet<AssetId<Image>>>,
     mut commands: Commands,
 ) {
     let Ok((mut model, rig)) = models.get_mut(ready.entity) else {
@@ -402,6 +409,26 @@ fn prepare_weapon_model(
             && let Some(handle) = library.get(&material.0)
         {
             commands.entity(entity).insert(MeshMaterial3d(handle));
+        } else if let Ok(own) = own_materials.get(entity)
+            && let Some(material) = materials.get(&own.0)
+        {
+            // Textured models: glTF images arrive without mipmaps and
+            // shimmer when the weapon moves; add a chain once per image.
+            for texture in [
+                &material.base_color_texture,
+                &material.normal_map_texture,
+                &material.metallic_roughness_texture,
+                &material.occlusion_texture,
+            ]
+            .into_iter()
+            .flatten()
+            {
+                if mipped.insert(texture.id())
+                    && let Some(mut image) = images.get_mut(texture)
+                {
+                    crate::characters::add_mip_chain(&mut image);
+                }
+            }
         }
         let Ok(name) = names.get(entity) else { continue };
         let name = name.as_str();
@@ -649,7 +676,7 @@ fn pose_viewmodel(
             // Cant the weapon and bring it in.
             let tilt = bump(t, 0.0, 1.0).powf(0.6);
             // Lift it into view, muzzle up, rolled so the magazine well shows.
-            position += Vec3::new(-0.08, 0.1, 0.06) * tilt;
+            position += Vec3::new(-0.07, 0.09, 0.0) * tilt;
             rotation *= Quat::from_euler(EulerRot::YXZ, 0.35 * tilt, 0.25 * tilt, -0.5 * tilt);
             // Old magazine out (and gone), new one in.
             magazine_drop = if t < 0.55 {

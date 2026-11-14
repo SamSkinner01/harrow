@@ -5,12 +5,16 @@
 //!
 //! - **Stance** (stand / crouch / prone) is smoothed into three weights.
 //! - **Speed** picks the clips within a stance: idle -> walk -> run,
-//!   crouch idle -> crouch walk, prone idle -> crawl. Moving clips play
-//!   faster or slower to match the speed they were authored for.
-//! - **Aiming / firing** blends the `fire` clip over the arms (aim pose;
-//!   firing plays its recoil kick on a loop at [`FIRE_RATE`]).
-//! - **Reloading** restarts `reload` on the arms when it turns on.
-//! - **Lean** blends `lean_left` / `lean_right` over the spine and head.
+//!   crouch idle -> crouch walk, prone idle -> crawl, keyed to the game's
+//!   movement speeds ([`Clip::game_speed`]). Moving clips play at movement
+//!   speed / the speed their stance feet move at (`harrow_clips`), so the
+//!   feet don't slide.
+//! - **Aiming / firing** blends the `fire` clip over the arms, chest and
+//!   head (aim pose, cheek on the stock; firing plays its recoil kick on a
+//!   loop at [`FIRE_RATE`]).
+//! - **Reloading** restarts `reload` on the arms, chest and head when it
+//!   turns on.
+//! - **Lean** blends `lean_left` / `lean_right` over the lower spine.
 //!
 //! Arm and spine overrides are off while prone (there are no prone aiming
 //! or reload clips yet).
@@ -145,7 +149,7 @@ fn drive_animation(
         );
         approach(&mut blend.reload, f32::from(anim.reloading), ARMS_TIME);
 
-        let weights = clip_weights(&blend, rig);
+        let weights = clip_weights(&blend);
         for clip in Clip::ALL {
             if let Some(active) = player.animation_mut(rig.node(clip)) {
                 active.set_weight(weights[clip as usize]);
@@ -175,26 +179,26 @@ fn drive_animation(
 /// Length of the `fire` clip (one shot), seconds.
 const FIRE_CLIP_LENGTH: f32 = 0.2;
 
-fn clip_weights(blend: &AnimBlend, rig: &OperatorRig) -> [f32; Clip::COUNT] {
+fn clip_weights(blend: &AnimBlend) -> [f32; Clip::COUNT] {
     let mut w = [0.0; Clip::COUNT];
     let total = blend.stance.iter().sum::<f32>().max(1e-3);
     let [stand, crouch, prone] = blend.stance.map(|x| x / total);
     let s = blend.speed;
 
     // Stand: idle until 60% of walking speed is reached, walk, then run.
-    let walk = rig.speed(Clip::Walk);
-    let run = rig.speed(Clip::Run);
+    let walk = Clip::Walk.game_speed();
+    let run = Clip::Run.game_speed();
     let moving = (s / (0.6 * walk)).clamp(0.0, 1.0);
     let running = ((s - walk) / (run - walk)).clamp(0.0, 1.0);
     w[Clip::Idle as usize] = stand * (1.0 - moving);
     w[Clip::Walk as usize] = stand * moving * (1.0 - running);
     w[Clip::Run as usize] = stand * moving * running;
 
-    let crouch_moving = (s / (0.6 * rig.speed(Clip::CrouchWalk))).clamp(0.0, 1.0);
+    let crouch_moving = (s / (0.6 * Clip::CrouchWalk.game_speed())).clamp(0.0, 1.0);
     w[Clip::CrouchIdle as usize] = crouch * (1.0 - crouch_moving);
     w[Clip::CrouchWalk as usize] = crouch * crouch_moving;
 
-    let crawling = (s / (0.6 * rig.speed(Clip::ProneCrawl))).clamp(0.0, 1.0);
+    let crawling = (s / (0.6 * Clip::ProneCrawl.game_speed())).clamp(0.0, 1.0);
     w[Clip::ProneIdle as usize] = prone * (1.0 - crawling);
     w[Clip::ProneCrawl as usize] = prone * crawling;
 

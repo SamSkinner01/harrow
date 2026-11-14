@@ -14,8 +14,10 @@
 //! - `--screenshot-on-hit <path>`: screenshot just after your first bullet
 //!   hit (hit marker, dummy feedback), then quit. No mouse grab.
 //! - `--dummies` (in `dummies.rs`): training dummies. `--no-viewmodel` (in
-//!   `viewmodel.rs`): don't draw the weapon. `--dump-weapon-sounds <dir>`
-//!   (in `audio.rs`): write the synthesised sounds as .wav files.
+//!   `viewmodel.rs`): don't draw the weapon (or the arms).
+//!   `--lineup-weapons [sidearm]` (in `third_person.rs`): the real weapon
+//!   models in the `--lineup` operators' hands. `--log-sounds` (in
+//!   `src/audio`): log which sound plays for each event.
 //!
 //! The test drives the same intent components a bot will (`PlayerInput`,
 //! `WeaponInput`), so it exercises the real input-to-damage path.
@@ -56,9 +58,20 @@ impl Plugin for WeaponTestPlugin {
             app.insert_resource(AutomatedRun)
                 .insert_resource(WeaponTest::new(scenarios()))
                 .add_systems(Startup, spawn_test_gadget)
-                .add_systems(FixedPreUpdate, drive_test)
+                .add_systems(FixedPreUpdate, (let_attackers_walk, drive_test).chain())
                 .add_systems(FixedUpdate, record_test.after(WeaponSystems::Simulate));
         }
+    }
+}
+
+/// The test runs during the round's prep phase, where attackers are held
+/// in place by default (`round.attackers_hold_in_prep`); the walking
+/// scenarios need to move, so the test turns that hold off. Re-checked every
+/// tick because the tuning file can be (re)loaded after startup.
+fn let_attackers_walk(mut tuning: ResMut<Tuning>) {
+    if tuning.round.attackers_hold_in_prep {
+        tuning.round.attackers_hold_in_prep = false;
+        info!("weapon test: attackers may walk during prep");
     }
 }
 

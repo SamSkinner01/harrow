@@ -113,8 +113,88 @@
         sprint_loudness: 1.0,
         crouch_loudness: 0.12,
         prone_loudness: 0.04,
-        // Volume of your own footsteps (placeholder sound).
+        // Footstep volume; multiplies audio.footsteps.
         volume: 0.7,
+    ),
+    // ---- Audio ----
+    // Recorded sounds from assets/audio (tools/audio/build_audio.py).
+    // Volumes are linear (1.0 = as recorded, 0.5 = about -6 dB). Your own
+    // sounds play straight to your ears; everyone else's (shots, steps,
+    // reloads), bullet impacts, breaking and explosions come from where they
+    // happen: panned left/right and quieter with distance.
+    audio: (
+        // Overall volume (the menu's master slider).
+        master: 1.0,
+        // Weapons, impacts, destruction and explosions (the effects slider).
+        effects: 1.0,
+        // Everyone's footsteps.
+        footsteps: 1.0,
+        // Fall-off beyond a sound's `near` distance: volume = (near / distance)
+        // ^ rolloff. 1.0 is real-world (-6 dB per doubling), 0 = no fall-off.
+        // Every sound also fades out completely as it nears its `far` distance.
+        rolloff: 1.0,
+        // Distance between the listener's ears, metres (stereo panning).
+        ear_gap: 0.2,
+        // Every play varies pitch by up to +-4% and volume by up to +-1.5 dB
+        // so repeats don't sound mechanical.
+        pitch_jitter: 0.04,
+        volume_jitter_db: 1.5,
+        // Most world sounds at once; extra footsteps/impacts are skipped.
+        // Your own sounds and explosions always play.
+        max_voices: 48,
+        // Bullet impacts: at most this many sounds per second (full auto,
+        // shotgun pellets), and impacts within (metres, seconds) of one that
+        // is already playing are skipped.
+        impacts_per_second: 24.0,
+        impact_merge: (0.6, 0.08),
+        // Other people's gunshots and explosions cross over from the close
+        // recording to the distant one between these distances (metres).
+        distant_blend: (15.0, 80.0),
+        // Melee and other non-violent damage that knocks out at least this
+        // many cells also plays a breaking sound.
+        break_min_cells: 6,
+        // Per kind of sound: volume, full volume up to `near` metres, silent
+        // from `far` metres.
+        categories: (
+            shots: (volume: 1.0, near: 6.0, far: 400.0),
+            shots_distant: (volume: 0.8, near: 30.0, far: 800.0),
+            // Reloads, dry fire, weapon draw.
+            foley: (volume: 0.7, near: 1.5, far: 25.0),
+            footsteps: (volume: 0.5, near: 3.0, far: 40.0),
+            impacts: (volume: 0.6, near: 2.0, far: 70.0),
+            destruction: (volume: 0.8, near: 4.0, far: 120.0),
+            explosions: (volume: 0.85, near: 10.0, far: 600.0),
+            explosions_distant: (volume: 0.8, near: 40.0, far: 1500.0),
+        ),
+        // What surfaces sound like (footsteps and bullet impacts), from the
+        // name of the piece or collider: the first pattern found in the name
+        // (case ignored) wins. Materials: Stone, Plaster, Wood, Metal, Sand.
+        // Destructible walls/floors use their own material instead (plaster
+        // or wood; Metal on a hatch frame or where a reinforcement plate
+        // faces you).
+        surfaces: [
+            ("hatch", Wood),
+            ("floor_wood", Wood),
+            ("crate", Wood),
+            ("barricade", Wood),
+            ("plank", Wood),
+            ("railing", Wood),
+            ("wood", Wood),
+            ("plate", Metal),
+            ("metal", Metal),
+            ("grate", Metal),
+            ("sandbag", Sand),
+            ("sand", Sand),
+            ("desert", Sand),
+            ("dune", Sand),
+            ("ground", Sand),
+            ("soft_wall", Plaster),
+            ("plaster", Plaster),
+            ("stairs", Stone),
+            ("stone", Stone),
+        ],
+        // Anything else (flagstones, battlements, grey-box blocks).
+        default_surface: Stone,
     ),
     // ---- Weapons (M3) ----
     // Angles are degrees, times seconds, distances metres.
@@ -160,7 +240,10 @@
             // these (no code needed); `pose` below places it on screen.
             model: (
                 // glTF file under assets/. Path changes need a restart;
-                // the rest applies on save.
+                // the rest applies on save. tamarisk.glb is the realistic
+                // model (built by tools/scripts/import_weapons.sh from a
+                // CC0 source); tamarisk_blockout.glb is the scripted
+                // blockout, kept as a fallback.
                 path: "models/weapons/tamarisk.glb",
                 // Uniform scale (0.01 for a model made in centimetres).
                 scale: 1.0,
@@ -178,6 +261,16 @@
                 // Parts animated by reloads / shots: Some("node name") or None.
                 magazine_node: Some("MAGAZINE"),
                 slide_node: None,
+                // Third person: the model's place on a character's weapon_r
+                // bone (origin where the web of the right hand grips, +Y
+                // along the barrel, +Z up). offset in metres (right,
+                // forward, up); rotation (yaw, pitch, roll) turns the model
+                // (barrel -Z, +Y up) into the bone's axes.
+                third_person: (offset: (0.0, 0.0, 0.0), rotation: (0.0, 90.0, 0.0)),
+                // First-person arms posed on this model (clip prefix in
+                // models/characters/arms_*.glb, built by build_arms.sh), or
+                // None. The blockouts have no arms.
+                arms: Some("tamarisk"),
             ),
             // Damage per bullet before the body-region multiplier.
             damage: 42.0,
@@ -255,8 +348,9 @@
                 // hip: (right, up, forward). Aiming lines the sight point up
                 // with the eye instead.
                 hip: (0.15, -0.2, 0.42),
-                // Eye to the sight point when aiming.
-                ads_distance: 0.2,
+                // Eye to the sight point (the front sight) when aiming. The
+                // rear sight is 0.38 m behind it on the real rifle.
+                ads_distance: 0.72,
                 // Visual kick per shot: backwards (metres) and upwards (degrees).
                 kick_back: 0.025,
                 kick_up: 2.5,
@@ -266,6 +360,7 @@
         sidearm: (
             name: "ACACIA",
             model: (
+                // Realistic model; acacia_blockout.glb is the fallback.
                 path: "models/weapons/acacia.glb",
                 scale: 1.0,
                 rotation: (0.0, 0.0, 0.0),
@@ -275,6 +370,8 @@
                 muzzle_node: "MUZZLE",
                 magazine_node: Some("MAGAZINE"),
                 slide_node: Some("SLIDE"),
+                third_person: (offset: (0.0, 0.0, 0.0), rotation: (0.0, 90.0, 0.0)),
+                arms: Some("acacia"),
             ),
             damage: 48.0,
             falloff_start: 12.0,
@@ -314,8 +411,8 @@
                 first_shot_reset: 0.3,
             ),
             pose: (
-                hip: (0.13, -0.15, 0.34),
-                ads_distance: 0.3,
+                hip: (0.1, -0.16, 0.5),
+                ads_distance: 0.72,
                 kick_back: 0.03,
                 kick_up: 6.0,
             ),
@@ -343,7 +440,7 @@
             max_impacts: 64,
             // How long the hit marker shows.
             hit_marker_time: 0.25,
-            // Weapon sound volume (placeholder sounds).
+            // Weapon sound volume (shots, reloads); multiplies audio.effects.
             volume: 0.6,
         ),
         // Training dummies (`--dummies`).
