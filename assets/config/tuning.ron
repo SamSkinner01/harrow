@@ -602,4 +602,129 @@
         // Volume of round and gadget sounds (beeps, hiss, ticks).
         volume: 0.6,
     ),
+    // ---- Bots (M7) ----
+    // Bots fill both teams (5v5 with you by default; --bots N, --no-bots).
+    ai: (
+        // Easy, Normal or Hard (--difficulty easy|normal|hard overrides it).
+        difficulty: Normal,
+        // Each preset: how a bot notices, aims and shoots.
+        //   reaction_time / reaction_jitter: seconds from first seeing an
+        //     enemy to the first shot (+/- jitter).
+        //   aim_error: degrees the aim starts off by on a new target;
+        //   aim_settle: seconds for that error to shrink to about a third.
+        //   tracking_error: extra error from a moving target (share of how
+        //     far it moved across the view).
+        //   turn_speed: degrees per second the bot can turn its view.
+        //   recoil_control: 0..1, how much of the recoil kick it pulls down.
+        //   head_aim: 0..1, chance of aiming for the head instead of the body.
+        //   fov / sight_range: view cone (degrees, horizontal) and how far
+        //     it notices people (metres). peripheral_delay: extra seconds to
+        //     react to someone at the edge of the view.
+        //   hearing: multiplier on how far it hears footsteps and shots.
+        //   wallbang_chance: chance per second of spraying through a soft
+        //     wall at an enemy it only hears (never through stone).
+        //   burst_close / burst_far: rounds per burst up close / far away;
+        //     burst_pause: seconds between bursts.
+        //   crouch_chance / lean_chance: how often it crouches or leans
+        //     while holding an angle or fighting.
+        easy: (
+            reaction_time: 0.65, reaction_jitter: 0.2,
+            aim_error: 7.0, aim_settle: 0.6, tracking_error: 0.35,
+            turn_speed: 200.0, recoil_control: 0.45, head_aim: 0.1,
+            fov: 100.0, sight_range: 40.0, peripheral_delay: 0.5,
+            hearing: 0.8, wallbang_chance: 0.0,
+            burst_close: 6, burst_far: 2, burst_pause: 0.45,
+            crouch_chance: 0.3, lean_chance: 0.2,
+        ),
+        normal: (
+            reaction_time: 0.4, reaction_jitter: 0.12,
+            aim_error: 4.5, aim_settle: 0.4, tracking_error: 0.25,
+            turn_speed: 300.0, recoil_control: 0.7, head_aim: 0.3,
+            fov: 110.0, sight_range: 60.0, peripheral_delay: 0.3,
+            hearing: 1.0, wallbang_chance: 0.03,
+            burst_close: 8, burst_far: 3, burst_pause: 0.3,
+            crouch_chance: 0.45, lean_chance: 0.4,
+        ),
+        hard: (
+            reaction_time: 0.25, reaction_jitter: 0.07,
+            aim_error: 2.5, aim_settle: 0.25, tracking_error: 0.15,
+            turn_speed: 420.0, recoil_control: 0.88, head_aim: 0.55,
+            fov: 120.0, sight_range: 80.0, peripheral_delay: 0.18,
+            hearing: 1.2, wallbang_chance: 0.12,
+            burst_close: 10, burst_far: 4, burst_pause: 0.2,
+            crouch_chance: 0.6, lean_chance: 0.6,
+        ),
+        // Navigation grid, generated from the level's colliders at load.
+        // Grid values apply on restart.
+        nav: (
+            // Grid spacing, metres.
+            cell: 0.4,
+            // Clearance radius tested at each cell (a bit under the 0.3 m
+            // body, so 1 m doorways always have a cell in them).
+            agent_radius: 0.22,
+            // Highest ledge a bot walks up without a ramp, metres.
+            max_step: 0.09,
+            // Furthest a bot will drop through a hole or hatch, metres.
+            max_drop: 4.5,
+            // A hole needs this radius of clear space to drop through, metres.
+            drop_radius: 0.22,
+            // Grid border around the map's colliders and spawns, metres.
+            margin: 6.0,
+            // Milliseconds per frame spent building the grid at load, and
+            // updating it after destruction.
+            build_budget_ms: 6.0,
+            update_budget_ms: 1.5,
+            // --ai-debug draws the grid within this many metres of the camera.
+            debug_range: 16.0,
+        ),
+        senses: (
+            // Seconds between line-of-sight checks per bot (staggered).
+            sight_interval: 0.1,
+            // Metres heard per unit of loudness (walk 0.5 -> 11 m, sprint
+            // 1.0 -> 22 m, gunshot 3.0 -> 66 m).
+            hearing_range: 22.0,
+            // Multiplier for sounds on another floor.
+            other_floor_hearing: 0.5,
+            // Seconds a team remembers where an enemy was seen / heard.
+            remember_seen: 8.0,
+            remember_heard: 5.0,
+            // Seconds before the same callout repeats.
+            callout_repeat: 8.0,
+        ),
+        behaviour: (
+            // Seconds between decisions per bot (staggered).
+            think_interval: 0.25,
+            // Health below which a bot breaks off to cover.
+            retreat_health: 45.0,
+            // Reload when out of a fight and the magazine is below this share.
+            reload_below: 0.35,
+            // Metres between attackers moving in a stack.
+            stack_spacing: 1.6,
+            // Attackers slow down and check corners within this many metres
+            // of the target site.
+            careful_range: 14.0,
+            // Bots keep at least this far apart, metres.
+            avoid_radius: 0.9,
+            // Seconds without progress before a bot counts as stuck.
+            stuck_time: 1.5,
+            // Defenders who roam away from the site (the rest anchor).
+            roamers: 1,
+            // Larks fire a sensor dart when this close to the target site.
+            dart_range: 14.0,
+            // Metres outside a site entrance where Fathoms put stakes.
+            stake_spread: 3.0,
+        ),
+        // Round timers for --ai-test (automated bot matches).
+        test_timers: (
+            select: 1.0,
+            prep: 25.0,
+            action: 100.0,
+            plant: 7.0,
+            defuser: 35.0,
+            disable: 7.0,
+            round_end: 2.0,
+            match_end: 2.0,
+        ),
+        test_rounds_to_win: 2,
+    ),
 )

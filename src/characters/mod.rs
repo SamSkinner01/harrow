@@ -16,10 +16,15 @@
 //! Once a model is ready it gets [`CharacterParts`]: its animation player
 //! and every bone entity by name (e.g. `head`, `spine_03`, `weapon_r`).
 //!
+//! Bodies: every character other than the local player (bots, later
+//! remote players) gets a third-person body driven from its simulation
+//! state; see `body.rs` ([`body::Body`]).
+//!
 //! `--lineup` spawns all four operators in the keep courtyard cycling
 //! through their animations (`--lineup-state <name>` holds one state).
 
 mod animation;
+pub mod body;
 mod library;
 mod lineup;
 mod setup;
@@ -39,6 +44,7 @@ impl Plugin for CharactersPlugin {
             setup::SetupPlugin,
             animation::AnimationPlugin,
             lineup::LineupPlugin,
+            body::BodyPlugin,
         ));
     }
 }

@@ -33,6 +33,8 @@ mod viewmodel;
 
 use bevy::prelude::*;
 
+/// Shared weapon materials (also used for third-person weapon models).
+pub use materials::WeaponMaterials;
 
 use crate::{
     config::{Tuning, WeaponDef},
