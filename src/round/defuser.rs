@@ -50,24 +50,25 @@ impl Plugin for DefuserPlugin {
 }
 
 /// On the attacker carrying the defuser.
-#[derive(Component, Debug, Clone)]
+#[derive(Component, Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct DefuserCarrier {
     /// In hand (weapons should be holstered) rather than on the back.
     pub equipped: bool,
 }
 
 /// A planted defuser.
-#[derive(Component, Debug, Clone)]
+#[derive(Component, Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct DefuserDevice {
     pub site: SiteId,
     /// 0..1, by the defender currently disabling it.
     pub disable_progress: f32,
+    #[entities]
     pub disabler: Option<Entity>,
     pub disabled: bool,
 }
 
 /// A defuser lying on the floor after its carrier died.
-#[derive(Component, Debug)]
+#[derive(Component, Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct DroppedDefuser;
 
 /// The blinking tip of the device's mast.
@@ -128,6 +129,20 @@ pub(crate) fn spawn_device_model(
     yaw: f32,
     bundle: impl Bundle,
 ) -> Entity {
+    let root = commands
+        .spawn((
+            bundle,
+            Transform::from_translation(position).with_rotation(Quat::from_rotation_y(yaw)),
+            Visibility::default(),
+        ))
+        .id();
+    attach_device_model(commands, assets, root);
+    root
+}
+
+/// The device's parts as children of `root` (also used for devices
+/// replicated to clients).
+pub(crate) fn attach_device_model(commands: &mut Commands, assets: &DefuserAssets, root: Entity) {
     let a = assets;
     let part = |mesh: &Handle<Mesh>, material: &Handle<StandardMaterial>, at: Vec3| {
         (
@@ -136,13 +151,7 @@ pub(crate) fn spawn_device_model(
             Transform::from_translation(at),
         )
     };
-    let root = commands
-        .spawn((
-            bundle,
-            Transform::from_translation(position).with_rotation(Quat::from_rotation_y(yaw)),
-            Visibility::default(),
-        ))
-        .id();
+    commands.entity(root).insert_if_new(Visibility::default());
     let mut children = vec![
         commands.spawn(part(&a.base, &a.olive, Vec3::Y * 0.025)).id(),
         commands.spawn(part(&a.housing, &a.dark, Vec3::new(0.0, 0.10, 0.11))).id(),
@@ -159,7 +168,6 @@ pub(crate) fn spawn_device_model(
         }
     }
     commands.entity(root).add_children(&children);
-    root
 }
 
 fn equip_defuser(
@@ -181,7 +189,7 @@ fn equip_defuser(
             None => {
                 events.write(RoundEvent::PlantRefused {
                     entity,
-                    reason: "not carrying the defuser",
+                    reason: "not carrying the defuser".into(),
                 });
             }
         }
@@ -230,7 +238,7 @@ fn plant_defuser(
             if pressed && live && !dead {
                 events.write(RoundEvent::PlantRefused {
                     entity,
-                    reason: "not carrying the defuser",
+                    reason: "not carrying the defuser".into(),
                 });
             }
             continue;
@@ -256,7 +264,7 @@ fn plant_defuser(
                     RoundPhase::Action => "not inside a bomb site",
                     _ => "not now",
                 };
-                events.write(RoundEvent::PlantRefused { entity, reason });
+                events.write(RoundEvent::PlantRefused { entity, reason: reason.into() });
             }
             continue;
         }

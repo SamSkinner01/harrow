@@ -32,17 +32,22 @@ impl Plugin for CombatPlugin {
             .add_message::<Died>()
             .add_message::<SurfaceImpact>()
             .add_message::<Noise>()
-            .add_systems(FixedPostUpdate, apply_damage);
+            .add_systems(FixedPostUpdate, apply_damage.in_set(CombatSystems));
     }
 }
 
-#[derive(Component, Clone, Copy, PartialEq, Eq, Debug, Hash)]
+/// Damage application (`FixedPostUpdate`). Only the authority runs it
+/// (networking gates the set).
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct CombatSystems;
+
+#[derive(Component, Clone, Copy, PartialEq, Eq, Debug, Hash, serde::Serialize, serde::Deserialize)]
 pub enum Team {
     Attackers,
     Defenders,
 }
 
-#[derive(Component, Clone, Debug)]
+#[derive(Component, Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Health {
     pub current: f32,
     pub max: f32,
@@ -64,7 +69,7 @@ pub struct Armour {
 }
 
 /// Added when health reaches zero.
-#[derive(Component, Debug)]
+#[derive(Component, Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Dead;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -101,7 +106,7 @@ pub enum SurfaceKind {
     Soft,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum ImpactKind {
     Bullet,
     /// One shotgun pellet; destruction groups nearby pellets into a bigger hole.

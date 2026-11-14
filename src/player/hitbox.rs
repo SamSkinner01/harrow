@@ -32,7 +32,7 @@ impl Plugin for HitboxPlugin {
 }
 
 /// Body region a hit zone belongs to; decides damage in M3.
-#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum HitZone {
     Head,
     Torso,
@@ -50,7 +50,9 @@ impl HitZone {
     }
 }
 
-pub(super) fn spawn_hitboxes(parent: &mut ChildSpawnerCommands) {
+/// Spawn the three hit zones as children of a character
+/// (`.with_children(spawn_hitboxes)`).
+pub fn spawn_hitboxes(parent: &mut ChildSpawnerCommands) {
     for zone in [HitZone::Head, HitZone::Torso, HitZone::Legs] {
         let (radius, length) = zone.shape();
         parent.spawn((

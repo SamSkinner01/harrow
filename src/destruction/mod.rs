@@ -145,7 +145,8 @@ impl Default for DestructionGate {
 /// What a character wants to do this tick (held buttons). Written by the
 /// local input (`input.rs`), later by bots and the network; read only by
 /// the simulation. Aim comes from [`PlayerInput`] yaw/pitch.
-#[derive(Component, Default, Debug, Clone, Copy)]
+/// Networked as part of `net::input::NetInput`.
+#[derive(Component, Default, Debug, Clone, Copy, PartialEq, Reflect, serde::Serialize, serde::Deserialize)]
 pub struct DestructionIntent {
     /// Melee button (V) held.
     pub melee: bool,

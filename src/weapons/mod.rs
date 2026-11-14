@@ -19,6 +19,8 @@
 //! `dummies.rs` adds training targets (`--dummies`); `testing.rs` has the
 //! automated checks (`--weapon-test`) and screenshot helpers.
 
+// Synthesised sounds; not in the dedicated-server build (no audio).
+#[cfg(feature = "client")]
 mod audio;
 mod ballistics;
 mod dummies;
@@ -58,9 +60,10 @@ impl Plugin for WeaponsPlugin {
                 viewmodel::ViewmodelPlugin,
                 effects::ImpactEffectsPlugin,
                 hud::WeaponHudPlugin,
-                audio::WeaponAudioPlugin,
                 testing::WeaponTestPlugin,
             ));
+        #[cfg(feature = "client")]
+        app.add_plugins(audio::WeaponAudioPlugin);
     }
 }
 
@@ -71,7 +74,7 @@ pub enum WeaponSystems {
 }
 
 /// A weapon slot in the loadout.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Reflect, serde::Serialize, serde::Deserialize)]
 pub enum Slot {
     #[default]
     Primary,
@@ -109,7 +112,8 @@ impl Slot {
 ///
 /// Button presses are counters rather than flags, so a click shorter than a
 /// simulation tick is never lost and the simulation never has to write back.
-#[derive(Component, Default, Debug, Clone)]
+/// Networked as part of `net::input::NetInput`.
+#[derive(Component, Default, Debug, Clone, PartialEq, Reflect, serde::Serialize, serde::Deserialize)]
 pub struct WeaponInput {
     /// Trigger held.
     pub trigger: bool,
@@ -125,7 +129,8 @@ pub struct WeaponInput {
 
 /// Multiplies a character's walking speed (read by the movement code).
 /// Weapons set it from aiming; 1.0 = normal.
-#[derive(Component, Debug, Clone, Copy)]
+/// Replicated: a client's movement prediction reads it.
+#[derive(Component, Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct MoveSpeedScale(pub f32);
 
 impl Default for MoveSpeedScale {
@@ -135,14 +140,14 @@ impl Default for MoveSpeedScale {
 }
 
 /// Rounds for one weapon.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Ammo {
     pub magazine: u32,
     pub reserve: u32,
 }
 
 /// What the hands are busy with.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum WeaponAction {
     Ready,
     Reloading { elapsed: f32, duration: f32, empty: bool },
@@ -166,8 +171,9 @@ impl WeaponAction {
     }
 }
 
-/// Weapon simulation state of one character. Owned by the fixed tick.
-#[derive(Component, Debug, Clone)]
+/// Weapon simulation state of one character. Owned by the fixed tick (on
+/// the server when networked; clients get it replicated).
+#[derive(Component, Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct WeaponState {
     pub active: Slot,
     pub ammo: [Ammo; 2],
@@ -264,8 +270,8 @@ impl Default for AimView {
     }
 }
 
-/// A shot was fired (one per bullet).
-#[derive(Message, Clone, Debug)]
+/// A shot was fired (one per bullet). Forwarded to clients.
+#[derive(Message, Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct ShotFired {
     pub shooter: Entity,
     pub slot: Slot,
@@ -277,7 +283,7 @@ pub struct ShotFired {
     pub spread: f32,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum WeaponEventKind {
     DryFire,
     ReloadStart { empty: bool },
@@ -287,7 +293,8 @@ pub enum WeaponEventKind {
 }
 
 /// Something happened to a character's weapon (for sounds and animation).
-#[derive(Message, Clone, Debug)]
+/// Forwarded to clients.
+#[derive(Message, Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct WeaponEvent {
     pub shooter: Entity,
     pub slot: Slot,
@@ -295,8 +302,9 @@ pub struct WeaponEvent {
 }
 
 /// A bullet hit something with health: a character's hit zone or a hit
-/// volume such as a gadget (hit markers, dummies, tests).
-#[derive(Message, Clone, Debug)]
+/// volume such as a gadget (hit markers, dummies, tests). Forwarded to
+/// clients.
+#[derive(Message, Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct BulletHit {
     pub shooter: Entity,
     pub target: Entity,
@@ -314,8 +322,9 @@ pub struct BulletHit {
 }
 
 /// Every character gets a loadout and weapon intent when it appears.
+/// (`if_new`: on a client, weapon state may already have been replicated.)
 fn arm_character(add: On<Add<Player>>, mut commands: Commands, tuning: Res<Tuning>) {
-    commands.entity(add.entity).insert((
+    commands.entity(add.entity).insert_if_new((
         WeaponInput::default(),
         WeaponState::new(&tuning),
         MoveSpeedScale::default(),
