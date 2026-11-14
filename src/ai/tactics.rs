@@ -173,6 +173,9 @@ fn analyse_map(
     };
     // Only places people can walk to (not crate tops or roofs).
     let main = grid.main_area();
+    // Places the attackers can see from their spawn are no place to wait.
+    let spawn_eyes: Vec<Vec3> = layout.attacker_spawns.iter().map(|s| s.position + Vec3::Y * eye).collect();
+    let seen_from_spawn = |p: Vec3| spawn_eyes.iter().any(|&s| clear(p + Vec3::Y * eye, s));
     let mut sites = Vec::new();
     for site in &layout.sites {
         let min = site.min;
@@ -242,7 +245,7 @@ fn analyse_map(
                 if !(2.5..=10.0).contains(&d) || (p.y - e.inside.y).abs() > 1.0 && e.kind != LinkKind::Drop {
                     continue;
                 }
-                if !clear(p + Vec3::Y * eye, watch) {
+                if !clear(p + Vec3::Y * eye, watch) || seen_from_spawn(p) {
                     continue;
                 }
                 let cover = grid.node(id).flags & EDGE != 0;
@@ -355,15 +358,21 @@ fn analyse_map(
             doors.push(DoorJob { slot: slot_entity, stand: grid.pos(node), aim: opening, at });
         }
 
-        // Stake spots: out along each entrance's approach.
+        // Stake spots: out along each entrance's approach, indoors only
+        // (a defender outside when the action starts is an easy kill).
         let spread = tuning.ai.behaviour.stake_spread;
         let mut stakes = Vec::new();
         for e in entrances.iter().filter(|e| e.kind == LinkKind::Walk) {
-            let want = e.outside + e.out_dir * spread;
-            if let Some(node) = grid.locate(want + Vec3::Y * 0.3, 3).filter(|n| main[*n as usize]) {
+            for step in [spread, spread * 0.6] {
+                let want = e.outside + e.out_dir * step;
+                let Some(node) = grid.locate(want + Vec3::Y * 0.3, 3).filter(|n| main[*n as usize]) else {
+                    continue;
+                };
                 let p = grid.pos(node);
-                if !inside_box(p + Vec3::Y * 0.1) && grid.node(node).standable() {
+                let indoors = spatial.cast_ray(p + Vec3::Y, Dir3::Y, 6.0, true, &filter).is_some();
+                if indoors && !inside_box(p + Vec3::Y * 0.1) && grid.node(node).standable() {
                     stakes.push((p, e.out_dir));
+                    break;
                 }
             }
         }
@@ -395,7 +404,7 @@ fn analyse_map(
             continue;
         }
         let covered = spatial.cast_ray(p + Vec3::Y, Dir3::Y, 6.0, true, &filter).is_some();
-        if covered {
+        if covered && !seen_from_spawn(p) {
             roam.push(p);
         }
     }

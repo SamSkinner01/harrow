@@ -28,7 +28,10 @@ use super::{
     brain::{GoalKind, Pace, TeamPlans},
     eye_position, look_dir,
     nav::{LinkKind, NavGrid},
-    path::{COST_BARRICADE, COST_BARRICADE_DEFENDER, Path, PathOptions, PathScratch, find_path},
+    path::{
+        COST_BARRICADE, COST_BARRICADE_DEFENDER, COST_BREACH, COST_BREACH_PREFERRED, Path, PathOptions,
+        PathScratch, find_path,
+    },
     test::AiStats,
 };
 use crate::{
@@ -73,6 +76,8 @@ pub struct Buttons {
     pub objective: bool,
     /// One-shot: unique gadget.
     pub gadget: bool,
+    /// Secondary gadget key held (grenades: release to throw).
+    pub secondary: bool,
     pub crouch: bool,
     pub lean: Lean,
 }
@@ -171,6 +176,7 @@ fn drive(
         let feet = transform.translation;
         let state = &mut *state;
         state.buttons.melee = false;
+        state.buttons.secondary = false;
         state.buttons.build = false;
         state.buttons.objective = false;
         state.buttons.crouch = false;
@@ -219,9 +225,11 @@ fn drive(
                 let to = grid.locate(target + Vec3::Y * 0.3, 3);
                 let options = PathOptions {
                     barricades: Some(if *team == Team::Attackers { COST_BARRICADE } else { COST_BARRICADE_DEFENDER }),
-                    breach: *team == Team::Attackers
+                    // The second stack opens its own way in when it can.
+                    breach: (*team == Team::Attackers
                         && charges_left.is_some_and(|c| c.0 > 0)
-                        && now > state.nav.no_breach_until,
+                        && now > state.nav.no_breach_until)
+                        .then_some(if goal.alt_route { COST_BREACH_PREFERRED } else { COST_BREACH }),
                     max_expansions: 60_000,
                 };
                 let route = &plans.route;
@@ -492,6 +500,25 @@ fn drive(
                     state.mind.pressed_at = Some(now);
                 }
             }
+            GoalKind::Throw { aim } => {
+                // Face it with a little arc, hold the key briefly, let go.
+                state.nav.move_dir = Vec3::ZERO;
+                let lob = aim + Vec3::Y * (aim.distance(feet) * 0.12).min(2.0);
+                state.nav.activity_look = Some(lob);
+                match state.mind.pressed_at {
+                    None if state.look.error < 0.05 => {
+                        state.mind.pressed_at = Some(now);
+                        state.buttons.secondary = true;
+                    }
+                    Some(t) if now - t < 0.35 => state.buttons.secondary = true,
+                    Some(t) if now - t < 0.4 => {
+                        state.buttons.secondary = false;
+                        stats.smokes += 1;
+                        info!("ai: {name} throws a smoke at {aim:.1}");
+                    }
+                    _ => state.buttons.secondary = false,
+                }
+            }
             GoalKind::Dart { aim } => {
                 state.nav.move_dir = Vec3::ZERO;
                 state.nav.activity_look = Some(aim);
@@ -713,6 +740,7 @@ fn write_intents(
         if b.gadget {
             gadget.use_unique = true;
         }
+        gadget.secondary_held = b.secondary;
         state.buttons.reload = false;
         state.buttons.gadget = false;
     }

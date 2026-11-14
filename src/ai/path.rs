@@ -36,8 +36,9 @@ pub struct PathOptions {
     /// Attackers break them routinely; defenders only as a last resort
     /// (their own barricades shouldn't lock them out of a site).
     pub barricades: Option<f32>,
-    /// Blow through soft walls (carries breach charges).
-    pub breach: bool,
+    /// Extra cost (metres) of blowing through a soft wall with a breach
+    /// charge; `None` = can't (carries none).
+    pub breach: Option<f32>,
     pub max_expansions: u32,
 }
 
@@ -72,7 +73,11 @@ pub const COST_BARRICADE_DEFENDER: f32 = 40.0;
 const COST_EDGE: f32 = 0.25;
 const COST_LEDGE: f32 = 2.0;
 const COST_DROP: f32 = 1.5;
-const COST_BREACH: f32 = 14.0;
+/// Breaching a soft wall: placing, backing off and waiting is worth this
+/// much walking.
+pub const COST_BREACH: f32 = 14.0;
+/// For a stack that is meant to open a second way in.
+pub const COST_BREACH_PREFERRED: f32 = 2.0;
 
 /// Shortest path from `from` to `to`. `penalty` adds a cost per entered node.
 pub fn find_path(
@@ -130,8 +135,10 @@ pub fn find_path(
             match kind {
                 LinkKind::Walk => {}
                 LinkKind::Drop => cost += COST_DROP,
-                LinkKind::Breach if options.breach => cost += COST_BREACH,
-                LinkKind::Breach => continue,
+                LinkKind::Breach => match options.breach {
+                    Some(extra) => cost += extra,
+                    None => continue,
+                },
             }
             if node.flags & BARRICADE != 0 {
                 let Some(extra) = options.barricades else { continue };

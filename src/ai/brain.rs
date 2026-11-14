@@ -32,7 +32,7 @@ use super::{
     AiSettings, AiSystems, Bot,
     combat::CombatState,
     motor::{Buttons, LookState, NavState},
-    nav::{NavGrid, NodeId},
+    nav::{LinkKind, NavGrid, NodeId},
     path::{PathOptions, PathScratch, find_path},
     senses::{ContactKind, Sighting, TeamIntel},
     tactics::{DoorJob, Tactics, WallJob, find_cover},
@@ -41,10 +41,10 @@ use crate::{
     combat::{Dead, Health, Team},
     config::Tuning,
     destruction::{Reinforcements, SoftSurface, SurfaceRole},
-    gadgets::{GadgetKind, UniqueGadget},
+    gadgets::{GadgetKind, SecondaryGadget, SecondaryStock, UniqueGadget},
     player::{Lean, Player},
     round::{
-        Round, RoundPhase, RoundReset,
+        InteractionKind, ObjectiveInteraction, Round, RoundPhase, RoundReset,
         defuser::{DefuserCarrier, DefuserDevice, DroppedDefuser},
         sites::{KeepLayout, SiteId},
     },
@@ -126,6 +126,8 @@ pub enum GoalKind {
     Barricade { slot: Entity, aim: Vec3 },
     Stake { facing: Vec3 },
     Dart { aim: Vec3 },
+    /// Throw the secondary gadget (a smoke) at a point.
+    Throw { aim: Vec3 },
     Plant,
     Disable,
     PickUp,
@@ -182,11 +184,17 @@ pub struct Mind {
     pub dart_at: f32,
     /// Moved to the contested site this round.
     pub rotated: bool,
+    /// Threw a smoke to cover the plant this round.
+    pub smoked: bool,
     /// When the bot arrived at its goal (for activities).
     pub arrived_at: Option<f32>,
     /// Activity button timing (press once, then wait).
     pub pressed_at: Option<f32>,
 }
+
+/// The attacker fetching a dropped defuser.
+#[derive(Default)]
+struct PickupClaim(Option<Entity>);
 
 /// Team-level plans made at phase changes.
 #[derive(Resource, Default)]
@@ -240,6 +248,7 @@ fn reset_minds(
         state.mind.roam = None;
         state.mind.dart_at = 0.0;
         state.mind.rotated = false;
+        state.mind.smoked = false;
     }
 }
 
@@ -287,7 +296,7 @@ fn plan_rounds(
             grid.locate(spawn_centre + Vec3::Y * 0.3, 4),
             grid.locate(site.inside_point(&grid, 0) + Vec3::Y * 0.3, 2),
         ) {
-            let options = PathOptions { barricades: Some(super::path::COST_BARRICADE), breach: false, max_expansions: 120_000 };
+            let options = PathOptions { barricades: Some(super::path::COST_BARRICADE), breach: None, max_expansions: 120_000 };
             if let Some(path) = find_path(&grid, &mut scratch, from, to, options, &|_| 0.0) {
                 for w in &path.points {
                     for id in grid.nodes_near(w.pos, 1.6, 1.0) {
@@ -453,16 +462,21 @@ fn think(
         Option<&UniqueGadget>,
         Option<&Reinforcements>,
         Option<&WeaponState>,
+        Option<&SecondaryStock>,
     )>,
     characters: Query<(Entity, &Transform, &Team, Has<Dead>), With<Player>>,
+    mut claim: Local<PickupClaim>,
     round: Res<Round>,
     plans: Res<TeamPlans>,
     tactics: Res<Tactics>,
     grid: Res<NavGrid>,
     intel: Res<TeamIntel>,
     layout: Option<Res<KeepLayout>>,
-    devices: Query<(&Transform, &DefuserDevice), Without<Player>>,
-    dropped: Query<&Transform, (With<DroppedDefuser>, Without<Player>)>,
+    (devices, dropped, planters): (
+        Query<(&Transform, &DefuserDevice), Without<Player>>,
+        Query<&Transform, (With<DroppedDefuser>, Without<Player>)>,
+        Query<(&Transform, &ObjectiveInteraction), With<Player>>,
+    ),
     surfaces: Query<(&'static SoftSurface, &'static GlobalTransform)>,
     spatial: SpatialQuery,
     settings: Res<AiSettings>,
@@ -482,7 +496,47 @@ fn think(
     let dropped_at = dropped.iter().next().map(|t| t.translation);
     let eye_height = tuning.body.stand_height - tuning.body.eye_from_top;
 
-    for (me, mut bot, mut state, transform, team, health, dead, carrier, gadget, reinforcements, weapon) in &mut bots {
+    // Who fetches a dropped defuser: whoever was already on it, else the
+    // nearest living attacker.
+    match dropped_at {
+        None => claim.0 = None,
+        Some(at) => {
+            let alive = |e: Entity| others.list.iter().any(|(o, _, t, dead)| *o == e && *t == Team::Attackers && !dead);
+            if claim.0.is_none_or(|e| !alive(e)) {
+                claim.0 = others
+                    .list
+                    .iter()
+                    .filter(|(e, _, t, dead)| *t == Team::Attackers && !dead && bots.contains(*e))
+                    .min_by(|a, b| a.1.distance(at).total_cmp(&b.1.distance(at)))
+                    .map(|(e, ..)| *e);
+            }
+        }
+    }
+    // Ranks among team mates sharing a site, by entity (stable).
+    let mut site_rank = bevy::platform::collections::HashMap::new();
+    {
+        let mut groups: Vec<((Team, Option<SiteId>), Entity)> = bots
+            .iter()
+            .filter(|b| !b.6)
+            .map(|b| ((*b.4, b.2.mind.site), b.0))
+            .collect();
+        groups.sort_by_key(|((team, site), e)| (*team == Team::Attackers, site.map(|s| s.letter()), *e));
+        let mut last = None;
+        let mut rank = 0;
+        for (key, e) in groups {
+            if last != Some(key) {
+                last = Some(key);
+                rank = 0;
+            }
+            site_rank.insert(e, rank);
+            rank += 1;
+        }
+    }
+    let planting = planters
+        .iter()
+        .find(|(_, i)| i.kind == InteractionKind::Plant)
+        .map(|(t, _)| t.translation);
+    for (me, mut bot, mut state, transform, team, health, dead, carrier, gadget, reinforcements, weapon, secondary) in &mut bots {
         if now < bot.next_think {
             continue;
         }
@@ -547,6 +601,9 @@ fn think(
             others: &others,
             device,
             dropped_at,
+            planting,
+            pickup: claim.0,
+            site_rank: &site_rank,
             surfaces: &surfaces,
             tuning: &tuning,
             crouch_chance: d.crouch_chance,
@@ -558,11 +615,14 @@ fn think(
             }
             RoundPhase::Prep => idle_towards_objective(&ctx),
             RoundPhase::Action if *team == Team::Defenders => {
-                let late = round.elapsed > 20.0;
+                // Only reinforcing (inside) carries on into the action
+                // phase, for a little while.
+                state.mind.jobs.retain(|j| matches!(j, Job::Reinforce(_)));
+                let late = round.elapsed > 15.0;
                 let jobs = if late { None } else { defender_jobs(&ctx, &mut state, &mut bot, gadget, reinforcements) };
                 jobs.unwrap_or_else(|| defend(&ctx, &mut state, &mut bot))
             }
-            RoundPhase::Action => attack(&ctx, &mut state, &mut bot, carrier, gadget),
+            RoundPhase::Action => attack(&ctx, &mut state, &mut bot, carrier, gadget, secondary),
             RoundPhase::Planted if *team == Team::Defenders => retake(&ctx, &mut state),
             RoundPhase::Planted => guard_plant(&ctx, &mut state, &mut bot),
             _ => Goal::default(),
@@ -584,6 +644,13 @@ struct Ctx<'a, 'w, 's> {
     others: &'a Others,
     device: Option<(Vec3, Option<Entity>, SiteId)>,
     dropped_at: Option<Vec3>,
+    /// Where an attacker is planting the defuser right now.
+    planting: Option<Vec3>,
+    /// The attacker fetching a dropped defuser.
+    pickup: Option<Entity>,
+    /// Each bot's place among its team mates at the same site (unique
+    /// hold spots).
+    site_rank: &'a bevy::platform::collections::HashMap<Entity, usize>,
     surfaces: &'a Query<'w, 's, (&'static SoftSurface, &'static GlobalTransform)>,
     tuning: &'a Tuning,
     crouch_chance: f32,
@@ -597,12 +664,6 @@ impl Ctx<'_, '_, '_> {
             .iter()
             .filter(move |(e, _, t, dead)| *e != self.me && *t == self.team && !dead)
             .map(|(e, p, _, _)| (*e, *p))
-    }
-
-    /// Am I the closest living team mate to `p`?
-    fn closest_to(&self, p: Vec3) -> bool {
-        let mine = self.feet.distance(p);
-        self.mates().all(|(_, q)| q.distance(p) >= mine)
     }
 
     /// Rank (0 = closest) among living team mates by distance to `p`.
@@ -806,7 +867,9 @@ fn defend(ctx: &Ctx, state: &mut BotState, bot: &mut Bot) -> Goal {
         state.mind.hold_since = ctx.now;
     }
     // Spread anchors over the spots: offset by my rank at this site.
-    let spot = &site.holds[(state.mind.hold + bot.index as usize) % site.holds.len()];
+    // Each defender of the site its own spot (no two on one).
+    let rank = ctx.site_rank.get(&ctx.me).copied().unwrap_or(bot.index as usize);
+    let spot = &site.holds[(state.mind.hold + rank) % site.holds.len()];
     let mut watch = spot.watch;
     if let Some(c) = contact.filter(|c| c.pos.distance(ctx.feet) < 14.0 && c.pos.distance(spot.pos) > 1.5) {
         watch = c.pos + Vec3::Y * 1.2;
@@ -825,12 +888,49 @@ fn defend(ctx: &Ctx, state: &mut BotState, bot: &mut Bot) -> Goal {
 }
 
 /// Attackers in the action phase.
-fn attack(ctx: &Ctx, state: &mut BotState, bot: &mut Bot, carrier: Option<&DefuserCarrier>, gadget: Option<&UniqueGadget>) -> Goal {
+fn attack(
+    ctx: &Ctx,
+    state: &mut BotState,
+    bot: &mut Bot,
+    carrier: Option<&DefuserCarrier>,
+    gadget: Option<&UniqueGadget>,
+    secondary: Option<&SecondaryStock>,
+) -> Goal {
     let b = &ctx.tuning.ai.behaviour;
     let site_id = state.mind.site.or(ctx.plans.target);
     let Some(site) = site_id.and_then(|s| ctx.tactics.site(s)).or(ctx.tactics.sites.first()) else {
         return Goal::default();
     };
+    // A smoke on the way in while a team mate plants: finish the throw.
+    if matches!(state.goal.kind, GoalKind::Throw { .. }) {
+        if state.mind.pressed_at.is_none_or(|t| ctx.now - t < 0.6) && !state.mind.smoked {
+            return state.goal.clone();
+        }
+        state.mind.smoked = true;
+    }
+    if !state.mind.smoked
+        && carrier.is_none()
+        && let Some(stock) = secondary
+        && stock.kind == SecondaryGadget::Smoke
+        && stock.remaining > 0
+        && let Some(planter) = ctx.planting
+        && planter.distance(ctx.feet) < 12.0
+        && state.senses.visible.is_empty()
+        && let Some(entrance) = site
+            .entrances
+            .iter()
+            .filter(|e| e.kind == LinkKind::Walk)
+            .min_by(|a, b| a.inside.distance(planter).total_cmp(&b.inside.distance(planter)))
+    {
+        // Into the doorway the defenders would come through.
+        let aim = entrance.inside + entrance.out_dir * 0.8 + Vec3::Y * 0.4;
+        return Goal {
+            kind: GoalKind::Throw { aim },
+            at: None,
+            watch: Some(aim),
+            ..default()
+        };
+    }
     let in_site = ctx.layout.and_then(|l| l.site_at(ctx.feet + Vec3::Y * 0.05)).is_some();
     let enemy_seen = !state.senses.visible.is_empty();
     let recently_hurt = state.senses.hurt.is_some_and(|(_, _, t)| ctx.now - t < 1.5);
@@ -849,9 +949,10 @@ fn attack(ctx: &Ctx, state: &mut BotState, bot: &mut Bot, carrier: Option<&Defus
         let target = site.inside_point(ctx.grid, site.inside.len() / 2);
         return approach(ctx, state, site.centre, target, false);
     }
-    // A dropped defuser: the closest attacker fetches it.
+    // A dropped defuser: one attacker (claimed, so they don't take turns)
+    // fetches it.
     if let Some(at) = ctx.dropped_at
-        && ctx.closest_to(at)
+        && ctx.pickup == Some(ctx.me)
     {
         return Goal {
             kind: GoalKind::PickUp,
@@ -924,8 +1025,8 @@ fn hold_site(ctx: &Ctx, state: &mut BotState, bot: &mut Bot, site: &super::tacti
             ..default()
         };
     }
-    let rank = ctx.rank_to(site.centre);
-    let spot = &site.holds[(rank + bot.index as usize) % site.holds.len()];
+    let rank = ctx.site_rank.get(&ctx.me).copied().unwrap_or(bot.index as usize);
+    let spot = &site.holds[rank % site.holds.len()];
     let crouch = (bot.index as f32 * 0.53).fract() < ctx.crouch_chance;
     let _ = state;
     Goal {

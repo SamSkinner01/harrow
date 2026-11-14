@@ -102,6 +102,7 @@ pub struct AiStats {
     pub no_path: u32,
     pub breaches: u32,
     pub darts: u32,
+    pub smokes: u32,
     pub stakes: u32,
     pub wallbangs: u32,
     /// Spot checks of shots at a target: stone in the way (should stay 0).
@@ -261,7 +262,7 @@ fn log_test(
                 let s = &*stats;
                 let r = &test.round_start;
                 let line = format!(
-                    "round {round}: {} win by {} | dead: {} attackers, {} defenders | reinforced {}, barricades {}, stakes {}, darts {}, breaches {}, plants {}, disables {} | stuck {}, no-path {}, wallbangs {}, stone-shots {}/{} checked | blue {score_blue} - red {score_red}",
+                    "round {round}: {} win by {} | dead: {} attackers, {} defenders | reinforced {}, barricades {}, stakes {}, darts {}, smokes {}, breaches {}, plants {}, disables {} | stuck {}, no-path {}, wallbangs {}, stone-shots {}/{} checked | blue {score_blue} - red {score_red}",
                     team_label(result.winner),
                     result.reason.label(),
                     s.kills[0] - r.kills[0],
@@ -270,6 +271,7 @@ fn log_test(
                     s.barricades - r.barricades,
                     s.stakes - r.stakes,
                     s.darts - r.darts,
+                    s.smokes - r.smokes,
                     s.breaches - r.breaches,
                     s.plants - r.plants,
                     s.disables - r.disables,
@@ -529,7 +531,7 @@ fn nav_test(
             let a = grid.locate(*from + Vec3::Y * 0.3, 3);
             let b = grid.locate(*to + Vec3::Y * 0.3, 3);
             for attacker in [true, false] {
-                let options = super::path::PathOptions { barricades: Some(if attacker { 6.0 } else { 40.0 }), breach: false, max_expansions: 200_000 };
+                let options = super::path::PathOptions { barricades: Some(if attacker { 6.0 } else { 40.0 }), breach: None, max_expansions: 200_000 };
                 let path = match (a, b) {
                     (Some(a), Some(b)) => super::path::find_path(&grid, &mut scratch, a, b, options, &|_| 0.0),
                     _ => None,

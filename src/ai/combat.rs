@@ -230,12 +230,15 @@ fn fight(
             state.buttons.aim = !retreating || distance < 12.0;
 
             // Friendly fire check, a few times a second.
+            // Friendly fire: every tick, and through soft walls (bullets go
+            // through them).
             if now >= c.ff_check_at {
-                c.ff_check_at = now + 0.06;
+                c.ff_check_at = now;
                 let look = super::look_dir(state.look.yaw, state.look.pitch);
                 c.ff_blocked = Dir3::new(look).ok().and_then(|dir| {
                     spatial.cast_ray_predicate(eye, dir, distance + 0.5, true, &hitboxes, &|e| {
-                        colliders.get(e).map(|c| c.body).unwrap_or(e) != me
+                        let body = colliders.get(e).map(|c| c.body).unwrap_or(e);
+                        body != me && surfaces.get(body).ok() != Some(&SurfaceKind::Soft)
                     })
                 }).is_some_and(|hit| {
                     zones
