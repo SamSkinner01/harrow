@@ -45,7 +45,7 @@ use bevy::{
 use super::AiSettings;
 use crate::{
     config::Tuning,
-    destruction::{SoftSurface, SurfaceBroken, SurfaceChanged, SurfaceRole},
+    destruction::{Reinforced, SoftSurface, SurfaceBroken, SurfaceChanged, SurfaceRole},
     physics::GameLayer,
     round::{RoundReset, sites::KeepLayout},
 };
@@ -910,6 +910,7 @@ fn track_surfaces(
     mut removed: RemovedComponents<SoftSurface>,
     mut changed: MessageReader<SurfaceChanged>,
     mut broken: MessageReader<SurfaceBroken>,
+    mut reinforced: MessageReader<Reinforced>,
     mut resets: MessageReader<RoundReset>,
     time: Res<Time>,
 ) {
@@ -941,6 +942,13 @@ fn track_surfaces(
         if let Some(&bounds) = builder.known.get(&b.surface) {
             marks.push(bounds);
             builder.touched.insert(b.surface);
+        }
+    }
+    // A steel plate: no more breach links through it (and a little
+    // thickness).
+    for r in reinforced.read() {
+        if let Some(&bounds) = builder.known.get(&r.surface) {
+            marks.push(bounds);
         }
     }
     if resets.read().last().is_some() {

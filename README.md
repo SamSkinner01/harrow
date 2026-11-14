@@ -264,6 +264,7 @@ cargo run -- --ai-player              # a bot drives your character too (watch i
 cargo run -- --ai-test                # automated bot-only match: logs kills, plants, stuck bots, fps
 cargo run -- --ai-test --ai-matches 3 --ai-speed 2 --ai-shots shots/   # 3 matches at 2x, screenshots
 cargo run -- --ai-test --ai-spectate --ai-cam front   # chase camera on a bot, from the front
+cargo run -- --ai-test --ai-site B   # attackers always go for site B (testing)
 cargo run -- --no-round --ai-navtest  # plan every spawn-to-site path, log them, quit
 cargo run -- --no-round --ai-navtest --ai-navdump 0.8,-7.6,0.8,0.4   # dump grid columns on a line
 ```
@@ -271,8 +272,8 @@ cargo run -- --no-round --ai-navtest --ai-navdump 0.8,-7.6,0.8,0.4   # dump grid
 Bots are off by default in the other automated test modes
 (`--round-script`, `--weapon-test`, `--m4`, `--no-round`, `--dummies`,
 `--gadget-test`, ...); pass `--bots N` to have them anyway. The kill feed
-(top left) and your team's callouts ("Enemy spotted: site A (storeroom)")
-show under the FPS counter.
+(left, under the FPS counter) and your team's callouts ("Enemy spotted:
+site A (storeroom)") under it.
 
 ## Developer flags
 

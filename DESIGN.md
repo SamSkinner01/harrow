@@ -812,7 +812,7 @@ hand-placed data), so a new map just works:
 
 ### HUD
 
-A kill feed (top left: killer, weapon, victim, headshot; your side's
+A kill feed (left, under the FPS counter: killer, weapon, victim, headshot; your side's
 deaths in orange) and your team's callouts under it. On a client the
 feed is built from the server's forwarded hits.
 
@@ -838,7 +838,8 @@ replicated; nothing else is required.
 `--ai-test` plays bot-only matches (the local player is a bot too) with
 `ai.test_timers`, logging every kill, plant, defuse, reinforcement,
 breach and stuck bot, a summary per round and match, and the frame rate;
-`--ai-matches N`, `--ai-speed X` (game clock speed), `--ai-shots DIR`
+`--ai-matches N`, `--ai-speed X` (game clock speed), `--ai-site A|B`
+(force the attack target), `--ai-shots DIR`
 (screenshots from a chase camera on a bot that is fighting), and
 `--ai-spectate`. Bot cost is measured every frame and logged every 10 s
 (`ai: cost ...`).

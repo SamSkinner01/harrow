@@ -40,7 +40,7 @@ use super::{
 use crate::{
     combat::{Dead, Health, Team},
     config::Tuning,
-    destruction::{Reinforcements, SoftSurface, SurfaceRole},
+    destruction::{BreachCharges, Reinforcements, SoftSurface, SurfaceRole},
     gadgets::{GadgetKind, SecondaryGadget, SecondaryStock, UniqueGadget},
     player::{Lean, Player},
     round::{
@@ -262,7 +262,16 @@ fn plan_rounds(
     mut scratch: ResMut<PathScratch>,
     layout: Option<Res<KeepLayout>>,
     mut bots: Query<
-        (Entity, &Transform, &Team, &mut BotState, &mut Bot, Option<&Reinforcements>, Option<&UniqueGadget>),
+        (
+            Entity,
+            &Transform,
+            &Team,
+            &mut BotState,
+            &mut Bot,
+            Option<&Reinforcements>,
+            Option<&UniqueGadget>,
+            Option<&BreachCharges>,
+        ),
         Without<Dead>,
     >,
     tuning: Res<Tuning>,
@@ -284,7 +293,12 @@ fn plan_rounds(
         if attackers.is_empty() || tactics.sites.is_empty() {
             return;
         }
-        let pick = (round.number as usize + attackers[0].4.rng.below(2)) % tactics.sites.len();
+        // `--ai-site A|B` forces the target (testing).
+        let forced = std::env::args()
+            .skip_while(|a| a != "--ai-site")
+            .nth(1)
+            .and_then(|l| tactics.sites.iter().position(|s| s.id.letter().eq_ignore_ascii_case(&l)));
+        let pick = forced.unwrap_or((round.number as usize + attackers[0].4.rng.below(2)) % tactics.sites.len());
         let site = &tactics.sites[pick];
         plans.target = Some(site.id);
         // The first stack's route, from the spawns to the site.
@@ -317,14 +331,15 @@ fn plan_rounds(
                 plans.route_ready = true;
             }
         }
-        attackers.sort_by_key(|b| b.0);
+        // Two stacks, alternating so each gets a breacher (breach charges)
+        // when there are two.
+        attackers.sort_by_key(|b| (b.7.is_none_or(|c| c.0 == 0), b.0));
         let n = attackers.len();
         for (i, (_, _, _, state, ..)) in attackers.iter_mut().enumerate() {
             state.mind.role = Role::Attacker;
             state.mind.site = Some(site.id);
             state.mind.round = round.number;
-            // First half (rounded up) is the first stack.
-            state.mind.alt_route = i >= n.div_ceil(2);
+            state.mind.alt_route = i % 2 == 1;
             state.mind.jobs.clear();
         }
         info!(
@@ -340,7 +355,16 @@ fn plan_rounds(
 fn plan_defence(
     tactics: &Tactics,
     bots: &mut Query<
-        (Entity, &Transform, &Team, &mut BotState, &mut Bot, Option<&Reinforcements>, Option<&UniqueGadget>),
+        (
+            Entity,
+            &Transform,
+            &Team,
+            &mut BotState,
+            &mut Bot,
+            Option<&Reinforcements>,
+            Option<&UniqueGadget>,
+            Option<&BreachCharges>,
+        ),
         Without<Dead>,
     >,
     tuning: &Tuning,
@@ -377,8 +401,13 @@ fn plan_defence(
         }
     }
     // Reinforcements: each wall to the nearest defender of its site with
-    // some left, else anyone.
-    let mut left: Vec<u32> = defenders.iter().map(|d| d.5.map_or(0, |r| r.0)).collect();
+    // some left, else anyone. (`--ai-no-reinforce`: none, for testing
+    // breaches.)
+    let no_reinforce = std::env::args().any(|a| a == "--ai-no-reinforce");
+    let mut left: Vec<u32> = defenders
+        .iter()
+        .map(|d| if no_reinforce { 0 } else { d.5.map_or(0, |r| r.0) })
+        .collect();
     for site in &tactics.sites {
         for wall in &site.walls {
             let pick = (0..n)
@@ -463,6 +492,7 @@ fn think(
         Option<&Reinforcements>,
         Option<&WeaponState>,
         Option<&SecondaryStock>,
+        Option<&BreachCharges>,
     )>,
     characters: Query<(Entity, &Transform, &Team, Has<Dead>), With<Player>>,
     mut claim: Local<PickupClaim>,
@@ -495,6 +525,7 @@ fn think(
     let device = devices.iter().find(|(_, d)| !d.disabled).map(|(t, d)| (t.translation, d.disabler, d.site));
     let dropped_at = dropped.iter().next().map(|t| t.translation);
     let eye_height = tuning.body.stand_height - tuning.body.eye_from_top;
+    let breach_test = std::env::args().any(|a| a == "--ai-breach-test");
 
     // Who fetches a dropped defuser: whoever was already on it, else the
     // nearest living attacker.
@@ -536,7 +567,9 @@ fn think(
         .iter()
         .find(|(_, i)| i.kind == InteractionKind::Plant)
         .map(|(t, _)| t.translation);
-    for (me, mut bot, mut state, transform, team, health, dead, carrier, gadget, reinforcements, weapon, secondary) in &mut bots {
+    for (me, mut bot, mut state, transform, team, health, dead, carrier, gadget, reinforcements, weapon, secondary, charges) in
+        &mut bots
+    {
         if now < bot.next_think {
             continue;
         }
@@ -622,9 +655,28 @@ fn think(
                 let jobs = if late { None } else { defender_jobs(&ctx, &mut state, &mut bot, gadget, reinforcements) };
                 jobs.unwrap_or_else(|| defend(&ctx, &mut state, &mut bot))
             }
-            RoundPhase::Action => attack(&ctx, &mut state, &mut bot, carrier, gadget, secondary),
+            RoundPhase::Action => {
+                let charges = charges.map_or(0, |c| c.0);
+                attack(&ctx, &mut state, &mut bot, carrier, gadget, secondary, charges)
+            }
             RoundPhase::Planted if *team == Team::Defenders => retake(&ctx, &mut state),
             RoundPhase::Planted => guard_plant(&ctx, &mut state, &mut bot),
+            // `--ai-breach-test` (free play): breach into the first site
+            // through its nearest soft wall.
+            RoundPhase::Inactive if breach_test => ctx
+                .tactics
+                .sites
+                .first()
+                .and_then(|s| s.entrances.iter().find(|e| e.kind == LinkKind::Breach))
+                .map(|e| Goal {
+                    kind: GoalKind::Move,
+                    at: Some(e.inside),
+                    pace: Pace::Walk,
+                    radius: 0.6,
+                    alt_route: true,
+                    ..default()
+                })
+                .unwrap_or_default(),
             _ => Goal::default(),
         };
         set_goal(&mut state, goal);
@@ -895,6 +947,7 @@ fn attack(
     carrier: Option<&DefuserCarrier>,
     gadget: Option<&UniqueGadget>,
     secondary: Option<&SecondaryStock>,
+    charges: u32,
 ) -> Goal {
     let b = &ctx.tuning.ai.behaviour;
     let site_id = state.mind.site.or(ctx.plans.target);
@@ -993,7 +1046,19 @@ fn attack(
         return hold_site(ctx, state, bot, site);
     }
     let pick = (bot.index as usize * 5) % site.inside.len().max(1);
-    let target = site.inside_point(ctx.grid, pick);
+    let mut target = site.inside_point(ctx.grid, pick);
+    // The second stack's breacher opens its own way in: through the
+    // nearest breachable wall of the site.
+    if state.mind.alt_route
+        && charges > 0
+        && let Some(wall) = site
+            .entrances
+            .iter()
+            .filter(|e| e.kind == LinkKind::Breach)
+            .min_by(|a, b| a.outside.distance(ctx.feet).total_cmp(&b.outside.distance(ctx.feet)))
+    {
+        target = wall.inside;
+    }
     approach(ctx, state, site.centre, target, state.mind.alt_route)
 }
 

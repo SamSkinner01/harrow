@@ -59,8 +59,8 @@ fn spawn_feeds(mut commands: Commands) {
         row_gap: px(3.0),
         ..default()
     };
-    commands.spawn((Name::new("Kill feed"), KillFeed, column(44.0), Pickable::IGNORE));
-    commands.spawn((Name::new("Callout feed"), CalloutFeed, column(190.0), Pickable::IGNORE));
+    commands.spawn((Name::new("Kill feed"), KillFeed, column(112.0), Pickable::IGNORE));
+    commands.spawn((Name::new("Callout feed"), CalloutFeed, column(262.0), Pickable::IGNORE));
 }
 
 /// "Name (OPERATOR)", or "You".

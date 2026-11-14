@@ -511,8 +511,10 @@ fn drive(
                         state.buttons.secondary = true;
                     }
                     Some(t) if now - t < 0.35 => state.buttons.secondary = true,
-                    Some(t) if now - t < 0.4 => {
+                    Some(_) if !state.mind.smoked => {
+                        // Let go: thrown.
                         state.buttons.secondary = false;
+                        state.mind.smoked = true;
                         stats.smokes += 1;
                         info!("ai: {name} throws a smoke at {aim:.1}");
                     }

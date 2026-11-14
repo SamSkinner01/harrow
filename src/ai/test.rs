@@ -530,8 +530,12 @@ fn nav_test(
         for (to_name, to) in &targets {
             let a = grid.locate(*from + Vec3::Y * 0.3, 3);
             let b = grid.locate(*to + Vec3::Y * 0.3, 3);
-            for attacker in [true, false] {
-                let options = super::path::PathOptions { barricades: Some(if attacker { 6.0 } else { 40.0 }), breach: None, max_expansions: 200_000 };
+            for (attacker, breacher) in [(true, false), (false, false), (true, true)] {
+                let options = super::path::PathOptions {
+                    barricades: Some(if attacker { 6.0 } else { 40.0 }),
+                    breach: breacher.then_some(super::path::COST_BREACH_PREFERRED),
+                    max_expansions: 200_000,
+                };
                 let path = match (a, b) {
                     (Some(a), Some(b)) => super::path::find_path(&grid, &mut scratch, a, b, options, &|_| 0.0),
                     _ => None,
@@ -546,7 +550,7 @@ fn nav_test(
                             .collect();
                         info!(
                             "navtest: {from_name} -> {to_name} ({}): cost {:.1}, {} waypoints {}",
-                            if attacker { "attacker" } else { "defender" },
+                            if breacher { "breacher" } else if attacker { "attacker" } else { "defender" },
                             p.cost,
                             p.points.len(),
                             specials.join(" ")
