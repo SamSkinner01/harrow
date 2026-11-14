@@ -23,15 +23,41 @@ impl Plugin for MapPlugin {
             environment::EnvironmentPlugin,
             lamps::LampsPlugin,
         ));
-        match map_from_args().as_deref() {
-            Some("greybox") => app.add_plugins(greybox::GreyboxPlugin),
-            Some("keep") | None => app.add_plugins(keep::KeepPlugin),
+        // A dedicated server's config file can choose the map (`MapOverride`,
+        // inserted before this plugin); otherwise `--map`.
+        let choice = app
+            .world()
+            .get_resource::<MapOverride>()
+            .map(|m| m.0.clone())
+            .or_else(map_from_args);
+        let name = match choice.as_deref() {
+            Some("greybox") => {
+                app.add_plugins(greybox::GreyboxPlugin);
+                "greybox"
+            }
+            Some("keep") | None => {
+                app.add_plugins(keep::KeepPlugin);
+                "keep"
+            }
             Some(other) => {
                 warn!("unknown --map {other:?}; loading the keep");
-                app.add_plugins(keep::KeepPlugin)
+                app.add_plugins(keep::KeepPlugin);
+                "keep"
             }
         };
+        CURRENT_MAP.get_or_init(|| name.to_string());
     }
+}
+
+/// Use this map instead of `--map` (dedicated server config).
+#[derive(Resource, Debug, Clone)]
+pub struct MapOverride(pub String);
+
+static CURRENT_MAP: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
+/// The loaded map (`keep`, `greybox`). Networked players must agree on it.
+pub fn current_map_name() -> String {
+    CURRENT_MAP.get().cloned().unwrap_or_else(|| "keep".into())
 }
 
 fn map_from_args() -> Option<String> {

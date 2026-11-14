@@ -69,7 +69,7 @@ struct HelpPanel;
 const HELP: &str = "\
 WASD  move        Shift  sprint
 C  crouch         Z  prone
-Q / E  lean       Esc  free mouse
+Q / E  lean       Esc  pause menu
 LMB  fire         RMB  aim
 R  reload         1 / 2  weapons
 V  melee          F  interact (hold)

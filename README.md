@@ -7,10 +7,13 @@ external asset is logged in [ASSETS.md](ASSETS.md).
 ## Build and run
 
 ```sh
-cargo run                      # Harrow Keep (dev build; first build takes a few minutes)
+cargo run                      # main menu: solo, host, join (dev build; first build takes a few minutes)
+cargo run -- --solo            # straight into solo on Harrow Keep
 cargo run -- --map greybox     # the grey-box movement test area
 cargo run --release            # optimised build, use this for judging performance
 ```
+
+Multiplayer (host, join, dedicated server): see [Multiplayer](#multiplayer).
 
 Use `cargo build -j 4` (or any number) to leave CPU cores free while compiling.
 
@@ -47,7 +50,7 @@ Bevy's API changes between releases, so everything is pinned with `=` in
 | Bevy | 0.20.1 | Latest stable (2026-10-28), supported by every crate below. |
 | Avian (`avian3d`) | 0.8.0 | Physics. Chosen over Rapier because Lightyear has first-party Avian integration (`lightyear_avian3d`), which we need for networked prediction. |
 | bevy_enhanced_input | 0.27.2 | Input. Context-based actions (on foot / gadget placement / menus) and Lightyear supports it directly (`input_bei` feature). |
-| Lightyear | 0.31.0 *(planned, M8)* | Networking. Not added yet; 0.31.0 targets Bevy 0.20 + Avian 0.8 + bevy_enhanced_input 0.27. |
+| Lightyear | 0.31.0 | Networking (M8): netcode over UDP, replication (on bevy_replicon 0.45), prediction, interpolation, native inputs. Targets Bevy 0.20 + Avian 0.8. |
 | Blender | 5.2.4 LTS | Asset pipeline. LTS chosen over 5.3.0, which was only days old. |
 | MPFB | 2.0.18 | Character bodies (Blender extension, installed per user by `build_characters.sh --setup`). |
 
@@ -71,7 +74,7 @@ Bevy's API changes between releases, so everything is pinned with `=` in
 | 4 (hold, then press) | Breach charge: hold to stick it on a soft wall, floor or barricade, press again to set it off |
 | 5 | Equip / stow the defuser (attackers) |
 | 1 / 2 | Pick an operator on the selection screen |
-| Esc / left click | Release / capture the mouse |
+| Esc | Pause menu (frees the mouse); left click in game captures it again |
 | F1 | Toggle key help |
 | F3 | Toggle FPS overlay |
 | F4 | Show hit zones and movement capsule |
@@ -120,6 +123,122 @@ Characters: one config per operator in `tools/blender/characters/operators/`
 (body, face, skin, gear; commented). `--setup` changes only your Blender user
 configuration (the MPFB extension and its asset folder). On Windows use
 `tools/scripts/build_characters.ps1`. See DESIGN.md, "M5 characters".
+
+## Multiplayer
+
+The same game plays solo, hosts, joins, or runs a headless dedicated
+server. The server simulates everything (rounds, damage, gadgets,
+destruction); each player's own movement is predicted locally, so it
+feels instant, and everyone else is shown slightly in the past for
+smoothness. Shots are checked by the server against where targets were
+on the shooter's screen (lag compensation). Details: DESIGN.md, "M8
+networking".
+
+**Everyone must run the same build** (same git commit). The game checks
+on connect and refuses a different build with "Version mismatch".
+
+### From the menu
+
+`cargo run` opens the main menu:
+
+- **Play Solo**: the game as before, no network.
+- **Host Game**: you play and others can join you. Pick the UDP port
+  (default 5888).
+- **Join Game**: type the host's address, `host` or `host:port`
+  (`192.168.1.20`, `my-pc.lan:5888`, a Tailscale name...). The last
+  address is remembered (`~/.config/harrow/menu.ron` on Linux,
+  `%APPDATA%\harrow\menu.ron` on Windows).
+
+In game, **Esc** opens the pause menu (Resume, Leave to menu, Quit). If
+the connection fails or drops you're taken back to the menu with the
+reason ("Server not responding", "Version mismatch", "Server full",
+"Disconnected...").
+
+### From the command line
+
+```sh
+cargo run -- --host            # host on UDP 5888 (or --host 6000)
+cargo run -- --connect 192.168.1.20        # join (port 5888), or --connect host:port
+cargo run -- --connect my-pc --name Alice  # name shown to the server
+cargo run -- --server          # dedicated server, headless, UDP 5888 (or --server 6000)
+cargo run -- --server --config assets/config/server.ron   # with a config file
+cargo run -- --solo            # straight into solo (skip the menu)
+```
+
+Any other flag (`--map`, `--no-round`, `--round-test`, `--screenshot`...)
+also skips the menu and works in every mode (`--menu` forces the menu).
+Join late and you watch (dead) until the next round starts; players are
+put on the smaller squad as they join.
+
+### Dedicated server
+
+`--server` runs with no window, GPU, audio or input devices, logs to
+stdout (plain text when not a terminal, so journald is happy) and exits
+cleanly on Ctrl+C or SIGTERM. The round loop waits until someone joins.
+Settings: `--config file.ron` (see `assets/config/server.ron`: name,
+port, map, max players, log level, round loop and timers).
+
+A lean server binary that doesn't link the window system, audio or
+gamepad libraries:
+
+```sh
+cargo build --release --no-default-features --features dedicated
+./target/release/harrow --server --config assets/config/server.ron
+```
+
+It needs the `assets/` folder (the map's collision comes from the kit
+models): run it from the repository, or set `BEVY_ASSET_ROOT` to the
+folder that contains `assets/`.
+
+### Firewall and router
+
+The server (host or dedicated) listens on **UDP** port 5888 (or your
+`--host`/`--server` port). Clients need nothing opened.
+
+- **Fedora** (firewalld):
+  ```sh
+  sudo firewall-cmd --add-port=5888/udp                # until reboot
+  sudo firewall-cmd --permanent --add-port=5888/udp    # permanently...
+  sudo firewall-cmd --reload                           # ...and apply now
+  ```
+- **Windows**: the first time you host, Windows Defender Firewall asks
+  whether to allow `harrow.exe`: tick **Private networks** (and Public
+  only if you need it). Or add the rule yourself in an admin PowerShell:
+  `New-NetFirewallRule -DisplayName "Harrow" -Direction Inbound -Protocol UDP -LocalPort 5888 -Action Allow`.
+
+**LAN:** join with the host's local IP (`ip -4 addr` / `ipconfig`).
+
+**Internet:** either forward UDP 5888 on the host's router to the host's
+local IP and join with the router's public IP, or (easier, no router
+changes) put everyone on the same virtual LAN with
+[Tailscale](https://tailscale.com) or [ZeroTier](https://www.zerotier.com)
+and join with the host's Tailscale/ZeroTier IP or name.
+
+**Security note:** connections use a fixed development key built into
+the game. It keeps other programs' packets out but is not a password:
+only run servers for people you trust, and don't expose one to the whole
+internet for long.
+
+### Testing on one machine
+
+```sh
+tools/scripts/net_test.sh                              # dedicated server + 2 clients, free play
+tools/scripts/net_test.sh --latency 80 --jitter 10 --loss 2   # with a bad network
+tools/scripts/net_test.sh --round                      # round loop: phases stay in sync
+```
+
+Two game windows open for about 20 s. Logs and screenshots go to
+`/tmp/harrow-net-test` (`OUT=dir` to change). The summary shows who
+joined and left, the lag-compensation test shots, what each client sees
+(`--net-trace`), shots/hits/destroyed cells on every instance, and with
+`--round` the round phases of all three.
+
+Network test flags: `--net-latency MS --net-jitter MS --net-loss PCT`
+(simulated on everything that instance receives), `--net-trace` (log
+state once a second), `--net-shoot-test` (server fires lag-compensated
+test rays between players and logs rewound vs live results), `--look
+yaw[,pitch]`, `--auto-fire SECONDS`, `--screenshot-secs S`,
+`--exit-after S`.
 
 ## Developer flags
 

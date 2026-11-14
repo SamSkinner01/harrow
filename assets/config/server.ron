@@ -1,0 +1,27 @@
+// Dedicated server settings (example). Use with:
+//   harrow --server --config assets/config/server.ron
+// Every field is optional; these are the defaults. Command-line flags win:
+// `--server <port>`, `--map`, `--no-round`, `--round-test`.
+(
+    // Shown to players when they join.
+    name: "Harrow server",
+    // UDP port. Open it in the firewall (see README "Multiplayer").
+    port: 5888,
+    // "keep" or "greybox". Players must have the same map (same build).
+    map: "keep",
+    max_players: 10,
+    // error, warn, info, debug or trace.
+    log_level: "info",
+    // Play rounds (keep only). false: free play.
+    round_loop: true,
+    round: (
+        // The short timers from `round.test_timers` in tuning.ron.
+        test_timers: false,
+        // Override `rounds_to_win` from tuning.ron.
+        rounds_to_win: None,
+        // Override every round timer, e.g.
+        // Some((select: 15.0, prep: 45.0, action: 180.0, plant: 7.0,
+        //       defuser: 45.0, disable: 7.0, round_end: 6.0, match_end: 10.0)),
+        timers: None,
+    ),
+)

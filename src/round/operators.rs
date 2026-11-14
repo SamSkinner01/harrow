@@ -37,7 +37,7 @@ impl Plugin for OperatorsPlugin {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum OperatorId {
     Auger,
     Lark,
@@ -148,7 +148,7 @@ impl OperatorId {
 }
 
 /// The operator a character plays this round.
-#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Operator(pub OperatorId);
 
 /// Movement speed multiplier from the operator's speed rating (1.0 =
@@ -167,7 +167,7 @@ pub struct Loadout {
 }
 
 /// Operator selection state for one character.
-#[derive(Component, Default, Debug, Clone)]
+#[derive(Component, Default, Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct OperatorChoice {
     /// Last pick on each side, reused as the default next time.
     pub attacker: Option<OperatorId>,
