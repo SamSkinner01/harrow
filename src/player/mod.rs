@@ -13,17 +13,20 @@
 //!    gameplay state.
 
 mod camera;
+#[cfg(feature = "client")]
 mod footsteps;
 mod hitbox;
 mod input;
 mod movement;
 
-pub use hitbox::HitZone;
+pub use camera::PlayerCamera;
+pub use hitbox::{HitZone, spawn_hitboxes, zone_pose};
 #[allow(unused_imports)] // used by M3+ input systems
 pub use input::{AutomatedRun, input_captured};
 
 use avian3d::prelude::*;
 use bevy::prelude::*;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     combat::{Health, Team},
@@ -41,21 +44,23 @@ impl Plugin for PlayerPlugin {
                 movement::MovementPlugin,
                 hitbox::HitboxPlugin,
                 camera::PlayerCameraPlugin,
-                footsteps::FootstepAudioPlugin,
-            ))
-            .add_systems(Startup, spawn_local_player);
+            ));
+        // The local player is spawned when a session starts
+        // (`session.rs`), not at startup.
+        #[cfg(feature = "client")]
+        app.add_plugins(footsteps::FootstepAudioPlugin);
     }
 }
 
 /// A character controlled by a player or (later) a bot.
-#[derive(Component)]
+#[derive(Component, Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
 pub struct Player;
 
 /// The character this machine controls and the camera follows.
 #[derive(Component)]
 pub struct LocalPlayer;
 
-#[derive(Default, Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Default, Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize, Reflect)]
 pub enum Stance {
     #[default]
     Stand,
@@ -63,7 +68,7 @@ pub enum Stance {
     Prone,
 }
 
-#[derive(Default, Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Default, Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize, Reflect)]
 pub enum Lean {
     Left,
     #[default]
@@ -95,8 +100,9 @@ pub struct Footstep {
     pub loudness: f32,
 }
 
-/// Simulation state owned by the movement code.
-#[derive(Component, Debug)]
+/// Simulation state owned by the movement code. Networked: predicted for
+/// the owning client, interpolated for everyone else (`src/net/`).
+#[derive(Component, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CharacterState {
     /// Stance the body is in or moving towards.
     pub stance: Stance,
@@ -114,7 +120,7 @@ pub struct CharacterState {
 }
 
 impl CharacterState {
-    fn new(height: f32) -> Self {
+    pub fn new(height: f32) -> Self {
         Self {
             stance: Stance::Stand,
             height,
@@ -134,6 +140,27 @@ impl CharacterState {
             self.prev_height.lerp(self.height, t),
             self.prev_lean.lerp(self.lean, t),
         )
+    }
+
+    /// The server's state and a predicted one differ enough to correct
+    /// (networking rollback check).
+    pub fn differs(a: &Self, b: &Self) -> bool {
+        a.stance != b.stance
+            || a.grounded != b.grounded
+            || a.sprinting != b.sprinting
+            || (a.height - b.height).abs() > 1e-3
+            || (a.lean - b.lean).abs() > 1e-3
+    }
+
+    /// Blend for watching another player (networking interpolation).
+    pub fn lerp(a: Self, b: Self, t: f32) -> Self {
+        Self {
+            height: a.height.lerp(b.height, t),
+            lean: a.lean.lerp(b.lean, t),
+            prev_height: a.prev_height.lerp(b.prev_height, t),
+            prev_lean: a.prev_lean.lerp(b.prev_lean, t),
+            ..b
+        }
     }
 }
 
@@ -165,7 +192,9 @@ impl Default for SpawnPoint {
     }
 }
 
-fn spawn_local_player(mut commands: Commands, spawn: Res<SpawnPoint>, tuning: Res<Tuning>) {
+/// Spawn the character this machine controls (solo and host), when the
+/// session starts.
+pub fn spawn_local_player(mut commands: Commands, spawn: Res<SpawnPoint>, tuning: Res<Tuning>) {
     commands
         .spawn((
             Name::new("Local player"),

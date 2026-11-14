@@ -15,8 +15,8 @@ use super::{GadgetEvent, Reveal, RevealSource};
 use crate::{
     combat::Team,
     config::Tuning,
-    player::{AutomatedRun, LocalPlayer},
-    round::{RoundSettings, sound::{Sfx, play}},
+    player::LocalPlayer,
+    round::RoundSettings,
 };
 
 pub struct IntelPlugin;
@@ -26,11 +26,13 @@ impl Plugin for IntelPlugin {
         app.init_gizmo_group::<IntelGizmos>()
             .init_resource::<IntelMarkers>()
             .add_systems(Startup, configure_gizmos)
-            .add_systems(Update, (collect_reveals, draw_markers).chain())
-            .add_systems(
-                Update,
-                gadget_sounds.run_if(not(resource_exists::<AutomatedRun>)),
-            );
+            .add_systems(Update, (collect_reveals, draw_markers).chain());
+        // No audio in the dedicated-server build.
+        #[cfg(feature = "client")]
+        app.add_systems(
+            Update,
+            gadget_sounds.run_if(not(resource_exists::<crate::player::AutomatedRun>)),
+        );
     }
 }
 
@@ -123,13 +125,15 @@ fn draw_markers(markers: Res<IntelMarkers>, tuning: Res<Tuning>, mut gizmos: Giz
 
 /// Launcher pop for the shooter, hiss for defenders near a landing dart,
 /// a thunk when placing a stake, a tick for every stake ping.
+#[cfg(feature = "client")]
 fn gadget_sounds(
     mut commands: Commands,
     mut events: MessageReader<GadgetEvent>,
     local: Query<(Entity, &Transform, &Team), With<LocalPlayer>>,
-    sfx: Res<Sfx>,
+    sfx: Res<crate::round::sound::Sfx>,
     tuning: Res<Tuning>,
 ) {
+    use crate::round::sound::play;
     let Ok((me, at, my_team)) = local.single() else {
         return;
     };

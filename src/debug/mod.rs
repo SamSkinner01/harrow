@@ -62,7 +62,11 @@ impl Plugin for DebugPlugin {
         let forced = ForcedInput::from_args();
         if forced.is_active() {
             app.insert_resource(forced)
-                .add_systems(FixedPreUpdate, apply_forced_input);
+                // Before a client puts its input on the wire.
+                .add_systems(
+                    FixedPreUpdate,
+                    apply_forced_input.before(crate::net::input::CaptureInputSystems),
+                );
         }
         if has_flag("--no-vsync") {
             app.add_systems(Startup, disable_vsync);

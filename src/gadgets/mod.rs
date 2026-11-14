@@ -19,10 +19,10 @@ mod darts;
 mod intel;
 mod stakes;
 
-pub use darts::SensorDart;
-pub(crate) use darts::spawn_listening_dart;
+pub use darts::{DartLight, DartState, SensorDart};
+pub(crate) use darts::{attach_dart_model, spawn_listening_dart};
 pub use stakes::SeismicStake;
-pub(crate) use stakes::spawn_stake;
+pub(crate) use stakes::{attach_stake_model, spawn_stake};
 
 use bevy::prelude::*;
 use bevy_enhanced_input::prelude::*;
@@ -65,7 +65,7 @@ impl Plugin for GadgetsPlugin {
 pub struct GadgetSystems;
 
 /// Unique (operator) gadgets.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum GadgetKind {
     /// Auger: slow, loud hard-breach machine. Waits for M4.
     RingCutter,
@@ -123,7 +123,7 @@ impl SecondaryGadget {
 
 /// The operator's unique gadget and how many are left this round. Set by
 /// the round module when prep starts.
-#[derive(Component, Clone, Debug)]
+#[derive(Component, Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct UniqueGadget {
     pub kind: GadgetKind,
     pub remaining: u8,
@@ -139,11 +139,12 @@ pub struct GadgetIntent {
 }
 
 /// Who deployed a gadget.
-#[derive(Component, Clone, Copy, Debug)]
+#[derive(Component, Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
 pub struct GadgetOwner {
     /// The deploying character (`None` for test-script gadgets). For kill
     /// credit and bots later.
     #[allow(dead_code)]
+    #[entities]
     pub entity: Option<Entity>,
     pub team: Team,
 }
@@ -152,14 +153,15 @@ pub struct GadgetOwner {
 #[derive(Component, Debug)]
 pub struct DeployedGadget;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum RevealSource {
     SensorDart,
     SeismicStake,
 }
 
 /// Intel: an enemy position revealed to `for_team`.
-#[derive(Message, Clone, Debug)]
+/// Forwarded to the matching team's clients (`net/events.rs`).
+#[derive(Message, Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Reveal {
     pub for_team: Team,
     pub position: Vec3,
@@ -169,7 +171,8 @@ pub struct Reveal {
 }
 
 /// Gadget happenings, for presentation and the log.
-#[derive(Message, Clone, Debug)]
+/// Forwarded to clients by the server (`net/events.rs`).
+#[derive(Message, Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub enum GadgetEvent {
     DartFired { by: Entity },
     DartStuck { position: Vec3, team: Team },
@@ -178,7 +181,11 @@ pub enum GadgetEvent {
     StakePlaced { by: Entity, position: Vec3 },
     StakePing { stake: Entity, position: Vec3, team: Team },
     StakeSaturated { stake: Entity },
-    Refused { by: Entity, reason: &'static str },
+    Refused {
+        by: Entity,
+        /// A `Cow` so the event can be sent over the network.
+        reason: std::borrow::Cow<'static, str>,
+    },
     Destroyed { entity: Entity, position: Vec3 },
 }
 
@@ -235,7 +242,10 @@ pub(crate) fn take_gadget_use(
         None
     };
     if let Some(reason) = reason {
-        events.write(GadgetEvent::Refused { by: entity, reason });
+        events.write(GadgetEvent::Refused {
+            by: entity,
+            reason: reason.into(),
+        });
         return false;
     }
     true
@@ -329,7 +339,7 @@ fn refuse_unbuilt_gadgets(
             intent.use_unique = false;
             events.write(GadgetEvent::Refused {
                 by: entity,
-                reason: "not built yet (needs destruction, M4)",
+                reason: "not built yet (needs destruction, M4)".into(),
             });
         }
     }

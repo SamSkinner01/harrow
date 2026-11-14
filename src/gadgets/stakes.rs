@@ -37,7 +37,7 @@ impl Plugin for StakesPlugin {
     }
 }
 
-#[derive(Component, Debug, Clone, Default)]
+#[derive(Component, Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct SeismicStake {
     /// Seconds the stake stays blinded by a loud noise. Feed it through a
     /// loud [`Noise`] message (explosions, ring cutter, gunfire).
@@ -84,7 +84,7 @@ fn place_stakes(
         let Some(point) = floor else {
             events.write(GadgetEvent::Refused {
                 by: entity,
-                reason: "no floor there for a stake",
+                reason: "no floor there for a stake".into(),
             });
             continue;
         };
@@ -117,8 +117,7 @@ pub(crate) fn spawn_stake(
     team: Team,
     owner: Option<Entity>,
 ) -> Entity {
-    let a = assets;
-    commands
+    let stake = commands
         .spawn((
             Name::new("Seismic stake"),
             SeismicStake::default(),
@@ -132,6 +131,18 @@ pub(crate) fn spawn_stake(
             Sensor,
             CollisionLayers::new(GameLayer::Hitbox, LayerMask::NONE),
         ))
+        .id();
+    attach_stake_model(commands, assets, stake);
+    stake
+}
+
+/// The stake's model (spike, head, status light) under `stake` (also used
+/// for stakes replicated to clients).
+pub(crate) fn attach_stake_model(commands: &mut Commands, assets: &GadgetAssets, stake: Entity) {
+    let a = assets;
+    commands
+        .entity(stake)
+        .insert_if_new(Visibility::default())
         .with_children(|parent| {
             // Spike half buried, head and light on top.
             parent.spawn((
@@ -150,8 +161,7 @@ pub(crate) fn spawn_stake(
                 Transform::from_xyz(0.0, 0.225 - HIT_CENTRE, 0.0),
                 StakeLight,
             ));
-        })
-        .id()
+        });
 }
 
 /// Loud noises blind nearby stakes; blindness wears off.

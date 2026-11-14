@@ -35,12 +35,12 @@ impl Plugin for DartsPlugin {
     }
 }
 
-#[derive(Component, Debug, Clone)]
+#[derive(Component, Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct SensorDart {
     pub state: DartState,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum DartState {
     Flying { velocity: Vec3, age: f32 },
     /// Stuck to a surface; seconds of listening left.
@@ -49,7 +49,7 @@ pub enum DartState {
 
 /// The glowing tail light (visible while listening).
 #[derive(Component)]
-pub(super) struct DartLight;
+pub struct DartLight;
 
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn fire_darts(
@@ -99,7 +99,7 @@ fn fire_darts(
                 Visibility::default(),
             ))
             .id();
-        spawn_dart_model(&mut commands, &assets, dart, false);
+        attach_dart_model(&mut commands, &assets, dart, false);
         noise.write(Noise {
             source: Some(entity),
             position: eye,
@@ -116,9 +116,11 @@ fn align_tail(direction: Vec3) -> Quat {
     Quat::from_rotation_arc(Vec3::Y, -direction.normalize_or(Vec3::NEG_Z))
 }
 
-fn spawn_dart_model(commands: &mut Commands, assets: &GadgetAssets, dart: Entity, listening: bool) {
+/// The dart's model under `dart` (also used for darts replicated to
+/// clients).
+pub(crate) fn attach_dart_model(commands: &mut Commands, assets: &GadgetAssets, dart: Entity, listening: bool) {
     let a = assets;
-    commands.entity(dart).with_children(|parent| {
+    commands.entity(dart).insert_if_new(Visibility::default()).with_children(|parent| {
         parent.spawn((
             Mesh3d(a.dart_body.clone()),
             MeshMaterial3d(a.dark_metal.clone()),
@@ -186,7 +188,7 @@ pub(crate) fn spawn_listening_dart(
         ))
         .id();
     stick_dart(commands, dart, point, direction, tuning);
-    spawn_dart_model(commands, assets, dart, true);
+    attach_dart_model(commands, assets, dart, true);
     commands.write_message(GadgetEvent::DartStuck {
         position: point,
         team,

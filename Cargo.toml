@@ -9,8 +9,24 @@ publish = false
 # and Avian / bevy_enhanced_input / Lightyear must match the Bevy version.
 # See README.md ("Pinned versions") before changing any of these.
 [dependencies]
-# file_watcher: hot-reload assets on save. wav: placeholder sounds. jpeg: textures.
-bevy = { version = "=0.20.1", features = ["bevy_dev_tools", "render_dev_tools", "file_watcher", "wav", "jpeg"] }
+# Bevy's features are split between the two builds (see [features] below).
+# This shared set has no window system, audio or gamepad backend, so the
+# dedicated server links none of them; the `client` feature adds Bevy's
+# defaults back. jpeg: textures. serialize: networked components.
+bevy = { version = "=0.20.1", default-features = false, features = [
+    "std",
+    "default_app",
+    "multi_threaded",
+    "default_font",
+    "3d_bevy_render",
+    "ui_bevy_render",
+    "scene",
+    "picking",
+    "bevy_dev_tools",
+    "render_dev_tools",
+    "jpeg",
+    "serialize",
+] }
 avian3d = "=0.8.0"
 bevy_enhanced_input = "=0.27.2"
 # Tuning file format. Same ron version Bevy already uses.
@@ -31,6 +47,18 @@ lightyear = { version = "=0.31.0", default-features = false, features = [
     "avian3d",
     "input_native",
 ] }
+# The version Bevy already uses. "termination" makes SIGTERM (e.g. systemd
+# stopping a dedicated server) exit as gracefully as Ctrl+C.
+ctrlc = { version = "3.4", features = ["termination"] }
+
+[features]
+default = ["client"]
+# A player's build: window, audio, gamepads, asset hot reload (Bevy's
+# default features) and wav for the placeholder sounds.
+client = ["bevy/default", "bevy/file_watcher", "bevy/wav"]
+# Marker for the lean dedicated-server build, which can only run `--server`:
+#   cargo build --release --no-default-features --features dedicated
+dedicated = []
 
 # Faster iteration: lightly optimise our code, fully optimise dependencies.
 [profile.dev]

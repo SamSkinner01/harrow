@@ -25,9 +25,15 @@ impl Plugin for TuningPlugin {
             .init_asset::<Tuning>()
             .register_asset_loader(TuningLoader)
             .add_systems(Startup, load_tuning)
-            .add_systems(PreUpdate, apply_tuning_changes);
+            .add_systems(PreUpdate, apply_tuning_changes.in_set(TuningSystems));
     }
 }
+
+/// Where a changed tuning file is applied (`PreUpdate`). Systems that
+/// override tuning values (a joined server's movement values, a dedicated
+/// server's round settings) run after it.
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct TuningSystems;
 
 #[derive(Asset, Resource, TypePath, Deserialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
@@ -316,7 +322,8 @@ pub struct ViewTuning {
     pub bob_roll: f32,
 }
 
-#[derive(Deserialize, Clone, Debug)]
+// Serialize: the server sends it to clients (`net/tuning_sync.rs`).
+#[derive(Deserialize, serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct FootstepTuning {
     pub walk_stride: f32,
@@ -345,7 +352,8 @@ pub enum ButtonMode {
     Toggle,
 }
 
-#[derive(Deserialize, Clone, Debug)]
+// Serialize: the server sends it to clients (`net/tuning_sync.rs`).
+#[derive(Deserialize, serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct LeanTuning {
     /// Camera roll at full lean, degrees.
@@ -366,7 +374,8 @@ pub struct LookTuning {
     pub fov: f32,
 }
 
-#[derive(Deserialize, Clone, Debug)]
+// Serialize: the server sends it to clients (`net/tuning_sync.rs`).
+#[derive(Deserialize, serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct MovementTuning {
     pub walk_speed: f32,
@@ -381,7 +390,8 @@ pub struct MovementTuning {
     pub ground_snap: f32,
 }
 
-#[derive(Deserialize, Clone, Debug)]
+// Serialize: the server sends it to clients (`net/tuning_sync.rs`).
+#[derive(Deserialize, serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct BodyTuning {
     pub radius: f32,

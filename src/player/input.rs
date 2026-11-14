@@ -18,24 +18,15 @@ pub struct PlayerInputPlugin;
 
 impl Plugin for PlayerInputPlugin {
     fn build(&self, app: &mut App) {
+        // Capturing and freeing the mouse (Esc, menus) lives in
+        // `src/menu/`.
         app.add_input_context::<OnFoot>()
             .add_systems(Startup, spawn_controller)
-            .add_systems(
-                Startup,
-                grab_cursor.run_if(not(resource_exists::<AutomatedRun>)),
-            )
             // Right after bindings are evaluated, so the fixed-tick simulation
             // that runs later this frame sees this frame's input.
             .add_systems(
                 PreUpdate,
                 gather_input.after(EnhancedInputSystems::Update),
-            )
-            .add_systems(
-                Update,
-                (
-                    grab_cursor.run_if(on_click_while_free),
-                    release_cursor.run_if(on_escape),
-                ),
             );
     }
 }
@@ -245,22 +236,4 @@ fn toggled(current: Stance, pressed: Stance) -> Stance {
 #[allow(dead_code)] // used by M3+ input systems
 pub fn input_captured(cursor: Single<&CursorOptions>) -> bool {
     cursor.grab_mode != CursorGrabMode::None
-}
-
-fn grab_cursor(mut cursor: Single<&mut CursorOptions>) {
-    cursor.grab_mode = CursorGrabMode::Locked;
-    cursor.visible = false;
-}
-
-fn release_cursor(mut cursor: Single<&mut CursorOptions>) {
-    cursor.grab_mode = CursorGrabMode::None;
-    cursor.visible = true;
-}
-
-fn on_click_while_free(mouse: Res<ButtonInput<MouseButton>>, cursor: Single<&CursorOptions>) -> bool {
-    cursor.grab_mode == CursorGrabMode::None && mouse.just_pressed(MouseButton::Left)
-}
-
-fn on_escape(keys: Res<ButtonInput<KeyCode>>) -> bool {
-    keys.just_pressed(KeyCode::Escape)
 }
