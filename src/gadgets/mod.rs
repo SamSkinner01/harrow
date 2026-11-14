@@ -280,9 +280,9 @@ fn create_gadget_assets(
         stake_light: meshes.add(Sphere::new(0.014)),
         dark_metal: mat(Color::srgb(0.12, 0.12, 0.13), 0.6, LinearRgba::BLACK),
         steel: mat(Color::srgb(0.55, 0.55, 0.52), 0.8, LinearRgba::BLACK),
-        dart_glow: mat(Color::srgb(0.3, 0.9, 1.0), 0.0, LinearRgba::rgb(4.0, 30.0, 40.0)),
-        stake_glow: mat(Color::srgb(0.4, 1.0, 0.4), 0.0, LinearRgba::rgb(6.0, 40.0, 6.0)),
-        stake_saturated: mat(Color::srgb(1.0, 0.6, 0.1), 0.0, LinearRgba::rgb(40.0, 18.0, 2.0)),
+        dart_glow: mat(Color::srgb(0.3, 0.9, 1.0), 0.0, LinearRgba::rgb(0.6, 3.0, 4.0)),
+        stake_glow: mat(Color::srgb(0.4, 1.0, 0.4), 0.0, LinearRgba::rgb(0.5, 4.0, 0.5)),
+        stake_saturated: mat(Color::srgb(1.0, 0.6, 0.1), 0.0, LinearRgba::rgb(4.0, 1.6, 0.1)),
     });
 }
 

@@ -28,7 +28,7 @@ impl Plugin for OperatorsPlugin {
         app.add_systems(
             FixedUpdate,
             (
-                pick_operators.in_set(RoundSystems::Objective),
+                (pick_operators, free_play_operator).in_set(RoundSystems::Objective),
                 (open_selection, apply_operators)
                     .chain()
                     .in_set(RoundSystems::Reactions),
@@ -274,32 +274,57 @@ fn apply_operators(
                 .unwrap_or_else(|| OperatorId::default_for(*team)),
         };
         choice.lock(op);
-        let info = op.info();
-        let numbers = op.numbers(round);
-        commands.entity(entity).insert((
-            Operator(op),
-            Armour {
-                damage_scale: round.armour_damage.get(numbers.armour),
-            },
-            OperatorSpeed(round.speed_multiplier.get(numbers.speed)),
-            UniqueGadget {
-                kind: info.gadget,
-                remaining: numbers.gadgets,
-                max: numbers.gadgets,
-            },
-            Loadout {
-                primary: "rifle",
-                sidearm: "sidearm",
-                secondary: info.default_secondary,
-            },
-        ));
-        info!(
-            "round: {entity} plays {} (armour {}, speed {}, {} x{})",
-            info.callsign,
-            numbers.armour,
-            numbers.speed,
-            info.gadget.name(),
-            numbers.gadgets
-        );
+        equip_operator(&mut commands, entity, op, round);
     }
+}
+
+/// Give `entity` everything that comes with playing `op`.
+fn equip_operator(commands: &mut Commands, entity: Entity, op: OperatorId, round: &RoundTuning) {
+    let info = op.info();
+    let numbers = op.numbers(round);
+    commands.entity(entity).insert((
+        Operator(op),
+        Armour {
+            damage_scale: round.armour_damage.get(numbers.armour),
+        },
+        OperatorSpeed(round.speed_multiplier.get(numbers.speed)),
+        UniqueGadget {
+            kind: info.gadget,
+            remaining: numbers.gadgets,
+            max: numbers.gadgets,
+        },
+        Loadout {
+            primary: "rifle",
+            sidearm: "sidearm",
+            secondary: info.default_secondary,
+        },
+    ));
+    info!(
+        "round: {entity} plays {} (armour {}, speed {}, {} x{})",
+        info.callsign,
+        numbers.armour,
+        numbers.speed,
+        info.gadget.name(),
+        numbers.gadgets
+    );
+}
+
+/// Free play (no round loop): `--operator` still makes the local player
+/// that operator, on that operator's side, so gadgets can be tried out.
+fn free_play_operator(
+    settings: Res<RoundSettings>,
+    tuning: Res<Tuning>,
+    mut local: Query<(Entity, &mut Team), With<LocalPlayer>>,
+    mut done: Local<bool>,
+    mut commands: Commands,
+) {
+    if *done || settings.enabled {
+        return;
+    }
+    let (Some(op), Ok((entity, mut team))) = (settings.operator, local.single_mut()) else {
+        return;
+    };
+    *done = true;
+    *team = op.info().side;
+    equip_operator(&mut commands, entity, op, &tuning.round);
 }

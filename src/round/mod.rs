@@ -26,7 +26,8 @@
 //!   to the round module (e.g. don't start reinforcing).
 //!
 //! The objective data is keyed to Harrow Keep (`sites.rs`). On other maps
-//! (`--map greybox`) the round loop stays [`RoundPhase::Inactive`].
+//! (`--map greybox`), or with `--no-round` (free play for testing other
+//! features), the round loop stays [`RoundPhase::Inactive`].
 
 pub mod defuser;
 mod flow;
@@ -431,7 +432,7 @@ pub struct ObjectiveInteraction {
 /// Command-line options for the round loop. See README "Developer flags".
 #[derive(Resource, Debug, Clone)]
 pub struct RoundSettings {
-    /// Round loop runs (Harrow Keep only).
+    /// Round loop runs (Harrow Keep only, and not with `--no-round`).
     pub enabled: bool,
     /// `--round-test`: short timers and a short match.
     pub test: bool,
@@ -476,7 +477,7 @@ impl RoundSettings {
             .or_else(|| operator.map(|op| op.info().side))
             .unwrap_or(Team::Attackers);
         let map = value("--map");
-        let enabled = matches!(map.as_deref(), None | Some("keep"));
+        let enabled = matches!(map.as_deref(), None | Some("keep")) && !has("--no-round");
         Self {
             enabled,
             test: has("--round-test"),

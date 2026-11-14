@@ -566,7 +566,7 @@ fn log_status(
     mut ticks: Local<u32>,
 ) {
     *ticks += 1;
-    if *ticks % 64 != 0 {
+    if !ticks.is_multiple_of(64) {
         return;
     }
     let (at, team, health) = player

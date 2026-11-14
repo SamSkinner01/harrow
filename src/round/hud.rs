@@ -330,8 +330,13 @@ fn clock(seconds: f32) -> String {
     format!("{}:{:02}", s / 60, s % 60)
 }
 
-fn show_hud(round: Res<Round>, mut root: Single<&mut Visibility, With<HudRoot>>) {
-    set_visible(&mut root, round.phase != RoundPhase::Inactive);
+/// Hidden when there is no round loop, unless free play has an operator.
+fn show_hud(
+    round: Res<Round>,
+    operator: Query<(), (With<LocalPlayer>, With<Operator>)>,
+    mut root: Single<&mut Visibility, With<HudRoot>>,
+) {
+    set_visible(&mut root, round.phase != RoundPhase::Inactive || !operator.is_empty());
 }
 
 type LocalView<'a> = (&'a Team, Option<&'a Squad>);
@@ -349,15 +354,19 @@ fn update_top_bar(
     let mine = round.score_of(squad);
     let theirs = round.score_of(squad.other());
     let side = if team == Team::Attackers { "ATTACKING" } else { "DEFENDING" };
-    set_text(
-        &mut score.0,
-        format!("YOU {mine}  :  {theirs} THEM      ROUND {}  -  {side}", round.number),
-    );
+    let line = if round.phase == RoundPhase::Inactive {
+        side.to_string()
+    } else {
+        format!("YOU {mine}  :  {theirs} THEM      ROUND {}  -  {side}", round.number)
+    };
+    set_text(&mut score.0, line);
     score.1.0 = side_color(team).mix(&TEXT, 0.4);
 
     let (label, color) = match round.phase {
         RoundPhase::Planted => (format!("DEFUSER  {}", clock(round.time_left)), ALERT),
-        RoundPhase::RoundEnd | RoundPhase::MatchEnd => (round.phase.label().to_string(), TEXT),
+        RoundPhase::Inactive | RoundPhase::RoundEnd | RoundPhase::MatchEnd => {
+            (round.phase.label().to_string(), TEXT)
+        }
         p => (format!("{}  {}", p.label(), clock(round.time_left)), TEXT),
     };
     set_text(&mut phase.0, label);

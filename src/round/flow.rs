@@ -132,7 +132,7 @@ fn tick_round(
                     round.enter(RoundPhase::MatchEnd, timers.match_end, &mut events);
                 } else {
                     let every = tuning.round.swap_sides_every.max(1);
-                    if round.number % every == 0 {
+                    if round.number.is_multiple_of(every) {
                         round.blue_side = other_team(round.blue_side);
                     }
                     round.number += 1;
