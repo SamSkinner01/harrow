@@ -56,7 +56,7 @@ impl Plugin for SecondaryPlugin {
 
 /// Shared secondary gadgets a character has left this round (not the
 /// soft-breach charge, which is destruction's `BreachCharges`).
-#[derive(Component, Clone, Copy, Debug, PartialEq)]
+#[derive(Component, Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct SecondaryStock {
     pub kind: SecondaryGadget,
     pub remaining: u8,
@@ -106,8 +106,13 @@ fn stock_from_loadout(
     insert: On<Insert<Loadout>>,
     loadouts: Query<&Loadout>,
     tuning: Res<Tuning>,
+    mode: Res<crate::session::NetMode>,
     mut commands: Commands,
 ) {
+    // A client gets the server's stock (replicated with the loadout).
+    if !mode.is_authority() {
+        return;
+    }
     if let Ok(loadout) = loadouts.get(insert.entity) {
         commands.entity(insert.entity).insert(stock(loadout.secondary, &tuning));
     }

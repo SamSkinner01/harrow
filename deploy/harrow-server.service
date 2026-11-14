@@ -1,0 +1,65 @@
+# Harrow dedicated server as a systemd service.
+# Installed by install.sh (from the server bundle) as
+# /etc/systemd/system/harrow-server.service. Settings: /etc/harrow-server/.
+#
+#   sudo systemctl status harrow-server
+#   sudo journalctl -u harrow-server -f        # live log
+#   sudo systemctl restart harrow-server       # after editing server.ron
+
+[Unit]
+Description=Harrow dedicated game server
+Documentation=file:///opt/harrow-server/README-VPS.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=harrow
+Group=harrow
+WorkingDirectory=/opt/harrow-server
+# The folder that contains assets/ (map collision, tuning).
+Environment=BEVY_ASSET_ROOT=/opt/harrow-server
+# Optional: HARROW_KEY=<shared secret> (and anything else) without putting
+# it in the unit. The leading "-" means the file may be missing.
+EnvironmentFile=-/etc/harrow-server/env
+ExecStart=/opt/harrow-server/harrow --server --config /etc/harrow-server/server.ron
+# Logs go to stdout (plain text off a terminal): journald collects them.
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=harrow-server
+Restart=on-failure
+RestartSec=5
+# SIGTERM (systemctl stop) ends the server cleanly with exit status 130.
+SuccessExitStatus=130
+TimeoutStopSec=15
+
+# --- Hardening: the server only needs to read its files and use UDP. ---------
+NoNewPrivileges=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+UMask=0077
+# A runaway server can't take the whole VPS down (it needs ~100-200 MB).
+MemoryMax=1G
+TasksMax=256
+
+[Install]
+WantedBy=multi-user.target

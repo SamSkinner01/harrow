@@ -1,0 +1,9 @@
+# Container builds (deploy/Dockerfile) only need the sources and the assets
+# the server loads; everything else (target/ alone is tens of GB) stays out.
+*
+!Cargo.toml
+!Cargo.lock
+!build.rs
+!src/
+!assets/models/kit/
+!assets/config/

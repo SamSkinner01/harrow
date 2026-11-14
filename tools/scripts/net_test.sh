@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # Multiplayer test on one machine: a headless dedicated server and two
-# windowed clients (they open on your desktop for ~20 s and quit by
-# themselves after taking a screenshot).
+# windowed clients (they open on your desktop for ~20-30 s and quit by
+# themselves after taking screenshots).
 #
 #   tools/scripts/net_test.sh                     # free play: see each other, movement, lag comp
 #   tools/scripts/net_test.sh --round             # round loop with short timers (phase sync)
 #   tools/scripts/net_test.sh --latency 80 --jitter 10 --loss 2
+#   tools/scripts/net_test.sh --gadgets frag      # gadget scenarios (below)
 #   OUT=/some/dir PORT=5999 tools/scripts/net_test.sh
 #
 # Latency/jitter/loss: simulated on every instance's incoming packets; the
@@ -21,6 +22,25 @@
 # - round phases match on all three instances (with --round);
 # - Bravo quits first: the server reports it left and Alpha stops seeing it.
 # Screenshots: $OUT/alpha.png and $OUT/bravo.png. Logs: $OUT/*.log.
+#
+# Gadget scenarios (--gadgets NAME, free play; Alpha attacks, Bravo
+# defends). The server sets them up with --net-script (equip, teleport,
+# reinforce: src/net/test_script.rs); the clients press keys with
+# --gadget-test (real input over the network) and log what they see:
+#   frag    Alpha throws a frag at Bravo, who stands by a wall: Bravo's
+#           health drops on all three; both clients see the grenade fly.
+#   smoke   Alpha throws smoke between them: both clients pour the cloud.
+#   flash   Alpha throws a flashbang at Bravo's feet: Bravo (only) is
+#           blinded; screenshots show the white-out.
+#   drone   Alpha throws a drone and drives it towards Bravo: Bravo sees it
+#           move, Alpha's screen is the drone camera.
+#   wire    Bravo lays razor wire, Alpha walks through it: slowed (0.35)
+#           while inside, on the server and predicted on Alpha's client,
+#           with no extra rollbacks (net-trace rollback counter).
+#   cutter  Bravo reinforces a wall, Alpha clamps a ring cutter on it and
+#           cuts through: the hole is the same on all three instances.
+#   all     every scenario above, one after the other.
+# Screenshots: $OUT/<scenario>-alpha*.png, $OUT/<scenario>-bravo*.png.
 
 set -euo pipefail
 cd "$(dirname "$0")/../.."
@@ -31,15 +51,24 @@ LATENCY=0
 JITTER=0
 LOSS=0
 ROUND=0
+GADGETS=""
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --latency) LATENCY=$2; shift 2 ;;
         --jitter) JITTER=$2; shift 2 ;;
         --loss) LOSS=$2; shift 2 ;;
         --round) ROUND=1; shift ;;
+        --gadgets) GADGETS=$2; shift 2 ;;
         *) echo "unknown option $1" >&2; exit 2 ;;
     esac
 done
+
+if [[ $GADGETS == all ]]; then
+    for scenario in frag smoke flash drone wire cutter; do
+        "$0" --gadgets "$scenario" --latency "$LATENCY" --jitter "$JITTER" --loss "$LOSS"
+    done
+    exit 0
+fi
 
 mkdir -p "$OUT"
 cargo build -j 4 --quiet
@@ -50,11 +79,8 @@ NET=()
 if [[ $LATENCY != 0 || $JITTER != 0 || $LOSS != 0 ]]; then
     NET=(--net-latency $((LATENCY / 2)) --net-jitter "$JITTER" --net-loss "$LOSS")
 fi
-if [[ $ROUND == 1 ]]; then
-    SERVER_MODE=(--round-test)
-else
-    SERVER_MODE=(--no-round)
-fi
+
+strip() { sed -e 's/\x1b\[[0-9;]*m//g' "$1"; }
 
 PIDS=()
 cleanup() {
@@ -63,6 +89,106 @@ cleanup() {
     done
 }
 trap cleanup EXIT
+
+# Waits for the clients (they quit by themselves; give up after 90 s), then
+# stops the server.
+finish() {
+    local server=$1
+    shift
+    for pid in "$@"; do
+        for _ in $(seq 90); do
+            kill -0 "$pid" 2>/dev/null || break
+            sleep 1
+        done
+    done
+    sleep 2
+    kill "$server" 2>/dev/null || true
+    wait "$server" 2>/dev/null || true
+}
+
+# ---- Gadget scenarios ---------------------------------------------------------------
+if [[ -n $GADGETS ]]; then
+    # Client scripts run on the client's clock (Alpha starts 3 s after the
+    # server, Bravo 4 s); server commands naming a player wait for it to join.
+    S=$OUT/$GADGETS
+    case $GADGETS in
+        frag)
+            SERVER="6 equip Alpha lark frag; 6 equip Bravo fathom; 6 tp Alpha 9 0 6.5; 6 tp Bravo 5 0 1.2; 18 log; 22 log"
+            # Cooked for 2.3 s of the 3 s fuse: it goes off near Bravo.
+            ALPHA="8 aimat 5 1.0 1.2; 9.5 hold4 2.3; 12.0 shot $S-alpha-flight.png; 12.1 log; 14.5 log; 15 shot $S-alpha.png; 16 quit"
+            BRAVO="7 aimat 9 1.2 6.5; 10.8 log; 10.9 shot $S-bravo-flight.png; 13.5 log; 14 shot $S-bravo.png; 15 quit"
+            ;;
+        smoke)
+            SERVER="6 equip Alpha lark smoke; 6 equip Bravo fathom; 6 tp Alpha 8.5 0 9.5; 6 tp Bravo 8.5 0 2; 20 log"
+            ALPHA="8 look 0 -6; 9 tap4; 15 log; 15.5 shot $S-alpha.png; 17 quit"
+            BRAVO="7 aimat 8.5 1.4 9.5; 14 log; 14.5 shot $S-bravo.png; 16 quit"
+            ;;
+        flash)
+            SERVER="6 equip Alpha lark flash; 6 equip Bravo fathom; 6 tp Alpha 8.5 0 9; 6 tp Bravo 8.5 0 4; 13 log"
+            ALPHA="8 aimat 8.5 0 5.5; 9 tap4; 11.2 log; 11.5 shot $S-alpha.png; 13 quit"
+            BRAVO="7 aimat 8.5 1.4 6; 10.2 log; 10.4 shot $S-bravo.png; 13 log; 13.5 shot $S-bravo-later.png; 14 quit"
+            ;;
+        drone)
+            SERVER="6 equip Alpha lark; 6 equip Bravo fathom; 6 tp Alpha 8 0 9; 6 tp Bravo 8 0 2.5; 17 log; 19 log"
+            ALPHA="8 look 0 0; 9 g; 11 drive 0 1; 13 log; 13.5 shot $S-alpha-view.png; 14 drive 0 0; 14.5 log; 15 g; 16.5 log; 17 quit"
+            BRAVO="7 aimat 8 0.2 6.5; 11 log; 12.5 log; 13 shot $S-bravo.png; 14 log; 15 quit"
+            ;;
+        wire)
+            SERVER="6 equip Bravo mortise wire; 6 equip Alpha lark; 6 tp Bravo 8.5 0 9; 6 tp Alpha 8.5 0 4; 13 tp Bravo 11 0 3.5; 14 log; 17 log; 18 log; 22 log"
+            BRAVO="7 look 0 0; 8 hold4 1.8; 10.5 log; 11 aimat 8.5 0.5 7; 15 shot $S-bravo.png; 18 log; 19 quit"
+            ALPHA="7 look 180 0; 12 log; 13 move 0 1; 13.6 log; 14.2 log; 14.8 log; 15.4 log; 16.5 move 0 0; 17 log; 17.5 shot $S-alpha.png; 19 quit"
+            ;;
+        cutter)
+            SERVER="6 equip Bravo mortise; 6 equip Alpha auger; 6 tp Bravo 7 0 -5.6; 6 tp Alpha 7 0 -2.4; 12 reinforce Bravo; 13 log; 21 log; 30 log"
+            BRAVO="6 look 180 0; 9.5 log; 19 log; 20 shot $S-bravo-blade.png; 27 log; 27.5 shot $S-bravo.png; 29 quit"
+            ALPHA="7 look 0 -12; 11 hold3 2; 13.5 tap3; 18 log; 26.5 log; 27 shot $S-alpha.png; 29 quit"
+            ;;
+        *) echo "unknown scenario $GADGETS (frag smoke flash drone wire cutter all)" >&2; exit 2 ;;
+    esac
+    echo "server: port $PORT, gadget scenario $GADGETS ${NET[*]}"
+    "$BIN" --server "$PORT" --no-round --net-trace --net-script "$SERVER" "${NET[@]}" \
+        > "$S-server.log" 2>&1 &
+    SERVER_PID=$!
+    PIDS+=("$SERVER_PID")
+    sleep 3
+    "$BIN" --connect "127.0.0.1:$PORT" --name Alpha --net-trace --gadget-test "$ALPHA" "${NET[@]}" \
+        > "$S-alpha.log" 2>&1 &
+    ALPHA_PID=$!
+    PIDS+=("$ALPHA_PID")
+    sleep 1
+    "$BIN" --connect "127.0.0.1:$PORT" --name Bravo --net-trace --gadget-test "$BRAVO" "${NET[@]}" \
+        > "$S-bravo.log" 2>&1 &
+    BRAVO_PID=$!
+    PIDS+=("$BRAVO_PID")
+    finish "$SERVER_PID" "$ALPHA_PID" "$BRAVO_PID"
+
+    pattern='gadget: |net script t=|test_script:   |panicked|ERROR'
+    for who in server alpha bravo; do
+        echo
+        echo "== $GADGETS: $who =="
+        strip "$S-$who.log" | grep -E "$pattern" | cut -c 28- \
+            | sed -E 's/^ *INFO harrow::[a-z_:]+: //' \
+            | grep -vE "100% intact, reinforced false|average fps|screenshot ->|cctv: |gadget test t=.*(Shot|Quit)" \
+            | head -n 70 || true
+        strip "$S-$who.log" | grep "net-trace: InGame" | tail -n 1 | grep -oE "rollbacks [0-9]+ \([0-9]+ ticks\)" \
+            | sed 's/^/last trace: /' || true
+    done
+    if [[ $GADGETS == wire ]]; then
+        echo
+        echo "== wire: Alpha's rollbacks, once a second (walking through the wire at t=13..16.5) =="
+        strip "$S-alpha.log" | grep "net-trace: InGame" | grep -oE "rollbacks [0-9]+ \([0-9]+ ticks\)" | uniq -c
+    fi
+    echo
+    echo "screenshots: $(ls "$S"-*.png 2>/dev/null | tr '\n' ' ')"
+    exit 0
+fi
+
+# ---- Movement, lag compensation, rounds -----------------------------------------------
+if [[ $ROUND == 1 ]]; then
+    SERVER_MODE=(--round-test)
+else
+    SERVER_MODE=(--no-round)
+fi
 
 echo "server: port $PORT ${SERVER_MODE[*]} ${NET[*]}"
 "$BIN" --server "$PORT" "${SERVER_MODE[@]}" --net-trace --net-shoot-test "${NET[@]}" \
@@ -87,18 +213,8 @@ sleep 1
 BRAVO=$!
 PIDS+=("$BRAVO")
 
-# Clients quit by themselves (--exit-after); give up after 60 s.
-for pid in "$BRAVO" "$ALPHA"; do
-    for _ in $(seq 60); do
-        kill -0 "$pid" 2>/dev/null || break
-        sleep 1
-    done
-done
-sleep 2
-kill "$SERVER" 2>/dev/null || true
-wait "$SERVER" 2>/dev/null || true
+finish "$SERVER" "$BRAVO" "$ALPHA"
 
-strip() { sed -e 's/\x1b\[[0-9;]*m//g' "$1"; }
 echo
 echo "== connections (server) =="
 strip "$OUT/server.log" | grep -E "net: .*(joined|left|refus)" || echo "(none!)"

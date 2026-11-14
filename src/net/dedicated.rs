@@ -11,14 +11,29 @@
 //! The lean build (`--no-default-features --features dedicated`) doesn't
 //! even link the window system, audio or gamepad libraries.
 //!
+//! Lean assets: without a render world, Bevy keeps every decoded texture in
+//! RAM, which was most of a server's ~750 MB. A headless server reads its
+//! assets through [`LeanAssetReader`], which hands out a 1x1 stand-in for
+//! every image under `textures/` (material and character detail maps): the
+//! code that asks for them works unchanged, and the server bundle doesn't
+//! need `textures/` at all. Models load normally (kit models are the map's
+//! collision; character models carry skeletons and animations).
+//!
 //! Config file (RON), every field optional; see `assets/config/server.ron`:
-//! name, port, map, max_players, log_level, round_loop, and round overrides
-//! (test_timers, rounds_to_win, timers).
+//! name, port, map, max_players, log_level, round_loop, key (shared
+//! secret), and round overrides (test_timers, rounds_to_win, timers).
 
 use std::{io::IsTerminal, path::Path, time::Duration};
 
 use bevy::{
     app::ScheduleRunnerPlugin,
+    asset::{
+        AssetApp, AssetPlugin,
+        io::{
+            AssetReader, AssetReaderError, AssetSource, AssetSourceBuilder, AssetSourceId,
+            ErasedAssetReader, PathStream, Reader, SliceReader,
+        },
+    },
     log::{BoxedFmtLayer, Level, LogPlugin, tracing_subscriber},
     prelude::*,
     render::{
@@ -52,6 +67,10 @@ pub struct ServerConfig {
     /// Play rounds (only on the keep). Off: free play.
     pub round_loop: bool,
     pub round: RoundOverrides,
+    /// Shared secret: only clients started with the same key (`--key` or
+    /// `HARROW_KEY`) can join. `None`: the development key, anyone with the
+    /// game can join. `HARROW_KEY` / `--key` on the server override it.
+    pub key: Option<String>,
 }
 
 #[derive(Deserialize, Debug, Clone, Default)]
@@ -74,6 +93,7 @@ impl Default for ServerConfig {
             log_level: "info".into(),
             round_loop: true,
             round: RoundOverrides::default(),
+            key: None,
         }
     }
 }
@@ -110,6 +130,10 @@ impl ServerConfig {
         if args.iter().any(|a| a == "--round-test") {
             config.round.test_timers = true;
         }
+        if launch.key.is_some() {
+            config.key = launch.key.clone();
+        }
+        config.key = config.key.filter(|k| !k.trim().is_empty());
         // Bomb sites only exist on the keep.
         if config.map != "keep" {
             config.round_loop = false;
@@ -153,18 +177,101 @@ pub fn headless_plugins(config: &ServerConfig) -> impl PluginGroup {
         })
         .set(LogPlugin {
             level: config.level(),
+            // Without a render world some engine plugins complain at
+            // startup that it's missing (an ERROR line and a few WARNs that
+            // mean nothing for a server): keep the server's log clean.
+            filter: format!(
+                "{},bevy_extract=off,bevy_gizmos_render=error,bevy_render::texture=error,bevy_gltf=error",
+                bevy::log::DEFAULT_FILTER
+            ),
             fmt_layer: plain_stdout_logs,
             ..default()
         })
         .add(ScheduleRunnerPlugin::run_loop(Duration::from_secs_f64(
             1.0 / TICK_HZ,
-        )));
+        )))
+        // Must come before the asset plugin, which builds the sources.
+        .add_before::<AssetPlugin>(LeanAssetsPlugin);
     #[cfg(feature = "client")]
     let plugins = plugins
         .disable::<bevy::winit::WinitPlugin>()
         .disable::<bevy::audio::AudioPlugin>()
         .disable::<bevy::gilrs::GilrsPlugin>();
     plugins
+}
+
+/// Replaces the default asset source with [`LeanAssetReader`] over the
+/// usual `assets/` folder (`BEVY_ASSET_ROOT` still applies).
+struct LeanAssetsPlugin;
+
+impl Plugin for LeanAssetsPlugin {
+    fn build(&self, app: &mut App) {
+        app.register_asset_source(
+            AssetSourceId::Default,
+            AssetSourceBuilder::new(|| {
+                Box::new(LeanAssetReader(AssetSource::get_default_reader("assets".into())()))
+            }),
+        );
+    }
+}
+
+/// The dedicated server's view of `assets/`: images under `textures/` are
+/// a 1x1 stand-in (a server never draws them); everything else is read
+/// from disk as usual. See the module docs.
+pub struct LeanAssetReader(Box<dyn ErasedAssetReader>);
+
+/// A 1x1 grey JPEG and PNG (the image loader picks the format by
+/// extension).
+const STAND_IN_JPEG: &[u8] = &[
+    255, 216, 255, 224, 0, 16, 74, 70, 73, 70, 0, 1, 1, 0, 0, 1, 0, 1, 0, 0, 255, 219, 0, 67, 0, 8,
+    6, 6, 7, 6, 5, 8, 7, 7, 7, 9, 9, 8, 10, 12, 20, 13, 12, 11, 11, 12, 25, 18, 19, 15, 20, 29, 26,
+    31, 30, 29, 26, 28, 28, 32, 36, 46, 39, 32, 34, 44, 35, 28, 28, 40, 55, 41, 44, 48, 49, 52, 52,
+    52, 31, 39, 57, 61, 56, 50, 60, 46, 51, 52, 50, 255, 219, 0, 67, 1, 9, 9, 9, 12, 11, 12, 24, 13,
+    13, 24, 50, 33, 28, 33, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50,
+    50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50,
+    50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 255, 192, 0, 17, 8, 0, 1, 0, 1, 3, 1, 34, 0, 2,
+    17, 1, 3, 17, 1, 255, 196, 0, 20, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 196,
+    0, 20, 16, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 196, 0, 20, 1, 1, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 196, 0, 20, 17, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 255, 218, 0, 12, 3, 1, 0, 2, 17, 3, 17, 0, 63, 0, 0, 15, 255, 217,
+];
+const STAND_IN_PNG: &[u8] = &[
+    137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0, 1, 8, 2, 0,
+    0, 0, 144, 119, 83, 222, 0, 0, 0, 12, 73, 68, 65, 84, 120, 218, 99, 104, 104, 104, 0, 0, 3, 4,
+    1, 129, 117, 46, 1, 188, 0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130,
+];
+
+/// The stand-in for `path`, if a server doesn't need the real file.
+fn stand_in(path: &Path) -> Option<&'static [u8]> {
+    if !path.starts_with("textures") {
+        return None;
+    }
+    match path.extension()?.to_str()?.to_ascii_lowercase().as_str() {
+        "jpg" | "jpeg" => Some(STAND_IN_JPEG),
+        "png" => Some(STAND_IN_PNG),
+        _ => None,
+    }
+}
+
+impl AssetReader for LeanAssetReader {
+    async fn read<'a>(&'a self, path: &'a Path) -> Result<Box<dyn Reader + 'a>, AssetReaderError> {
+        match stand_in(path) {
+            Some(bytes) => Ok(Box::new(SliceReader::new(bytes))),
+            None => self.0.read(path).await,
+        }
+    }
+
+    async fn read_meta<'a>(&'a self, path: &'a Path) -> Result<Box<dyn Reader + 'a>, AssetReaderError> {
+        self.0.read_meta(path).await
+    }
+
+    async fn read_directory<'a>(&'a self, path: &'a Path) -> Result<Box<PathStream>, AssetReaderError> {
+        self.0.read_directory(path).await
+    }
+
+    async fn is_directory<'a>(&'a self, path: &'a Path) -> Result<bool, AssetReaderError> {
+        self.0.is_directory(path).await
+    }
 }
 
 /// A server has no ears: sounds started by presentation code (client build

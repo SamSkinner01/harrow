@@ -37,15 +37,19 @@ impl Plugin for BackplatePlugin {
             FixedUpdate,
             (use_backplates.in_set(GadgetStage::Use), drop_orphans.in_set(GadgetStage::Effects)),
         )
-        .add_systems(Update, dress_backplates);
+        .add_systems(Update, (dress_backplates, fired_looks));
     }
 }
 
 /// A charge bolted to a reinforcement plate. Its `Transform` is on the
-/// plate, +Z out of it (towards the defenders' side).
-#[derive(Component, Clone, Debug)]
+/// plate, +Z out of it (towards the defenders' side). Replicated to
+/// clients (`net/gadget_sync.rs`).
+#[derive(Component, Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct BackplateCharge {
+    #[entities]
     pub owner: Entity,
+    /// The reinforced wall or hatch (server only).
+    #[serde(skip, default = "super::server_only_entity")]
     pub surface: Entity,
     /// Out of the plate (world), towards the defenders' side.
     pub normal: Vec3,
@@ -117,11 +121,7 @@ fn use_backplates(
     cutters: Query<(Entity, &RingCutter, &GadgetOwner)>,
     breach_charges: Query<(Entity, &BreachCharge, &GlobalTransform)>,
     mut events: MessageWriter<GadgetEvent>,
-    (mut breaches, mut explosions, mut bursts): (
-        MessageWriter<HardBreach>,
-        MessageWriter<Explosion>,
-        MessageWriter<Burst>,
-    ),
+    (mut breaches, mut explosions): (MessageWriter<HardBreach>, MessageWriter<Explosion>),
     mut serial: Local<u32>,
     mut commands: Commands,
 ) {
@@ -259,26 +259,10 @@ fn use_backplates(
             source: Some(entity),
             attached_to: None,
         });
-        bursts.write(
-            Burst::new(ParticleKind::Flash, charge.far - charge.normal * 0.1)
-                .count(2)
-                .size(0.3, 1.2),
-        );
-        bursts.write(
-            Burst::new(ParticleKind::Soot, charge.far - charge.normal * 0.2)
-                .toward(-charge.normal, 0.6)
-                .count(8)
-                .speed(2.0)
-                .size(0.3, 1.4),
-        );
-        bursts.write(
-            Burst::new(ParticleKind::Spark, charge.far - charge.normal * 0.05)
-                .toward(-charge.normal, 0.7)
-                .count(14)
-                .speed(6.0),
-        );
+        // Flash and soot: `fired_looks`, from the event (on clients too).
         events.write(GadgetEvent::BackplateFired {
             position: charge.far,
+            normal: charge.normal,
             destroyed,
         });
         commands.entity(charge_entity).despawn();
@@ -296,6 +280,30 @@ fn drop_orphans(
         if surfaces.get(charge.surface).is_ok_and(|s| !s.is_reinforced()) || !surfaces.contains(charge.surface) {
             commands.entity(entity).despawn();
         }
+    }
+}
+
+/// The blast out of the far face of the wall (presentation, from the event
+/// so clients show it too).
+fn fired_looks(mut events: MessageReader<GadgetEvent>, mut bursts: MessageWriter<Burst>) {
+    for event in events.read() {
+        let &GadgetEvent::BackplateFired { position: far, normal, .. } = event else {
+            continue;
+        };
+        bursts.write(Burst::new(ParticleKind::Flash, far - normal * 0.1).count(2).size(0.3, 1.2));
+        bursts.write(
+            Burst::new(ParticleKind::Soot, far - normal * 0.2)
+                .toward(-normal, 0.6)
+                .count(8)
+                .speed(2.0)
+                .size(0.3, 1.4),
+        );
+        bursts.write(
+            Burst::new(ParticleKind::Spark, far - normal * 0.05)
+                .toward(-normal, 0.7)
+                .count(14)
+                .speed(6.0),
+        );
     }
 }
 

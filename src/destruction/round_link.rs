@@ -68,8 +68,13 @@ fn apply_loadout(
     insert: On<Insert<Loadout>>,
     characters: Query<(&Team, &Loadout)>,
     tuning: Res<Tuning>,
+    mode: Res<crate::session::NetMode>,
     mut commands: Commands,
 ) {
+    // A client gets the server's count (replicated with the loadout).
+    if !mode.is_authority() {
+        return;
+    }
     if let Ok((team, loadout)) = characters.get(insert.entity) {
         let charges = charges_for(*team, Some(loadout), &tuning.destruction);
         commands.entity(insert.entity).insert(BreachCharges(charges));

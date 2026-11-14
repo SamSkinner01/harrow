@@ -8,7 +8,9 @@
 //! - [`LightFlash`]: a point light that fades out quickly (blasts).
 //! - The view shakes near a working ring cutter.
 
-use bevy::{audio::{GlobalVolume, Volume}, prelude::*};
+#[cfg(feature = "client")]
+use bevy::audio::{GlobalVolume, Volume};
+use bevy::prelude::*;
 
 use super::{
     GadgetStage,
@@ -29,12 +31,16 @@ impl Plugin for EffectsPlugin {
                 PostUpdate,
                 shake_near_cutters.before(TransformSystems::Propagate),
             );
+        // No audio in the dedicated-server build.
+        #[cfg(feature = "client")]
+        app.add_systems(Update, lower_volume.after(muffle_hearing));
     }
 }
 
 /// Blinded / deafened by a flashbang. Seconds left, and the starting
 /// amounts (for fading).
-#[derive(Component, Clone, Copy, Debug, Default, PartialEq)]
+/// Replicated to the affected player only (`net/protocol.rs`).
+#[derive(Component, Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Flashed {
     pub blind: f32,
     pub blind_max: f32,
@@ -113,14 +119,8 @@ fn show_flash(
     }
 }
 
-/// Muffle: the flag, and the global volume as a bridge (only affects new
-/// sounds; our sounds are all short).
-fn muffle_hearing(
-    local: Query<Option<&Flashed>, With<LocalPlayer>>,
-    mut hearing: ResMut<HearingMuffled>,
-    mut global: ResMut<GlobalVolume>,
-    mut normal: Local<Option<Volume>>,
-) {
+/// Muffle: the flag.
+fn muffle_hearing(local: Query<Option<&Flashed>, With<LocalPlayer>>, mut hearing: ResMut<HearingMuffled>) {
     let amount = local
         .single()
         .ok()
@@ -129,6 +129,19 @@ fn muffle_hearing(
     if (hearing.amount - amount).abs() > 1e-3 {
         hearing.amount = amount;
     }
+}
+
+/// The global volume follows the muffle, as a bridge (only affects new
+/// sounds; our sounds are all short). Client build only; a headless server
+/// has no audio (no `GlobalVolume`).
+#[cfg(feature = "client")]
+fn lower_volume(
+    hearing: Res<HearingMuffled>,
+    global: Option<ResMut<GlobalVolume>>,
+    mut normal: Local<Option<Volume>>,
+) {
+    let Some(mut global) = global else { return };
+    let amount = hearing.amount;
     let base = *normal.get_or_insert(global.volume);
     let wanted = Volume::Linear(base.to_linear() * (1.0 - 0.85 * amount));
     if amount <= 0.0 {

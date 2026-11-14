@@ -11,10 +11,18 @@ fn git(args: &[&str]) -> Option<String> {
 }
 
 fn main() {
-    let commit = git(&["rev-parse", "--short=10", "HEAD"]).unwrap_or_else(|| "unknown".into());
-    let dirty = git(&["status", "--porcelain", "--untracked-files=no"])
-        .is_some_and(|s| !s.is_empty());
-    let id = if dirty { format!("{commit}-dirty") } else { commit };
+    // Builds without the git repository (in a container, on a server from a
+    // source archive) are told the commit instead.
+    println!("cargo:rerun-if-env-changed=HARROW_BUILD_COMMIT");
+    let id = match std::env::var("HARROW_BUILD_COMMIT") {
+        Ok(id) if !id.trim().is_empty() => id.trim().to_string(),
+        _ => {
+            let commit = git(&["rev-parse", "--short=10", "HEAD"]).unwrap_or_else(|| "unknown".into());
+            let dirty = git(&["status", "--porcelain", "--untracked-files=no"])
+                .is_some_and(|s| !s.is_empty());
+            if dirty { format!("{commit}-dirty") } else { commit }
+        }
+    };
     println!("cargo:rustc-env=HARROW_GIT_COMMIT={id}");
     // Re-run when HEAD moves (commits, checkouts) or the index changes.
     if let Some(dir) = git(&["rev-parse", "--git-dir"]) {

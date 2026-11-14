@@ -39,6 +39,8 @@ mod intel;
 mod particles;
 mod remote_view;
 mod secondary;
+// No audio in the dedicated-server build.
+#[cfg(feature = "client")]
 mod sfx;
 mod stakes;
 mod test_script;
@@ -46,29 +48,31 @@ mod throwables;
 pub mod tuning;
 
 pub use cctv::CctvCamera;
+pub(crate) use cctv::spawn_cctv_cameras;
 pub use darts::{DartLight, DartState, SensorDart};
 pub(crate) use darts::{attach_dart_model, spawn_listening_dart};
 pub use drone::ReconStock;
 pub use remote_view::{RemoteView, RemoteViewCamera};
+pub(crate) use remote_view::freeze_viewers;
 pub use secondary::SecondaryStock;
 pub use stakes::SeismicStake;
 pub(crate) use stakes::{attach_stake_model, spawn_stake};
 // Gadget state for bots (M7), networking (M8) and audio: not all used in
 // this crate yet.
-#[allow(unused_imports)]
 pub use backplate::BackplateCharge;
-#[allow(unused_imports)]
 pub use cctv::CctvLayout;
 #[allow(unused_imports)]
-pub use cutter::{CutterBlade, CutterState, RingCutter};
-#[allow(unused_imports)]
-pub use deployables::{BallisticCover, GadgetSpeedScale, ProximityAlarm, RazorWire};
-#[allow(unused_imports)]
+pub use cutter::CutterState;
+pub use cutter::{CutterBlade, FallingPlug, RingCutter};
+pub use deployables::{BallisticCover, GadgetSpeedScale, GadgetSpeedSystems, ProximityAlarm, RazorWire};
+pub(crate) use deployables::cover_body;
 pub use drone::Drone;
 #[allow(unused_imports)]
-pub use effects::{Flashed, HearingMuffled};
+pub use effects::HearingMuffled;
+pub use effects::Flashed;
 #[allow(unused_imports)]
-pub use throwables::{Grenade, SmokeCloud, smoke_blocks};
+pub use throwables::smoke_blocks;
+pub use throwables::{Grenade, SmokeCloud};
 
 use bevy::prelude::*;
 use bevy_enhanced_input::prelude::*;
@@ -140,10 +144,11 @@ impl Plugin for GadgetsPlugin {
                 remote_view::RemoteViewPlugin,
                 effects::EffectsPlugin,
                 particles::ParticlesPlugin,
-                sfx::GadgetSfxPlugin,
                 hud::GadgetHudPlugin,
                 test_script::GadgetTestPlugin,
             ));
+        #[cfg(feature = "client")]
+        app.add_plugins(sfx::GadgetSfxPlugin);
     }
 }
 
@@ -309,6 +314,12 @@ pub struct DroneIntent {
     pub pitch: f32,
 }
 
+/// Default for entity fields that are never networked (map surfaces):
+/// clients get a placeholder, only the server's simulation reads them.
+pub(crate) fn server_only_entity() -> Entity {
+    Entity::PLACEHOLDER
+}
+
 /// Who deployed a gadget.
 #[derive(Component, Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
 pub struct GadgetOwner {
@@ -444,7 +455,8 @@ pub enum GadgetEvent {
     CutterReseated { cutter: Entity },
     CutterBreached { cutter: Entity, position: Vec3, knocked_down: u32 },
     BackplateSet { by: Entity, position: Vec3 },
-    BackplateFired { position: Vec3, destroyed: u32 },
+    /// `normal`: out of the plate, towards the defenders' side.
+    BackplateFired { position: Vec3, normal: Vec3, destroyed: u32 },
     Thrown { by: Entity, kind: SecondaryGadget },
     Detonated { kind: SecondaryGadget, position: Vec3 },
     Flashed { entity: Entity, strength: f32 },
@@ -804,11 +816,14 @@ fn release_gadget_input(mut intents: Query<(&mut GadgetIntent, &mut DroneIntent)
 
 fn add_gadget_components(add: On<Add<Player>>, tuning: Res<crate::config::Tuning>, mut commands: Commands) {
     let drones = tuning.round.gadgets.drone.count;
-    commands.entity(add.entity).insert((
+    // `insert_if_new`: on a client the replicated values may already be
+    // there (stock, activity, speed scale).
+    commands.entity(add.entity).insert_if_new((
         GadgetIntent::default(),
         DroneIntent::default(),
         GadgetButtons::default(),
         GadgetActivity::default(),
+        GadgetSpeedScale(1.0),
         ReconStock {
             drones,
             max: drones,

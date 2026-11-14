@@ -3,6 +3,10 @@
 //! (seconds since start; the map needs a second or two to load). Combine
 //! with `--no-round --operator <name>` for free play, or with the round loop
 //! (`--round-test`). The run doesn't grab the mouse and plays no sounds.
+//! On a networked client the input commands (keys, look, move, drive) go
+//! to the server like real input and `log` shows what the client sees;
+//! world-changing commands (`op`, `tp`, `reinforce`...) are refused there
+//! (the server has its own script: `--net-script`, `src/net/test_script.rs`).
 //!
 //! | Command | Effect |
 //! |---|---|
@@ -264,7 +268,11 @@ fn run_script(
     mut breaches: MessageWriter<HardBreach>,
     mut reinforce: MessageWriter<ReinforceRequest>,
     mut resets: MessageWriter<RoundReset>,
-    (mut meshes, mut materials): (ResMut<Assets<Mesh>>, ResMut<Assets<StandardMaterial>>),
+    (mut meshes, mut materials, mode): (
+        ResMut<Assets<Mesh>>,
+        ResMut<Assets<StandardMaterial>>,
+        Res<crate::session::NetMode>,
+    ),
     mut commands: Commands,
 ) {
     let now = time.elapsed_secs();
@@ -278,6 +286,26 @@ fn run_script(
         }
         script.next += 1;
         info!("gadget test t={now:.2}: {command:?}");
+        // A networked client only sends input (keys, look, movement) and
+        // looks; changing the world is the server's (`--net-script`).
+        let authority_only = matches!(
+            command,
+            Command::Op(_)
+                | Command::Secondary(_)
+                | Command::Teleport(..)
+                | Command::Reinforce
+                | Command::HardBreach(_)
+                | Command::Shoot(_)
+                | Command::ShootBlade(_)
+                | Command::Dummy(_)
+                | Command::Walker(..)
+                | Command::Explode(..)
+                | Command::Reset
+        );
+        if authority_only && !mode.is_authority() {
+            warn!("gadget test: {command:?} needs the server (use --net-script there)");
+            continue;
+        }
         let (eye, look) = eye_and_look(&transform, state, &input, &tuning.body, tuning.lean.offset);
         let own: Vec<Entity> = children.map(|c| c.iter().collect()).unwrap_or_default();
         let aim_world = || {

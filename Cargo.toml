@@ -47,6 +47,13 @@ lightyear = { version = "=0.31.0", default-features = false, features = [
     "avian3d",
     "input_native",
 ] }
+# Lightyear's replication layer, already in the tree through Lightyear (same
+# version and features): its component-level visibility filters keep
+# per-player state (gadget stock, flashbang effect) private to that player.
+bevy_replicon = { version = "=0.45.5", default-features = false, features = ["client", "server"] }
+# Turns a server's shared secret into its netcode key. The version Bevy's
+# asset hashing already uses.
+blake3 = { version = "=1.8.7", default-features = false }
 # The version Bevy already uses. "termination" makes SIGTERM (e.g. systemd
 # stopping a dedicated server) exit as gracefully as Ctrl+C.
 ctrlc = { version = "3.4", features = ["termination"] }
