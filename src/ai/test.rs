@@ -334,7 +334,8 @@ struct Spectator {
 }
 
 /// Follow an interesting bot from behind its shoulder (replaces the
-/// first-person view; the weapon camera is switched off).
+/// first-person view; the weapon camera is switched off and the HUD moves
+/// to the main camera).
 #[allow(clippy::type_complexity)]
 fn chase_camera(
     mut spectator: ResMut<Spectator>,
@@ -344,6 +345,7 @@ fn chase_camera(
     spatial: avian3d::prelude::SpatialQuery,
     time: Res<Time<Real>>,
     round: Res<Round>,
+    mut commands: Commands,
 ) {
     let now = time.elapsed_secs();
     let Ok((camera_entity, mut transform)) = camera.single_mut() else { return };
@@ -352,6 +354,8 @@ fn chase_camera(
             if parent.parent() == camera_entity {
                 cam.is_active = false;
                 spectator.weapon_camera_off = true;
+                // The HUD was drawn by the weapon camera.
+                commands.entity(camera_entity).insert(IsDefaultUiCamera);
             }
         }
     }
@@ -469,13 +473,22 @@ fn nav_test(
     spatial: avian3d::prelude::SpatialQuery,
     colliders: Query<&avian3d::prelude::ColliderOf>,
     names: Query<&Name>,
-    mut done: Local<bool>,
+    mut done: Local<Option<f32>>,
+    time: Res<Time<Real>>,
     mut exit: MessageWriter<AppExit>,
 ) {
-    if *done || !grid.ready || !tactics.ready {
+    // Quit a few seconds after: quitting while the bots' render pipelines
+    // are still being compiled has crashed the GPU driver.
+    if let Some(at) = *done {
+        if time.elapsed_secs() - at > 4.0 {
+            exit.write(AppExit::Success);
+        }
         return;
     }
-    *done = true;
+    if !grid.ready || !tactics.ready {
+        return;
+    }
+    *done = Some(time.elapsed_secs());
     let Some(layout) = layout else { return };
     let mut points: Vec<(String, Vec3)> = Vec::new();
     for (i, s) in layout.attacker_spawns.iter().enumerate() {
@@ -571,7 +584,6 @@ fn nav_test(
         }
     }
     info!("navtest: {failures} failures");
-    exit.write(AppExit::Success);
 }
 
 /// Every 5 s of game time: one line per bot (goal, where, path, fight).
