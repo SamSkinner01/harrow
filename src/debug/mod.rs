@@ -14,6 +14,14 @@
 //! - `--stance stand|crouch|prone`, `--lean left|right`: hold a stance/lean.
 //! - `--third-person`, `--hitboxes`: start with those views on.
 //! - `--trace-player`: log the player's feet position 4 times a second.
+//! - `--look yaw[,pitch]`: the local player's starting look, degrees (also
+//!   for multiplayer clients, whose spawn the server picks).
+//! - `--auto-fire <seconds>`: hold the trigger from that long after the
+//!   local player appears.
+//! - `--screenshot-secs <s>`: take the `--screenshot` after that many real
+//!   seconds instead of a frame count (unfocused windows run slower).
+//! - `--exit-after <seconds>`: quit after that long; with it, `--screenshot`
+//!   no longer quits.
 //! - `--no-vsync`: uncapped frame rate, for performance measurements.
 //! - `--map keep|greybox` is handled by the map module.
 
@@ -62,7 +70,11 @@ impl Plugin for DebugPlugin {
         let forced = ForcedInput::from_args();
         if forced.is_active() {
             app.insert_resource(forced)
-                .add_systems(FixedPreUpdate, apply_forced_input);
+                // Before a client puts its input on the wire.
+                .add_systems(
+                    FixedPreUpdate,
+                    apply_forced_input.before(crate::net::input::CaptureInputSystems),
+                );
         }
         if has_flag("--no-vsync") {
             app.add_systems(Startup, disable_vsync);
@@ -70,6 +82,61 @@ impl Plugin for DebugPlugin {
         if has_flag("--trace-player") {
             app.add_systems(FixedPostUpdate, trace_player)
                 .add_systems(Update, trace_footsteps);
+        }
+        if let Some(seconds) = arg_value("--auto-fire").and_then(|s| s.parse::<f32>().ok()) {
+            // Hold the trigger from `seconds` after the local player appears
+            // (also for multiplayer clients: the input goes to the server).
+            app.add_systems(
+                FixedPreUpdate,
+                (move |mut players: Query<(&mut crate::weapons::WeaponInput, &mut AutoFireClock), With<LocalPlayer>>,
+                       time: Res<Time>| {
+                    for (mut weapon, mut clock) in &mut players {
+                        clock.0 += time.delta_secs();
+                        if clock.0 >= seconds && !weapon.trigger {
+                            weapon.trigger = true;
+                            weapon.trigger_presses = weapon.trigger_presses.wrapping_add(1);
+                            if clock.0 < seconds + 0.1 {
+                                info!("--auto-fire: trigger held");
+                            }
+                        }
+                    }
+                })
+                .before(crate::net::input::CaptureInputSystems),
+            )
+            .add_observer(|add: On<Add<LocalPlayer>>, mut commands: Commands| {
+                commands.entity(add.entity).insert(AutoFireClock(0.0));
+            });
+        }
+        if let Some(seconds) = arg_value("--exit-after").and_then(|s| s.parse::<f32>().ok()) {
+            app.insert_resource(ExitAfter(seconds))
+                .add_systems(Update, exit_after);
+        }
+        if let Some(look) = look_from_args() {
+            // Also works for a networked client, whose character arrives
+            // from the server (multiplayer tests).
+            app.add_observer(
+                move |add: On<Add<LocalPlayer>>, mut inputs: Query<&mut PlayerInput>| {
+                    if let Ok(mut input) = inputs.get_mut(add.entity) {
+                        input.yaw = look.x;
+                        input.pitch = look.y;
+                    }
+                },
+            );
+        }
+    }
+}
+
+/// `--look yaw[,pitch]` (degrees): the local player's starting look.
+fn look_from_args() -> Option<Vec2> {
+    let raw = arg_value("--look")?;
+    let n: Vec<f32> = raw.split(',').filter_map(|s| s.trim().parse().ok()).collect();
+    let yaw = |y: f32| y.to_radians().rem_euclid(std::f32::consts::TAU);
+    match n.as_slice() {
+        [y] => Some(Vec2::new(yaw(*y), 0.0)),
+        [y, pitch, ..] => Some(Vec2::new(yaw(*y), pitch.to_radians())),
+        _ => {
+            warn!("--look expects yaw[,pitch] in degrees, got {raw:?}");
+            None
         }
     }
 }
@@ -278,7 +345,11 @@ struct AutoScreenshot {
     path: PathBuf,
     wait_frames: u32,
     frames_seen: u32,
+    /// `--screenshot-secs`: wait this long (real time) instead of frames.
+    wait_secs: Option<f32>,
     requested: bool,
+    /// Quit once it's saved (not with `--exit-after`).
+    quit: bool,
 }
 
 impl AutoScreenshot {
@@ -291,7 +362,9 @@ impl AutoScreenshot {
             path: path.into(),
             wait_frames,
             frames_seen: 0,
+            wait_secs: arg_value("--screenshot-secs").and_then(|s| s.parse().ok()),
             requested: false,
+            quit: arg_value("--exit-after").is_none(),
         })
     }
 }
@@ -301,12 +374,17 @@ fn auto_screenshot(
     mut shot: ResMut<AutoScreenshot>,
     players: Query<(&Transform, &CharacterState), With<LocalPlayer>>,
     diagnostics: Res<DiagnosticsStore>,
+    time: Res<Time<Real>>,
 ) {
     if shot.requested {
         return;
     }
     shot.frames_seen += 1;
-    if shot.frames_seen < shot.wait_frames {
+    let waiting = match shot.wait_secs {
+        Some(secs) => time.elapsed_secs() < secs,
+        None => shot.frames_seen < shot.wait_frames,
+    };
+    if waiting {
         return;
     }
     shot.requested = true;
@@ -323,10 +401,28 @@ fn auto_screenshot(
             transform.translation, state.height, state.lean, state.stance
         );
     }
-    commands
-        .spawn(Screenshot::primary_window())
-        .observe(save_to_disk(shot.path.clone()))
-        .observe(|_: On<ScreenshotCaptured>, mut exit: MessageWriter<AppExit>| {
+    let mut screenshot = commands.spawn(Screenshot::primary_window());
+    screenshot.observe(save_to_disk(shot.path.clone()));
+    if shot.quit {
+        screenshot.observe(|_: On<ScreenshotCaptured>, mut exit: MessageWriter<AppExit>| {
             exit.write(AppExit::Success);
         });
+    }
 }
+
+/// `--exit-after <seconds>`: quit after that long (multiplayer tests, so a
+/// client can take its screenshot and stay connected a while longer).
+fn exit_after(seconds: Res<ExitAfter>, time: Res<Time<Real>>, mut exit: MessageWriter<AppExit>, mut done: Local<bool>) {
+    if !*done && time.elapsed_secs() >= seconds.0 {
+        *done = true;
+        info!("--exit-after: {} s, quitting", seconds.0);
+        exit.write(AppExit::Success);
+    }
+}
+
+#[derive(Resource)]
+struct ExitAfter(f32);
+
+/// `--auto-fire`: seconds since the local player appeared.
+#[derive(Component)]
+struct AutoFireClock(f32);

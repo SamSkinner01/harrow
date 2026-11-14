@@ -612,8 +612,8 @@
         test_rounds_to_win: 3,
         // Teams swap attack and defence after this many rounds (1 = every round).
         swap_sides_every: 1,
-        // true = attackers can't leave their spawn during prep. (They would be
-        // driving recon drones, which aren't built yet.)
+        // true = attackers can't leave their spawn during prep (they scout
+        // with recon drones, key G).
         attackers_hold_in_prep: true,
         // How close (metres) a defender must be to a planted defuser to disable it.
         disable_reach: 1.5,
@@ -681,5 +681,217 @@
         ),
         // Volume of round and gadget sounds (beeps, hiss, ticks).
         volume: 0.6,
+        // ---- Gadgets (M6 part two) ----
+        gadgets: (
+            // A press of 3, 4 or G shorter than this (seconds) is a tap:
+            // start a cutter, fire a backplate, connect to a drone/camera.
+            // Holding longer places things (and throws a new drone with G).
+            tap_time: 0.25,
+            // Auger's ring cutter.
+            ring_cutter: (
+                // How close (from the eyes) the wall or hatch must be, metres.
+                reach: 1.8,
+                // Seconds holding 3 to clamp one on.
+                clamp_time: 1.5,
+                // Seconds of cutting to finish the plug.
+                cut_time: 10.0,
+                // Radius of the plug, metres (1.0 = a walk-through opening).
+                cut_radius: 1.0,
+                // Height of the plug's centre above the bottom of a wall, metres.
+                cut_height: 1.0,
+                // Fraction of the cut at which the blade breaks through to the
+                // far side, where it can be shot to jam the cutter.
+                expose_at: 0.5,
+                // Seconds Auger holds 3 at a jammed cutter to re-seat it.
+                reseat_time: 4.0,
+                // How loud it is while cutting (footstep scale; explosion 6), and
+                // how often that noise repeats (seconds). 4+ saturates stakes.
+                noise: 5.0,
+                noise_interval: 0.5,
+                // Damage the cutter body takes before it breaks.
+                health: 60.0,
+                // Damage the exposed blade takes before the cutter jams (1 = any hit).
+                blade_health: 1.0,
+                // Passes the cutting head makes round the ring over a full cut.
+                // Once through, the blade travels the far side this fast (3 =
+                // about 2 m/s): slower is easier to shoot.
+                revolutions: 3.0,
+                // The falling plug knocks down (prone) and hurts anyone this
+                // close behind it, metres (a hatch plug falls on whoever is below)...
+                knockdown_depth: 1.5,
+                // ...for this much damage.
+                knockdown_damage: 25.0,
+                // Your view shakes within this distance of a working cutter, metres.
+                shake_radius: 4.0,
+            ),
+            // Mortise's backplate charges.
+            backplate: (
+                // How close (from the eyes) the reinforced plate must be, metres.
+                reach: 1.6,
+                // Seconds holding 3 to bolt one on.
+                bolt_time: 1.5,
+                // Attacker gadgets on the far side within this distance of the
+                // charge are destroyed, metres.
+                gadget_radius: 1.2,
+                // Radius of the hole it punches in your own reinforcement, metres.
+                hole_radius: 0.1,
+                // People on the far side within this distance get hurt, metres...
+                blast_radius: 1.2,
+                // ...up to this much damage.
+                blast_damage: 20.0,
+                // Damage a placed charge takes before it breaks.
+                health: 30.0,
+            ),
+            // How many of each shared secondary gadget a loadout carries (the
+            // soft-breach charge count is destruction.breach_charge.count).
+            counts: (
+                frag: 2,
+                flashbang: 3,
+                smoke: 2,
+                razor_wire: 2,
+                ballistic_cover: 1,
+                impact_charge: 2,
+                proximity_alarm: 2,
+            ),
+            // Thrown grenades (frag, flashbang, smoke).
+            throw: (
+                // Throw speed, metres per second, plus this much upward lob.
+                speed: 13.0,
+                lift: 2.0,
+                // Grenade size (radius), metres.
+                radius: 0.045,
+                // Bounciness (0..1) and grip on the floor.
+                restitution: 0.35,
+                friction: 0.6,
+            ),
+            frag: (
+                // Seconds from pulling the pin (pressing 4) to the blast. Hold 4
+                // to cook it; held too long, it goes off in your hand.
+                fuse: 3.0,
+                // Damage point blank (100 = a full-health person), and the
+                // distance at which it falls to zero, metres.
+                max_damage: 140.0,
+                damage_radius: 4.5,
+                // Radius of the hole it opens in soft walls and floors (never
+                // reinforced ones), metres. Under 0.3 nobody drops through floors.
+                breach_radius: 0.25,
+            ),
+            flashbang: (
+                // Seconds from the throw to the bang.
+                fuse: 1.6,
+                // People with a clear line of sight within this distance are hit, metres.
+                radius: 10.0,
+                // Seconds of white-out looking straight at it, close up.
+                blind_time: 5.0,
+                // Seconds of muffled hearing (close up).
+                deaf_time: 7.0,
+                // Strength when looking directly away from it (0..1).
+                look_away: 0.25,
+                // How loud the bang is to gameplay (saturates stakes at 4+).
+                loudness: 5.0,
+            ),
+            smoke: (
+                // Seconds from the throw until it starts pouring smoke.
+                fuse: 1.2,
+                // Radius of the cloud, metres.
+                radius: 3.5,
+                // Seconds to reach full size, seconds at full density, seconds to fade.
+                grow_time: 2.0,
+                duration: 12.0,
+                fade_time: 3.0,
+                // Smoke puffs per cloud, and for all clouds together (cost cap).
+                particles: 46,
+                max_particles: 140,
+            ),
+            impact: (
+                // Throw speed, metres per second.
+                speed: 15.0,
+                // Goes off on the first contact: hole radius in soft surfaces,
+                // and a small blast for people, metres / damage.
+                breach_radius: 0.75,
+                damage_radius: 1.5,
+                max_damage: 25.0,
+                // Lost if it hits nothing within this many seconds.
+                max_flight: 3.0,
+            ),
+            razor_wire: (
+                // Seconds holding 4 to lay a roll, and how far ahead of you it goes, metres.
+                place_time: 1.5,
+                distance: 1.0,
+                // Size of the roll: length across the doorway, depth, height, metres.
+                length: 1.7,
+                depth: 0.6,
+                height: 0.55,
+                // Movement speed inside it (1.0 = no effect).
+                slow: 0.35,
+                // How loud each footstep in it is (footstep scale; walk 0.5).
+                noise: 1.2,
+                // Damage it takes before it breaks (explosions, melee; bullets pass through).
+                health: 80.0,
+                // Damage of one melee swing on it.
+                melee_damage: 45.0,
+            ),
+            cover: (
+                // Seconds holding 4 to set it up, and how far ahead of you, metres.
+                place_time: 1.5,
+                distance: 0.9,
+                // Size, metres (waist-high).
+                width: 1.1,
+                height: 1.0,
+                // Blast damage it takes before it breaks (bullets don't hurt it).
+                health: 150.0,
+            ),
+            alarm: (
+                // Seconds holding 4 to stick one on, and reach, metres.
+                place_time: 0.5,
+                reach: 2.0,
+                // Attackers within this distance (and this much above/below) set it off.
+                radius: 3.0,
+                vertical_reach: 2.0,
+                // Seconds between beeps / reveals while someone is in range.
+                ping_interval: 1.0,
+                // Damage it takes before it breaks.
+                health: 15.0,
+            ),
+            // Recon drones (attackers; G).
+            drone: (
+                // Drones each attacker carries.
+                count: 2,
+                // Throw speed, metres per second.
+                throw_speed: 7.0,
+                // Driving speed forward and backward (m/s), turn rate on A/D (deg/s).
+                speed: 3.2,
+                reverse_speed: 1.8,
+                turn_rate: 150.0,
+                // How quickly it reaches speed (m/s per second).
+                acceleration: 14.0,
+                gravity: 20.0,
+                // Body radius, metres (fits through holes a little bigger than this).
+                radius: 0.1,
+                // Highest ledge it climbs, metres, and steepest ramp, degrees.
+                step_height: 0.09,
+                max_slope: 40.0,
+                // Damage it takes before it breaks.
+                health: 40.0,
+                // Seconds of driving per battery.
+                battery: 240.0,
+                // Camera height above the floor, metres, and field of view, degrees.
+                camera_height: 0.14,
+                fov: 84.0,
+                // Signal bars drop to zero at this distance from the operator, metres.
+                signal_range: 45.0,
+                // How loud its motor is to gameplay while moving (footstep scale).
+                noise: 0.15,
+            ),
+            // Defender CCTV cameras (G).
+            cctv: (
+                // Damage a camera takes before it breaks.
+                health: 10.0,
+                // Field of view, degrees, and how far you can pan / tilt it, degrees.
+                fov: 80.0,
+                pan_limit: 55.0,
+                tilt_limit: 30.0,
+            ),
+        ),
     ),
 )

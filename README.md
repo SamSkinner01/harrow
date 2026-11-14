@@ -7,10 +7,13 @@ external asset is logged in [ASSETS.md](ASSETS.md).
 ## Build and run
 
 ```sh
-cargo run                      # Harrow Keep (dev build; first build takes a few minutes)
+cargo run                      # main menu: solo, host, join (dev build; first build takes a few minutes)
+cargo run -- --solo            # straight into solo on Harrow Keep
 cargo run -- --map greybox     # the grey-box movement test area
 cargo run --release            # optimised build, use this for judging performance
 ```
+
+Multiplayer (host, join, dedicated server): see [Multiplayer](#multiplayer).
 
 Use `cargo build -j 4` (or any number) to leave CPU cores free while compiling.
 
@@ -47,7 +50,7 @@ Bevy's API changes between releases, so everything is pinned with `=` in
 | Bevy | 0.20.1 | Latest stable (2026-10-28), supported by every crate below. |
 | Avian (`avian3d`) | 0.8.0 | Physics. Chosen over Rapier because Lightyear has first-party Avian integration (`lightyear_avian3d`), which we need for networked prediction. |
 | bevy_enhanced_input | 0.27.2 | Input. Context-based actions (on foot / gadget placement / menus) and Lightyear supports it directly (`input_bei` feature). |
-| Lightyear | 0.31.0 *(planned, M8)* | Networking. Not added yet; 0.31.0 targets Bevy 0.20 + Avian 0.8 + bevy_enhanced_input 0.27. |
+| Lightyear | 0.31.0 | Networking (M8): netcode over UDP, replication (on bevy_replicon 0.45), prediction, interpolation, native inputs. Targets Bevy 0.20 + Avian 0.8. |
 | Blender | 5.2.4 LTS | Asset pipeline. LTS chosen over 5.3.0, which was only days old. |
 | MPFB | 2.0.18 | Character bodies (Blender extension, installed per user by `build_characters.sh --setup`). |
 
@@ -67,11 +70,15 @@ Bevy's API changes between releases, so everything is pinned with `=` in
 | 1 / 2, mouse wheel | Primary (TAMARISK rifle) / sidearm (ACACIA pistol) |
 | V | Melee (breaks soft walls, hatches from above, barricades) |
 | F (hold) | Plant the defuser in a site (attackers) / disable it (defenders). Defenders elsewhere: reinforce the wall or hatch you look at (5 s), or barricade an empty doorway/window (2 s) |
-| 3 | Unique gadget (operator ability) |
-| 4 (hold, then press) | Breach charge: hold to stick it on a soft wall, floor or barricade, press again to set it off |
+| 3 | Unique gadget. Lark, Fathom: press to fire a dart / hammer a stake. Auger: hold on a wall or hatch to clamp a ring cutter, tap to start it, hold at a jammed cutter to re-seat it. Mortise: hold on your reinforcement to bolt a backplate charge, tap (anywhere) to fire the latest |
+| 4 | Secondary gadget (the one in your loadout). Breach charge: hold to stick it, press again to set it off. Frag / flashbang / smoke / impact charge: press to ready, release to throw (holding a frag cooks it). Razor wire / ballistic cover / proximity alarm: hold to place |
+| G | Recon: tap to look through your drones (attackers) or the CCTV cameras (defenders), tap again to come back; attackers hold G to throw another drone |
+| Q / E (recon view) | Previous / next drone or camera |
+| W A S D, mouse (recon view) | Drive and turn the drone, tilt its camera; pan and tilt a CCTV camera |
 | 5 | Equip / stow the defuser (attackers) |
 | 1 / 2 | Pick an operator on the selection screen |
-| Esc / left click | Release / capture the mouse |
+| Esc | Pause menu (frees the mouse); left click in game captures it again |
+| 4 (selection screen) | Change the picked operator's secondary gadget |
 | F1 | Toggle key help |
 | F3 | Toggle FPS overlay |
 | F4 | Show hit zones and movement capsule |
@@ -86,6 +93,8 @@ Movement, look, lighting, per-surface look (texture scale and tint) and
 weapons (damage, recoil, spread, reloads, the weapon models and where they sit
 on screen) live in `assets/config/tuning.ron`. Edit and save while the game is running and the
 changes apply immediately. A mistake in the file is logged and ignored.
+Gadgets, drones and CCTV are under `round.gadgets` (timings, damage, counts,
+drone speed and battery, camera pan limits).
 
 ## Asset pipeline
 
@@ -134,6 +143,122 @@ times and layers are fixed in the script; the packs and licences are in
 ASSETS.md ("Audio"), credits in CREDITS.md. If a bank's variant count
 changes, update `BANKS` in `src/audio/mod.rs`.
 
+## Multiplayer
+
+The same game plays solo, hosts, joins, or runs a headless dedicated
+server. The server simulates everything (rounds, damage, gadgets,
+destruction); each player's own movement is predicted locally, so it
+feels instant, and everyone else is shown slightly in the past for
+smoothness. Shots are checked by the server against where targets were
+on the shooter's screen (lag compensation). Details: DESIGN.md, "M8
+networking".
+
+**Everyone must run the same build** (same git commit). The game checks
+on connect and refuses a different build with "Version mismatch".
+
+### From the menu
+
+`cargo run` opens the main menu:
+
+- **Play Solo**: the game as before, no network.
+- **Host Game**: you play and others can join you. Pick the UDP port
+  (default 5888).
+- **Join Game**: type the host's address, `host` or `host:port`
+  (`192.168.1.20`, `my-pc.lan:5888`, a Tailscale name...). The last
+  address is remembered (`~/.config/harrow/menu.ron` on Linux,
+  `%APPDATA%\harrow\menu.ron` on Windows).
+
+In game, **Esc** opens the pause menu (Resume, Leave to menu, Quit). If
+the connection fails or drops you're taken back to the menu with the
+reason ("Server not responding", "Version mismatch", "Server full",
+"Disconnected...").
+
+### From the command line
+
+```sh
+cargo run -- --host            # host on UDP 5888 (or --host 6000)
+cargo run -- --connect 192.168.1.20        # join (port 5888), or --connect host:port
+cargo run -- --connect my-pc --name Alice  # name shown to the server
+cargo run -- --server          # dedicated server, headless, UDP 5888 (or --server 6000)
+cargo run -- --server --config assets/config/server.ron   # with a config file
+cargo run -- --solo            # straight into solo (skip the menu)
+```
+
+Any other flag (`--map`, `--no-round`, `--round-test`, `--screenshot`...)
+also skips the menu and works in every mode (`--menu` forces the menu).
+Join late and you watch (dead) until the next round starts; players are
+put on the smaller squad as they join.
+
+### Dedicated server
+
+`--server` runs with no window, GPU, audio or input devices, logs to
+stdout (plain text when not a terminal, so journald is happy) and exits
+cleanly on Ctrl+C or SIGTERM. The round loop waits until someone joins.
+Settings: `--config file.ron` (see `assets/config/server.ron`: name,
+port, map, max players, log level, round loop and timers).
+
+A lean server binary that doesn't link the window system, audio or
+gamepad libraries:
+
+```sh
+cargo build --release --no-default-features --features dedicated
+./target/release/harrow --server --config assets/config/server.ron
+```
+
+It needs the `assets/` folder (the map's collision comes from the kit
+models): run it from the repository, or set `BEVY_ASSET_ROOT` to the
+folder that contains `assets/`.
+
+### Firewall and router
+
+The server (host or dedicated) listens on **UDP** port 5888 (or your
+`--host`/`--server` port). Clients need nothing opened.
+
+- **Fedora** (firewalld):
+  ```sh
+  sudo firewall-cmd --add-port=5888/udp                # until reboot
+  sudo firewall-cmd --permanent --add-port=5888/udp    # permanently...
+  sudo firewall-cmd --reload                           # ...and apply now
+  ```
+- **Windows**: the first time you host, Windows Defender Firewall asks
+  whether to allow `harrow.exe`: tick **Private networks** (and Public
+  only if you need it). Or add the rule yourself in an admin PowerShell:
+  `New-NetFirewallRule -DisplayName "Harrow" -Direction Inbound -Protocol UDP -LocalPort 5888 -Action Allow`.
+
+**LAN:** join with the host's local IP (`ip -4 addr` / `ipconfig`).
+
+**Internet:** either forward UDP 5888 on the host's router to the host's
+local IP and join with the router's public IP, or (easier, no router
+changes) put everyone on the same virtual LAN with
+[Tailscale](https://tailscale.com) or [ZeroTier](https://www.zerotier.com)
+and join with the host's Tailscale/ZeroTier IP or name.
+
+**Security note:** connections use a fixed development key built into
+the game. It keeps other programs' packets out but is not a password:
+only run servers for people you trust, and don't expose one to the whole
+internet for long.
+
+### Testing on one machine
+
+```sh
+tools/scripts/net_test.sh                              # dedicated server + 2 clients, free play
+tools/scripts/net_test.sh --latency 80 --jitter 10 --loss 2   # with a bad network
+tools/scripts/net_test.sh --round                      # round loop: phases stay in sync
+```
+
+Two game windows open for about 20 s. Logs and screenshots go to
+`/tmp/harrow-net-test` (`OUT=dir` to change). The summary shows who
+joined and left, the lag-compensation test shots, what each client sees
+(`--net-trace`), shots/hits/destroyed cells on every instance, and with
+`--round` the round phases of all three.
+
+Network test flags: `--net-latency MS --net-jitter MS --net-loss PCT`
+(simulated on everything that instance receives), `--net-trace` (log
+state once a second), `--net-shoot-test` (server fires lag-compensated
+test rays between players and logs rewound vs live results), `--look
+yaw[,pitch]`, `--auto-fire SECONDS`, `--screenshot-secs S`,
+`--exit-after S`.
+
 ## Developer flags
 
 ```sh
@@ -151,6 +276,9 @@ cargo run -- --round-test                        # short round timers and a shor
 cargo run -- --round-script "action@0.5: hold; planted@1: shot out.png; planted@2: quit"
                                                # scripted automated run; commands in src/round/script.rs
 cargo run -- --show-all-intel                    # show both teams' gadget reveals (testing)
+cargo run -- --secondary frag                    # your secondary gadget: breach, frag, flash, smoke, wire, cover, impact, alarm
+cargo run -- --no-round --operator auger --gadget-test "1 tp 7 0 -2.6 0 0; 1.5 hold3 2; 4 tap3; 15 shot cut.png; 15.5 quit"
+                                               # scripted gadget checks; commands in src/gadgets/test_script.rs
 cargo run -- --dummies                         # training dummies in the keep (courtyard, behind plaster, behind stone)
 cargo run -- --weapon-test                     # scripted weapon checks; logs PASS/FAIL, exit code 1 on failure
 cargo run -- --weapon sidearm --ads            # hold a weapon / aim down sights
@@ -193,6 +321,22 @@ Use `--no-round` for free play (otherwise the round loop respawns and
 locks the player). Commands: `team`, `look`, `tp`, `move`, `stance`, `fire bullet|pellet`,
 `melee`, `interact`, `gadget`, `explode`, `hardbreach`, `reinforce`, `lamp`,
 `dummy`, `log` (surfaces, player, rebuild cost, FPS), `shot`, `quit`.
+
+Gadget test script (`--gadget-test`, same `<seconds> <command>` format;
+`src/gadgets/test_script.rs` lists every command): `op`, `secondary`, `tp`,
+`look`, `aimat`, `move`, `stance`, `hold3`/`tap3`, `hold4`/`tap4`, `g`,
+`next`/`prev`, `drive`, `dlook`, `dface`, `reinforce`, `hardbreach`, `fire`
+(a real weapon shot), `shoot`, `aimblade`/`shootblade`, `dummy`, `walker`,
+`walker-move`, `explode`, `lamp`, `reset` (a new-round reset), `log`,
+`shot`, `quit`. With the round loop, add `--round-script "action@99: log x"`
+to keep the operator selection open (otherwise automated runs auto-pick).
+
+```sh
+# backplate vs ring cutter: reinforce, bolt a backplate, clamp and start a cutter, fire the backplate
+cargo run -- --no-round --operator auger --gadget-test "1.5 tp 7 0 -5.6 180 0; 1.8 reinforce; 2 op mortise; 2.2 hold3 2; 4.6 op auger; 4.7 tp 7 0 -2.4 0 -12; 5 hold3 2; 7.2 tap3; 9 op mortise; 9.2 tap3; 9.6 log; 10 quit"
+# drones: throw one, drive it, come back
+cargo run -- --no-round --operator lark --gadget-test "1.5 g; 3 drive 0 1; 4.5 drive 0 0; 5 shot drone.png; 5.5 g; 6 quit"
+```
 
 ## Layout
 

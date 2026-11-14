@@ -47,6 +47,13 @@ Destruction (M4) is procedural (cell-grid meshes, debris, dust, the breach
 charge and reinforcement plates) and reuses the library materials above; it
 adds no external assets.
 
+Gadgets, drones and CCTV (M6 part two) are made in code too, with no
+external assets: the ring cutter, backplate charges, grenades, razor wire,
+ballistic cover, proximity alarm, recon drone and CCTV models (primitive
+shapes), the smoke / dust / spark puff textures and the drone and camera
+overlay (grain, scanlines, vignette) generated as images, and every gadget
+sound synthesised in `src/gadgets/sfx.rs`.
+
 ## Audio
 
 Everything under `assets/audio/` is built from these packs by

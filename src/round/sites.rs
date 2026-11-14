@@ -30,7 +30,7 @@ fn round_enabled(settings: Res<RoundSettings>) -> bool {
     settings.enabled
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum SiteId {
     A,
     B,
