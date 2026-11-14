@@ -1327,8 +1327,25 @@ Left/Right, Esc. All HUD roots sit under one HUD layer (`ui::HudLayer`)
 that is hidden outside the game, so nothing of the HUD shows behind the
 main menu.
 
-**Performance** (RTX 4070 Ti Super, 1920x1080, `--no-vsync`, free play):
-TABLE
+**Performance** (RTX 4070 Ti Super, 1920x1080, `--no-vsync`, free play,
+`tools/scripts/look_shots.sh`; average fps, best of two passes; other
+builds were running on the machine, so expect +-25 % between runs):
+
+| View | dev, High | release, High |
+|---|---|---|
+| Outside the gate | 408 | 385 |
+| Yard toward the keep | 456 | 421 |
+| Great hall | 317 | 288 |
+| Basement (cistern) | 343 | 312 |
+| Upper room (map room) | 358 | 312 |
+| Tower roof | 435 | 393 |
+
+Release, by preset: great hall (the heaviest view) Low 490, Medium 342,
+High 288, Ultra 196; tower roof Low 555, Medium 526, High 393, Ultra 331.
+The release build is no faster than the dev build here: the frame is GPU
+bound (dependencies are optimised in dev too). The most expensive switches
+are SSAO quality, TAA and the Ultra shadow map (4096 px); Low turns off
+SSAO, bloom, contact shadows and lantern shadows.
 
 ## Open questions
 
