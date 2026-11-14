@@ -829,9 +829,11 @@ hand-placed data), so a new map just works:
 
 ### HUD
 
-A kill feed (left, under the FPS counter: killer, weapon, victim, headshot; your side's
-deaths in orange) and your team's callouts under it. On a client the
-feed is built from the server's forwarded hits.
+A kill feed (top left, under the FPS counter: killer, weapon, victim,
+headshot; coloured by the killer's side, team kills in red) and your
+team's callouts under it, in the shared HUD style (`ui::style`) under
+`ui::HudLayer`. On a client the feed is built from the server's forwarded
+hits.
 
 ### Third-person bodies (`characters/body.rs`)
 
@@ -845,8 +847,9 @@ firing, reloading, lowered while holstering or holding the defuser) and
 `Dead` (tips over backwards, stands up when revived). The prop carbine is
 hidden and the active slot's real weapon `.glb` (the tuning file's
 `weapons.<slot>.model`, the same as the first-person view) is attached to
-the `weapon_r` bone (+90 degrees about X: the bone's +Y runs along the
-barrel). Shots show a muzzle flash, a flicker of light and a tracer on
+the `weapon_r` bone with `weapons::third_person_transform` (the tuning's
+`model.third_person`; `Character::prop_weapon = false`), the same attach
+as `--lineup --lineup-weapons`. Shots show a muzzle flash, a flicker of light and a tracer on
 every other shot. So a remote player only needs those components
 replicated; nothing else is required.
 

@@ -1,5 +1,5 @@
 //! Third-person bodies for characters other than the local player: bots
-//! now, remote players (M8) later. Presentation only: it reads simulation
+//! and remote players. Presentation only: it reads simulation
 //! state and never changes it.
 //!
 //! **Which characters.** Every [`Player`] without [`LocalPlayer`] (and
@@ -22,13 +22,12 @@
 //! - [`Team`], [`Dead`]: the body tips over on death and stands up again
 //!   when revived.
 //!
-//! **Weapons.** The prop carbine baked into the operator model is hidden;
-//! the real weapon `.glb` of the active slot (the tuning file's
-//! `weapons.<slot>.model`, the same file as the first-person view) is
-//! attached to the `weapon_r` bone. Bone axes: +Y along the barrel, +Z up,
-//! origin at the top of the grip; weapon models point down -Z with +Y up
-//! and the origin at the grip, so the model gets a +90 degree turn about X.
-//! Shots by these characters ([`ShotFired`]) show a muzzle flash at the
+//! **Weapons.** The prop carbine baked into the operator model is hidden
+//! (`Character::prop_weapon = false`); the real weapon `.glb` of the active
+//! slot (the tuning file's `weapons.<slot>.model`, the same file as the
+//! first-person view) is attached to the `weapon_r` bone with
+//! [`third_person_transform`] (the tuning's `model.third_person`), as
+//! `--lineup --lineup-weapons` shows. Shots by these characters ([`ShotFired`]) show a muzzle flash at the
 //! model's `MUZZLE` node and a brief tracer.
 
 use std::f32::consts::FRAC_PI_2;
@@ -50,7 +49,7 @@ use crate::{
     config::Tuning,
     player::{CharacterState, LocalPlayer, Player, PlayerInput, Stance},
     round::operators::{Operator as RoundOperator, OperatorId},
-    weapons::{ShotFired, Slot, WeaponAction, WeaponMaterials, WeaponState},
+    weapons::{ShotFired, Slot, WeaponAction, WeaponMaterials, WeaponState, third_person_transform},
 };
 
 pub struct BodyPlugin;
@@ -235,14 +234,6 @@ fn attach_weapons(
             commands.entity(old).despawn();
         }
         let def = state.active.def(&tuning);
-        let m = &def.model;
-        let (yaw, pitch, roll) = m.rotation;
-        let model_rotation = Quat::from_euler(
-            EulerRot::YXZ,
-            yaw.to_radians(),
-            pitch.to_radians(),
-            roll.to_radians(),
-        );
         let weapon = commands
             .spawn((
                 Name::new(format!("Body weapon {}", def.name)),
@@ -250,12 +241,9 @@ fn attach_weapons(
                     slot: state.active,
                     muzzle: None,
                 },
-                WorldAssetRoot(assets.load(GltfAssetLabel::Scene(0).from_asset(m.path.clone()))),
-                Transform {
-                    translation: Vec3::ZERO,
-                    rotation: Quat::from_rotation_x(FRAC_PI_2) * model_rotation,
-                    scale: Vec3::splat(m.scale.max(1e-4)),
-                },
+                WorldAssetRoot(assets.load(GltfAssetLabel::Scene(0).from_asset(def.model.path.clone()))),
+                // The tuning's `model.third_person`, relative to the bone.
+                third_person_transform(def),
                 ChildOf(socket),
             ))
             .id();

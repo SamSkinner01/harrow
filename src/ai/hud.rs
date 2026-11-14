@@ -1,6 +1,7 @@
 //! Kill feed (everyone's kills, top left) and team callouts (your team's
 //! bots calling out what they see and hear, under it). Presentation only.
-//! Every kill and callout is also logged.
+//! Every kill and callout is also logged. Styled with `ui::style`; the root
+//! joins `ui::HudLayer` like every HUD root (hidden on menus).
 
 use bevy::prelude::*;
 
@@ -9,6 +10,7 @@ use crate::{
     combat::{Died, Team},
     player::LocalPlayer,
     round::{RoundEvent, operators::Operator},
+    ui::style::{self, palette, size, space},
     weapons::{BulletHit, Slot, WeaponState},
 };
 
@@ -26,9 +28,8 @@ const KILLS_SHOWN: usize = 5;
 const CALLOUTS_SHOWN: usize = 4;
 const KILL_TIME: f32 = 7.0;
 const CALLOUT_TIME: f32 = 5.0;
-const FRIEND: Color = Color::srgb(0.55, 0.82, 1.0);
-const FOE: Color = Color::srgb(1.0, 0.62, 0.38);
-const TEXT: Color = Color::srgba(1.0, 1.0, 1.0, 0.9);
+/// Below the FPS readout (one line, when shown).
+const TOP: f32 = space::EDGE + 30.0;
 
 struct Line {
     text: String,
@@ -51,16 +52,27 @@ struct KillFeed;
 struct CalloutFeed;
 
 fn spawn_feeds(mut commands: Commands) {
-    let column = |top: f32| Node {
-        position_type: PositionType::Absolute,
-        left: px(12.0),
-        top: px(top),
+    let column = |gap: f32| Node {
         flex_direction: FlexDirection::Column,
-        row_gap: px(3.0),
+        align_items: AlignItems::FlexStart,
+        row_gap: px(gap),
         ..default()
     };
-    commands.spawn((Name::new("Kill feed"), KillFeed, column(112.0), Pickable::IGNORE));
-    commands.spawn((Name::new("Callout feed"), CalloutFeed, column(262.0), Pickable::IGNORE));
+    // One root (it joins the HUD layer); the callouts sit under the kills.
+    commands.spawn((
+        Name::new("Kill feed and callouts"),
+        Node {
+            position_type: PositionType::Absolute,
+            left: px(space::EDGE),
+            top: px(TOP),
+            ..column(10.0)
+        },
+        Pickable::IGNORE,
+        children![
+            (Name::new("Kill feed"), KillFeed, column(3.0), Pickable::IGNORE),
+            (Name::new("Callout feed"), CalloutFeed, column(3.0), Pickable::IGNORE),
+        ],
+    ));
 }
 
 /// "Name (OPERATOR)", or "You".
@@ -81,7 +93,6 @@ fn collect_kills(
     names: Query<(&Name, Option<&Operator>, Has<LocalPlayer>)>,
     teams: Query<&Team>,
     weapons: Query<&WeaponState>,
-    local: Query<&Team, With<LocalPlayer>>,
     tuning: Res<crate::config::Tuning>,
     mode: Res<crate::session::NetMode>,
     mut feeds: ResMut<Feeds>,
@@ -97,7 +108,6 @@ fn collect_kills(
         died.read().count();
         lethal.iter().map(|h| Died { entity: h.target, killer: Some(h.shooter) }).collect()
     };
-    let my_team = local.single().ok().copied();
     for event in events.read() {
         if let RoundEvent::PhaseStarted { phase: crate::round::RoundPhase::OperatorSelect, .. } = event {
             feeds.round_kills = 0;
@@ -131,8 +141,14 @@ fn collect_kills(
         };
         info!("kill: {text}");
         feeds.round_kills += 1;
-        let victim_team = teams.get(death.entity).ok().copied();
-        let color = if victim_team == my_team { FOE } else { FRIEND };
+        // The killer's side colour; team kills stand out.
+        let killer_team = death.killer.filter(|&k| k != death.entity).and_then(|k| teams.get(k).ok());
+        let color = match killer_team {
+            _ if friendly => palette::ALERT,
+            Some(Team::Attackers) => palette::ATTACK,
+            Some(Team::Defenders) => palette::DEFEND,
+            None => palette::DIM,
+        };
         feeds.kills.push(Line { text, color, at: now });
         if feeds.kills.len() > KILLS_SHOWN {
             feeds.kills.remove(0);
@@ -155,7 +171,7 @@ fn collect_callouts(
         if Some(c.team) != my_team {
             continue;
         }
-        feeds.callouts.push(Line { text: format!("{who}{}", c.text), color: TEXT, at: now });
+        feeds.callouts.push(Line { text: format!("{who}{}", c.text), color: palette::TEXT, at: now });
         if feeds.callouts.len() > CALLOUTS_SHOWN {
             feeds.callouts.remove(0);
         }
@@ -192,16 +208,13 @@ fn show_feeds(
             commands.spawn((
                 ChildOf(root),
                 Text::new(line.text.clone()),
-                TextFont {
-                    font_size: FontSize::Px(14.0),
-                    ..default()
-                },
+                style::text(size::SMALL),
                 TextColor(line.color),
                 Node {
-                    padding: UiRect::axes(px(6.0), px(2.0)),
+                    padding: UiRect::axes(px(space::PAD), px(2.0)),
                     ..default()
                 },
-                BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.45)),
+                BackgroundColor(palette::PANEL),
             ));
         }
     }
