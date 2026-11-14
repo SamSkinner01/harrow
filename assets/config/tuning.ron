@@ -68,6 +68,17 @@
         sun: 100000.0,
         // Sky fill light in shade, cd/m2. Lower = deeper shadows.
         ambient: 3500.0,
+        // Eye adaptation: how many stops brighter the view may get when you
+        // look into dark interiors (0 = off). Outdoors is never changed.
+        adaptation_max: 2.0,
+        // Scene brightness (log2) below which adaptation starts. Raise it to
+        // adapt sooner, lower it to keep interiors darker.
+        adaptation_threshold: -3.0,
+        // Interior lanterns: brightness (game units, not real lumens), colour
+        // (warm), and how far the light reaches in metres.
+        lamp_intensity: 400000.0,
+        lamp_colour: (1.0, 0.78, 0.52),
+        lamp_range: 9.0,
     ),
     // Per-surface look. scale = metres one texture repeat covers.
     // tint multiplies the texture colour (1.0 = unchanged; above 1 brightens).

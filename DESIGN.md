@@ -190,9 +190,11 @@ layout must not be modelled on it.
 - Upper floor: two rooms split by a plaster wall; a railed stairwell; a
   wooden floor with a hatch over the storeroom.
 - Roof with battlements (no access yet).
-- Not yet: rooftop access, basement, interior lamps (interiors are very dark
-  with only window light), a proper sky (a physically based atmosphere was
-  tried and looked grey; needs a lighting pass).
+- Lighting: one hanging lantern per room (warm, shadowed spot light) and
+  capped eye adaptation (the view brightens by up to 2 stops in dark
+  interiors; outdoors is untouched). Both tunable under `lighting`.
+- Not yet: rooftop access, basement, a proper sky (a physically based
+  atmosphere was tried and looked grey; needs a lighting pass).
 
 ## Open questions
 

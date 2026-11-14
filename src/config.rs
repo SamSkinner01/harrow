@@ -74,6 +74,16 @@ pub struct LightingTuning {
     pub sun: f32,
     /// Ambient (sky fill) brightness, cd/m2.
     pub ambient: f32,
+    /// Max eye-adaptation boost in dark scenes, stops (0 = off).
+    pub adaptation_max: f32,
+    /// Average scene log2 luminance below which adaptation kicks in.
+    pub adaptation_threshold: f32,
+    /// Interior lantern spot-light intensity (game units).
+    pub lamp_intensity: f32,
+    /// Lantern colour (sRGB).
+    pub lamp_colour: (f32, f32, f32),
+    /// Lantern light range, metres.
+    pub lamp_range: f32,
 }
 
 #[derive(Deserialize, Clone, Debug)]

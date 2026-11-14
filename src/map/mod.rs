@@ -8,6 +8,7 @@ mod environment;
 mod greybox;
 mod keep;
 mod kit;
+mod lamps;
 mod materials;
 
 use bevy::prelude::*;
@@ -20,6 +21,7 @@ impl Plugin for MapPlugin {
             materials::MaterialsPlugin,
             kit::KitPlugin,
             environment::EnvironmentPlugin,
+            lamps::LampsPlugin,
         ));
         match map_from_args().as_deref() {
             Some("greybox") => app.add_plugins(greybox::GreyboxPlugin),
