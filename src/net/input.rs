@@ -247,8 +247,15 @@ fn capture_local_input(
 /// Server: received movement input -> `PlayerInput`. Client: during
 /// rollback the restored (buffered) input -> `PlayerInput` of the predicted
 /// local player (outside rollbacks this copies the same values back).
-fn apply_movement_input(mut players: Query<(&ActionState<NetInput>, &mut PlayerInput)>) {
-    for (action, mut input) in &mut players {
+fn apply_movement_input(
+    replay: Replay,
+    mut players: Query<(&ActionState<NetInput>, &mut PlayerInput, Has<InputMarker<NetInput>>)>,
+) {
+    for (action, mut input, local) in &mut players {
+        // Our own input is already in `PlayerInput`, except while replaying.
+        if local && !replay.active() {
+            continue;
+        }
         action.0.movement.apply(&mut input);
     }
 }

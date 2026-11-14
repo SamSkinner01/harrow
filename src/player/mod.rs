@@ -22,7 +22,7 @@ mod movement;
 pub use camera::PlayerCamera;
 pub use hitbox::{HitZone, spawn_hitboxes, zone_pose};
 #[allow(unused_imports)] // used by M3+ input systems
-pub use input::{AutomatedRun, input_captured};
+pub use input::{AutomatedRun, PlayerInputSystems, input_captured};
 
 use avian3d::prelude::*;
 use bevy::prelude::*;

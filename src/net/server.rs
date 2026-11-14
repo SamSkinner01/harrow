@@ -60,7 +60,7 @@ impl Plugin for ServerPlugin {
             .add_observer(network_character)
             .add_systems(
                 Update,
-                (receive_hello, kick_refused, idle_empty_server).run_if(is_server),
+                (receive_hello, kick_refused, idle_empty_server, check_started).run_if(is_server),
             )
             .add_systems(
                 FixedUpdate,
@@ -80,7 +80,12 @@ impl Plugin for ServerPlugin {
 
 /// The listening endpoint.
 #[derive(Component)]
-pub(super) struct NetServer;
+pub(super) struct NetServer {
+    port: u16,
+    /// When `start_server` ran.
+    since: f32,
+    reported: bool,
+}
 
 /// Server-side bookkeeping on a client's link entity.
 #[derive(Component, Debug, Default)]
@@ -97,6 +102,7 @@ fn start_server(
     mode: Res<NetMode>,
     launch: Res<Launch>,
     config: Option<Res<ServerConfig>>,
+    time: Res<Time>,
     mut commands: Commands,
 ) {
     let port = match *mode {
@@ -108,7 +114,11 @@ fn start_server(
     let server = commands
         .spawn((
             Name::new("Server"),
-            NetServer,
+            NetServer {
+                port,
+                since: time.elapsed_secs(),
+                reported: false,
+            },
             Endpoint::new(super::client::conditioner(&launch)),
             NetcodeServer::new(NetcodeConfig {
                 protocol_id: PROTOCOL_ID,
@@ -136,6 +146,35 @@ fn stop_server(servers: Query<Entity, With<NetServer>>, mut commands: Commands) 
         commands.trigger(Stop { entity: server });
         commands.entity(server).despawn();
         info!("net: server stopped");
+    }
+}
+
+/// The UDP port couldn't be opened (in use, no permission): the host goes
+/// back to the menu with a message; a dedicated server exits with an error.
+fn check_started(
+    mut servers: Query<(&mut NetServer, Has<Started>)>,
+    mode: Res<NetMode>,
+    time: Res<Time>,
+    mut notice: ResMut<crate::session::MenuNotice>,
+    mut next: ResMut<NextState<AppState>>,
+    mut exit: MessageWriter<AppExit>,
+) {
+    for (mut server, started) in &mut servers {
+        if started || server.reported || time.elapsed_secs() - server.since < 1.0 {
+            continue;
+        }
+        server.reported = true;
+        let message = format!(
+            "Can't open UDP port {} (is another server using it?)",
+            server.port
+        );
+        error!("net: {message}");
+        if matches!(*mode, NetMode::Dedicated { .. }) {
+            exit.write(AppExit::error());
+        } else {
+            notice.0 = Some(message);
+            next.set(AppState::MainMenu);
+        }
     }
 }
 

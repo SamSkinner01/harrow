@@ -56,6 +56,7 @@ use crate::{
     destruction::DestructionSystems,
     gadgets::GadgetSystems,
     physics::TICK_HZ,
+    player::PlayerInputSystems,
     round::RoundSystems,
     session::{AppState, Launch, simulating},
     weapons::WeaponSystems,
@@ -129,6 +130,12 @@ impl Plugin for NetPlugin {
             ),
         )
         .configure_sets(FixedPostUpdate, CombatSystems.run_if(simulating))
+        // A rollback replay restores old input into `PlayerInput`; read this
+        // frame's mouse and keys after it, so none of it is lost.
+        .configure_sets(
+            PreUpdate,
+            PlayerInputSystems.after(lightyear::prelude::PredictionSystems::Rollback),
+        )
         .add_systems(OnExit(AppState::InGame), forget_prediction);
     }
 }

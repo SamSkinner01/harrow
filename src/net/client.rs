@@ -47,6 +47,7 @@ impl Plugin for ClientPlugin {
         app.add_systems(OnEnter(AppState::Connecting), start_client)
             .add_systems(OnEnter(AppState::MainMenu), close_client)
             .add_observer(send_hello)
+            .add_observer(attempt_started)
             .add_observer(link_lost)
             .add_observer(control_character)
             .add_observer(watch_character)
@@ -69,6 +70,9 @@ impl Plugin for ClientPlugin {
 pub(super) struct NetClient {
     server: SocketAddr,
     started: f32,
+    /// The connection attempt has begun (a new link starts out
+    /// `Disconnected`, which isn't a failure).
+    attempted: bool,
 }
 
 /// The server we joined.
@@ -135,6 +139,7 @@ fn start_client(
             NetClient {
                 server,
                 started: time.elapsed_secs(),
+                attempted: false,
             },
             Client,
             ReplicationReceiver,
@@ -234,6 +239,12 @@ fn connect_timeout(
     }
 }
 
+fn attempt_started(trigger: On<Add<Connecting>>, mut clients: Query<&mut NetClient>) {
+    if let Ok(mut client) = clients.get_mut(trigger.entity) {
+        client.attempted = true;
+    }
+}
+
 /// The link went down (server closed, timed out, kicked).
 fn link_lost(
     trigger: On<Add<Disconnected>>,
@@ -245,7 +256,7 @@ fn link_lost(
     let Ok((client, disconnected)) = clients.get(trigger.entity) else {
         return;
     };
-    if *state.get() == AppState::MainMenu {
+    if *state.get() == AppState::MainMenu || !client.attempted {
         return;
     }
     let reason = disconnected.reason.to_string();

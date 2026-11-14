@@ -32,6 +32,7 @@ fn trace(
     local: Query<(&Transform, Option<&Team>, Option<&Health>), With<LocalPlayer>>,
     others: Query<(&Transform, &NetPlayer, Option<&Team>, Has<Dead>), Without<LocalPlayer>>,
     metrics: Option<Res<PredictionMetrics>>,
+    server: Option<Res<super::client::ServerInfo>>,
 ) {
     let me = local
         .single()
@@ -64,10 +65,14 @@ fn trace(
     let rollbacks = metrics
         .map(|m| format!(" | rollbacks {} ({} ticks)", m.rollbacks, m.rollback_ticks))
         .unwrap_or_default();
+    let joined = server
+        .map(|s| format!(" on \"{}\" ({})", s.name, s.address))
+        .unwrap_or_default();
     info!(
-        "net-trace: {:?} {:?} | round {} {:?} {:.1}s score {}-{} | {} | others [{}]{}",
+        "net-trace: {:?} {:?}{} | round {} {:?} {:.1}s score {}-{} | {} | others [{}]{}",
         state.get(),
         *mode,
+        joined,
         round.number,
         round.phase,
         round.time_left,

@@ -26,10 +26,17 @@ impl Plugin for PlayerInputPlugin {
             // that runs later this frame sees this frame's input.
             .add_systems(
                 PreUpdate,
-                gather_input.after(EnhancedInputSystems::Update),
+                gather_input
+                    .in_set(PlayerInputSystems)
+                    .after(EnhancedInputSystems::Update),
             );
     }
 }
+
+/// Where keyboard and mouse are turned into the local [`PlayerInput`]
+/// (`PreUpdate`). Networking orders it after its rollback replays.
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct PlayerInputSystems;
 
 /// Present during automated (scripted screenshot) runs: the game doesn't
 /// grab the mouse and player sounds are muted.

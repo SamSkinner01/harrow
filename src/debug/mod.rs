@@ -14,6 +14,10 @@
 //! - `--stance stand|crouch|prone`, `--lean left|right`: hold a stance/lean.
 //! - `--third-person`, `--hitboxes`: start with those views on.
 //! - `--trace-player`: log the player's feet position 4 times a second.
+//! - `--look yaw[,pitch]`: the local player's starting look, degrees (also
+//!   for multiplayer clients, whose spawn the server picks).
+//! - `--exit-after <seconds>`: quit after that long; with it, `--screenshot`
+//!   no longer quits.
 //! - `--no-vsync`: uncapped frame rate, for performance measurements.
 //! - `--map keep|greybox` is handled by the map module.
 
@@ -74,6 +78,37 @@ impl Plugin for DebugPlugin {
         if has_flag("--trace-player") {
             app.add_systems(FixedPostUpdate, trace_player)
                 .add_systems(Update, trace_footsteps);
+        }
+        if let Some(seconds) = arg_value("--exit-after").and_then(|s| s.parse::<f32>().ok()) {
+            app.insert_resource(ExitAfter(seconds))
+                .add_systems(Update, exit_after);
+        }
+        if let Some(look) = look_from_args() {
+            // Also works for a networked client, whose character arrives
+            // from the server (multiplayer tests).
+            app.add_observer(
+                move |add: On<Add<LocalPlayer>>, mut inputs: Query<&mut PlayerInput>| {
+                    if let Ok(mut input) = inputs.get_mut(add.entity) {
+                        input.yaw = look.x;
+                        input.pitch = look.y;
+                    }
+                },
+            );
+        }
+    }
+}
+
+/// `--look yaw[,pitch]` (degrees): the local player's starting look.
+fn look_from_args() -> Option<Vec2> {
+    let raw = arg_value("--look")?;
+    let n: Vec<f32> = raw.split(',').filter_map(|s| s.trim().parse().ok()).collect();
+    let yaw = |y: f32| y.to_radians().rem_euclid(std::f32::consts::TAU);
+    match n.as_slice() {
+        [y] => Some(Vec2::new(yaw(*y), 0.0)),
+        [y, pitch, ..] => Some(Vec2::new(yaw(*y), pitch.to_radians())),
+        _ => {
+            warn!("--look expects yaw[,pitch] in degrees, got {raw:?}");
+            None
         }
     }
 }
@@ -283,6 +318,8 @@ struct AutoScreenshot {
     wait_frames: u32,
     frames_seen: u32,
     requested: bool,
+    /// Quit once it's saved (not with `--exit-after`).
+    quit: bool,
 }
 
 impl AutoScreenshot {
@@ -296,6 +333,7 @@ impl AutoScreenshot {
             wait_frames,
             frames_seen: 0,
             requested: false,
+            quit: arg_value("--exit-after").is_none(),
         })
     }
 }
@@ -327,10 +365,24 @@ fn auto_screenshot(
             transform.translation, state.height, state.lean, state.stance
         );
     }
-    commands
-        .spawn(Screenshot::primary_window())
-        .observe(save_to_disk(shot.path.clone()))
-        .observe(|_: On<ScreenshotCaptured>, mut exit: MessageWriter<AppExit>| {
+    let mut screenshot = commands.spawn(Screenshot::primary_window());
+    screenshot.observe(save_to_disk(shot.path.clone()));
+    if shot.quit {
+        screenshot.observe(|_: On<ScreenshotCaptured>, mut exit: MessageWriter<AppExit>| {
             exit.write(AppExit::Success);
         });
+    }
 }
+
+/// `--exit-after <seconds>`: quit after that long (multiplayer tests, so a
+/// client can take its screenshot and stay connected a while longer).
+fn exit_after(seconds: Res<ExitAfter>, time: Res<Time<Real>>, mut exit: MessageWriter<AppExit>, mut done: Local<bool>) {
+    if !*done && time.elapsed_secs() >= seconds.0 {
+        *done = true;
+        info!("--exit-after: {} s, quitting", seconds.0);
+        exit.write(AppExit::Success);
+    }
+}
+
+#[derive(Resource)]
+struct ExitAfter(f32);

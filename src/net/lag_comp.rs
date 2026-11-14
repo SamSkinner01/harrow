@@ -120,10 +120,6 @@ impl PoseHistory {
         let b = self.samples.get(index + 1).map_or(a, |s| s.1);
         Some(a.lerp(b, view.fraction))
     }
-
-    pub fn latest(&self) -> Option<Pose> {
-        self.samples.back().map(|s| s.1)
-    }
 }
 
 /// `a` is strictly later than `b` (wrapping tick counter).
@@ -175,7 +171,6 @@ pub struct RewoundZone {
 
 /// Every character's hit zones at one moment.
 pub struct RewoundHitboxes {
-    pub view: ViewTime,
     pub zones: Vec<RewoundZone>,
 }
 
@@ -309,7 +304,7 @@ impl LagCompensation<'_, '_> {
                 });
             }
         }
-        f(&RewoundHitboxes { view, zones })
+        f(&RewoundHitboxes { zones })
     }
 
     /// A ray against the world (as it is now) and every character's hit
@@ -391,12 +386,20 @@ fn shoot_test(
     let rewound = lag.cast_ray(view, eye, direction, 100.0, shooter.0);
     let live = lag.cast_ray(lag.now(), eye, direction, 100.0, shooter.0);
     let describe = |hit: Option<LagCompHit>| match hit {
-        Some(LagCompHit { target: HitTarget::Character { entity, zone }, distance, .. }) => {
-            format!("HIT {entity} {zone:?} at {distance:.2} m")
-        }
-        Some(LagCompHit { target: HitTarget::World { .. }, distance, .. }) => {
-            format!("blocked by the world at {distance:.2} m")
-        }
+        Some(LagCompHit {
+            target: HitTarget::Character { entity, zone },
+            distance,
+            point,
+            normal,
+        }) => format!(
+            "HIT {entity} {zone:?} at {distance:.2} m ({:.2}, {:.2}, {:.2}), normal {normal:.2}",
+            point.x, point.y, point.z
+        ),
+        Some(LagCompHit {
+            target: HitTarget::World { collider },
+            distance,
+            ..
+        }) => format!("blocked by the world ({collider}) at {distance:.2} m"),
         None => "MISS".into(),
     };
     info!(

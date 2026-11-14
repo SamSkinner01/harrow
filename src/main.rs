@@ -41,7 +41,13 @@ fn main() -> AppExit {
         launch.mode = Some(NetMode::Dedicated { port: config.port });
         app.add_plugins(net::dedicated::headless_plugins(&config))
             .insert_resource(map::MapOverride(config.map.clone()))
+            // Nobody to play sounds for; no mouse to grab.
+            .insert_resource(player::AutomatedRun)
             .add_plugins(ServerConfigPlugin { config, error });
+        // The client build compiles the sound code: give it somewhere to
+        // put the (never played) sounds, since the audio plugin is off.
+        #[cfg(feature = "client")]
+        app.init_asset::<bevy::audio::AudioSource>();
     } else {
         #[cfg(feature = "client")]
         app.add_plugins(DefaultPlugins.set(WindowPlugin {
@@ -59,6 +65,9 @@ fn main() -> AppExit {
     }
 
     app
+        // A failing system or observer (e.g. a network socket that can't
+        // open) logs an error instead of crashing the game.
+        .set_error_handler(bevy::ecs::error::error)
         // Engine-level setup first: input, physics, tuning values.
         .add_plugins((
             EnhancedInputPlugin,
