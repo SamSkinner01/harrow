@@ -377,7 +377,8 @@ pub enum GadgetActivity {
     /// Holding 4: setting down a deployable.
     Placing { kind: SecondaryGadget, progress: f32 },
     /// Holding 4 with a grenade in hand. `fuse`: seconds left if cooking.
-    Cooking { kind: SecondaryGadget, fuse: Option<f32> },
+    /// `total`: the full fuse (for the HUD bar).
+    Cooking { kind: SecondaryGadget, fuse: Option<f32>, total: f32 },
 }
 
 impl GadgetActivity {
@@ -389,8 +390,8 @@ impl GadgetActivity {
             GadgetActivity::Reseating { progress, .. } => Some(("Re-seating ring cutter".into(), progress)),
             GadgetActivity::Bolting { progress, .. } => Some(("Bolting backplate charge".into(), progress)),
             GadgetActivity::Placing { kind, progress } => Some((format!("Placing {}", kind.name().to_lowercase()), progress)),
-            GadgetActivity::Cooking { kind, fuse } => Some(match fuse {
-                Some(left) => (format!("{} cooking  {left:.1} s", kind.name()), 1.0 - left / 3.0),
+            GadgetActivity::Cooking { kind, fuse, total } => Some(match fuse {
+                Some(left) => (format!("{} cooking  {left:.1} s", kind.name()), 1.0 - left / total.max(0.01)),
                 None => (format!("{}: release 4 to throw", kind.name()), 1.0),
             }),
         }

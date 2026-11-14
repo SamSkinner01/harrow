@@ -136,8 +136,11 @@ Hold/toggle options live in the tuning file.
 | R | Reload | weapons |
 | 1 / 2 | Primary / sidearm | weapons |
 | V | Melee | destruction (M4) |
-| 3 | Unique gadget (operator ability) | gadgets (M6) |
-| 4 | Secondary gadget (breach charge, razor wire...) | gadgets / destruction |
+| 3 | Unique gadget: press (darts, stakes); hold to place, tap to trigger (ring cutter, backplates) | gadgets (M6) |
+| 4 | Secondary gadget: only the loadout's one answers (breach charge, grenades, wire...); cycles the secondary on the selection screen | gadgets / destruction |
+| G | Recon: tap to look through your drones (attackers) or the CCTV (defenders), tap again to leave; hold to throw another drone | gadgets (M6) |
+| Q / E (recon view) | Previous / next drone or camera (lean stays frozen) | gadgets |
+| W A S D, mouse (recon view) | Drive and turn the drone; pan and tilt a camera | gadgets |
 | 5 | Defuser (attackers) | round (M6) |
 | F (hold) | Interact: reinforce, barricade, plant/disable defuser | destruction / round |
 | Mouse wheel | Cycle weapon | weapons |
@@ -356,8 +359,9 @@ healed and revived, players go to their side's spawns, deployed gadgets and
 defusers are cleared, and a `RoundReset` message goes out for other systems.
 Nobody can walk during selection.
 
-- Prep: defenders set up and may use gadgets. Attackers wait at their spawn
-  (tunable) because recon drones aren't built yet; no attacker gadgets.
+- Prep: defenders set up and may use gadgets and CCTV. Attackers stay at
+  their spawn (tunable) and scout with recon drones (G); no other attacker
+  gadgets.
 - Action: attackers may use gadgets and plant. The clock running out
   without a plant is a defender win (even mid-plant).
 - Planted: the clock is replaced by the defuser's timer. It completing is
@@ -387,13 +391,13 @@ every second, faster near the end.
 armour rating -> damage taken (`Armour` in combat, applied to every hit),
 speed rating -> movement multiplier (`OperatorSpeed`, waiting for movement to
 read it), the unique gadget and its count, and loadout slots (rifle,
-sidearm, one shared secondary; data only).
+sidearm, and the shared secondary picked with 4 on the selection screen).
 
 **Gadget availability.** Defenders from prep on; attackers from the action
-phase on; nobody during selection or after the round. Auger's ring cutter
-and Mortise's backplate charges are data only until destruction (M4)
-provides reinforced walls and the hard-breach API. Shared secondaries are
-data only.
+phase on; nobody during selection or after the round. Recon (drones, CCTV)
+in prep, action and planted for both sides. The ring cutter, backplate
+charges, shared secondaries, drones and CCTV are described in "M6 part
+two" below.
 
 **Lark's sensor darts (as built).** Key 3 fires a dart from the wrist; it
 flies fast with a little drop and sticks to the first world surface. While
@@ -415,9 +419,154 @@ for a while; its light turns amber. Stakes can be shot.
 **Intel display.** Reveals are team data (`Reveal` messages); the HUD only
 draws your team's (`--show-all-intel` draws both, for testing).
 
-**Not yet:** recon drones (attacker prep), ring cutter and backplate
-charges, shared secondaries, overtime, a dead-player spectator view,
-character models for other players.
+**Not yet:** overtime, a dead-player spectator view, character models for
+other players.
+
+## M6 part two: gadgets, drones and CCTV (implemented 2026-11-14)
+
+Rules as built; every number is in `round.gadgets` in the tuning file. Code:
+`src/gadgets/` (one file per gadget; `mod.rs` explains the data flow). Every
+player action goes through an intent (`GadgetIntent`: keys 3 and 4 held;
+`DroneIntent`: G held, Q/E, drive axis, look angles) and every gadget's
+state is a plain component, so bots and the network can drive and
+replicate them. Using a gadget is refused (with a HUD notice) while dead,
+while looking through a drone or camera, or outside the phases above.
+
+**Keys 3 and 4: tap or hold.** A press shorter than `tap_time` (0.25 s) is
+a tap; longer is a hold. Placing anything means holding the key while
+standing still and looking at a valid spot; a progress bar shows under the
+crosshair, and letting go, moving or looking away cancels it.
+
+**Auger's ring cutter (x2).** Hold 3 (1.5 s) on a wall or a hatch cover,
+soft or reinforced (hatches from above), to clamp it on; tap 3 to start the
+latest clamped cutter (so it can go on quietly and be started with the
+team). On a wall the frame centres itself between the posts with the cut
+1.0 m up; on a hatch it sits in the middle of the cover. It cuts for 10 s:
+a `Noise` of kind `Breach` at loudness 5 every 0.5 s (enough to saturate
+seismic stakes), sparks and dust at the head, dust shed from the top of
+the wall on both sides, and the view shakes within 4 m. Model: an oval
+olive guide track on four clamp feet sized to the panel, a hub and yellow
+motor, a steel drive ring that spins, and a cutting head with a spinning
+saw disc that runs round the track three times per cut.
+- At 50% the blade breaks through: a glowing cut line appears on the far
+  side and the blade (a white-hot tooth with sparks, hit sphere 0.12 m)
+  travels round it at about 2 m/s. It has 1 health: any damage (bullet or
+  blast) jams the cutter, and Auger must hold 3 at the cutter for 4 s,
+  standing still at the wall, to re-seat it. Progress is kept.
+- The cutter body (60 health, hit volume on the hub) can be shot or blown
+  up.
+- Finished: a `HardBreach` of radius 1.0 at the cut centre (skin, studs,
+  frame, plate and braces), clipped by the stone posts, so a 2 m panel
+  becomes a walk-through opening; on a hatch the whole cover goes. The
+  plug falls inward (tips over flat, or drops through the hatch), and
+  anyone within 1.5 m behind it, inside the cut, is knocked prone and
+  takes 25 damage.
+
+**Mortise's backplate charges (x3).** Hold 3 (1.5 s) on the plate side of
+a reinforced wall or hatch to bolt one on; tap 3, from anywhere, fires the
+latest. It blasts through the wall: every enemy ring cutter and every
+breach charge on the far side within 1.2 m is destroyed, a small blast (no
+breach, 1.2 m, 20 damage) hits whoever is right behind the wall, and a
+`HardBreach` of radius 0.1 punches a fist-sized hole through the
+reinforcement (a permanent sightline). Charges have 30 health and fall off
+when their wall is no longer reinforced (a new round).
+
+**Shared secondaries (key 4).** The character's `Loadout.secondary`
+decides who answers the key: the soft-breach charge stays destruction's
+(`BreachCharges`); the rest are here, counted in `SecondaryStock`. Pick
+the secondary with 4 on the selection screen (it cycles the picked
+operator's options) or with `--secondary <name>`. Counts: frag 2,
+flashbang 3, smoke 2, razor wire 2, ballistic cover 1, impact charge 2,
+proximity alarm 2; refilled every round.
+- Thrown gadgets: press 4 to ready one, release to throw (13 m/s plus a
+  lob). They are Avian rigid bodies (4.5 cm spheres, bouncy, swept CCD)
+  on their own collision layer: they bounce off the world but never block
+  people or stop bullets.
+- **Frag** (attackers): the 3 s fuse starts on the press, so holding 4
+  cooks it (the bar turns red near the end); held too long it goes off in
+  your hand. An `Explosion` of 140 damage falling to zero at 4.5 m, with a
+  0.25 m breach radius (small holes in soft walls and floors; reinforced
+  surfaces are untouched).
+- **Flashbang** (attackers): bangs 1.6 s after the throw. Everyone with a
+  clear line of sight within 10 m (any wall blocks it; smoke weakens it)
+  is blinded for up to 5 s (full-screen white, fading over the last 40%)
+  and deafened for up to 7 s. Strength = distance falloff x how directly
+  they were looking at it (0.25 when looking away). Deafness is the
+  `HearingMuffled` flag (gadget sounds use it; the global volume is
+  lowered as a bridge) plus a ringing tone.
+- **Smoke** (attackers): after 1.2 s it pours a cloud of 3.5 m radius for
+  12 s, then thins out over 3 s: up to 46 large camera-facing puffs per
+  cloud (140 in total), pulled in from walls so they don't show through
+  them, opaque enough to block sight. `smoke_blocks(a, b, ..)` answers
+  sight-line questions for bots.
+- **Impact charge** (defenders): thrown flat and fast; on the first
+  contact an `Explosion` with a 0.75 m breach radius (opens soft walls,
+  floors, hatches and barricades) and only 25 damage within 1.5 m.
+- **Razor wire** (defenders): hold 4 (1.5 s) to lay a 1.7 m concertina roll
+  across the floor 1 m ahead (doorways are fine). Anyone inside moves at
+  35% speed (no sprint), and every footstep in it is a loud `Noise` (1.2)
+  with a rattle. Bullets pass through; 80 health against blasts and melee
+  (45 per swing).
+- **Ballistic cover** (defenders): hold 4 (1.5 s) to set a waist-high (1 m)
+  folding steel shield 0.9 m ahead, facing where you look: a centre plate,
+  two wings angled back, a vision block. It is world geometry
+  (`SurfaceKind::Hard`): it stops bullets, shields people from blasts and
+  blocks movement. Only explosions wear it down (150 blast damage).
+- **Proximity alarm** (defenders): hold 4 (0.5 s) aiming at any surface
+  within 2 m. While an attacker is within 3 m (and 2 m up or down) it
+  beeps every second (everyone nearby hears it) and reveals them to
+  defenders (a red bracket through walls). 15 health.
+
+**Recon drones (attackers, x2).** Tap G to connect to your latest drone, or
+to throw one if none is out; hold G to throw another; tap G to come back;
+Q/E switch between your drones. Allowed in prep (from the spawn), action
+and planted. A thrown drone tumbles and bounces until it settles, then
+drives: W/S forward/back (3.2 / 1.8 m/s), A/D and the mouse turn it, the
+mouse tilts the camera. It can't jump; it climbs ledges up to 9 cm and
+ramps up to 40 degrees (it drives up the stairs), and its body is a 0.1 m
+sphere, so it fits through any hole a little wider than 0.2 m. Its battery
+lasts 240 s of driving; its motor is a faint `Noise`. Defenders can see it
+(olive body, two wheels, a camera eye, a green light) and shoot it (40
+health, hit sensor on the bullet layer). The view is a separate camera:
+the player and weapon cameras are switched off (`Camera::is_active`) and
+the drone camera becomes the UI camera so the HUD stays. A tinted, grainy,
+scan-lined, vignetted overlay shows the drone number, battery, signal bars
+(falling off over 45 m), distance and drones in reserve, a reticle and key
+hints. A drone that breaks cuts the feed: a burst of static, then your
+next drone, or your body.
+
+**CCTV (defenders).** Six fixed cameras on Harrow Keep section A: the
+courtyard facade, the west hall, the east room and the storeroom (site A),
+the upper west room and the upper east room (site B). Spots live in
+`CctvLayout` (a map can insert its own). Tap G to watch, Q/E to switch,
+the mouse and A/D pan (55 degrees) and tilt (30 degrees), G to leave. The
+overlay shows the camera number and name, a clock and a blinking REC.
+Attackers can see them (red light) and shoot or blow them up (10 health);
+a camera lost while watching shows static and moves to the next. Every
+round brings them all back.
+
+**Looking through a drone or camera** leaves the body standing still: its
+intents are frozen (no walking, turning, firing, gadgets or interact), it
+carries the round's `MovementLock`, and it can still be shot. The view
+ends when the target breaks, you die, a new round starts or the phase no
+longer allows it.
+
+**Round reset.** Every `RoundReset` removes thrown, placed and cosmetic
+gadget entities (cutters, backplates, grenades, smoke, wire, covers,
+alarms, drones, plugs), refills secondary stock and drones, respawns the
+CCTV cameras and ends every remote view. Unique gadget counts refill when
+prep equips the operators.
+
+**How blasts reach gadgets.** Destruction's explosion damage measures to a
+target's hit zones (or 1 m above it). Gadgets carry a collider-less
+`HitZone` child ("blast anchor") at their centre, so wall and ceiling
+gadgets take blast damage correctly; bullets and melee never see it.
+Ballistic cover takes blast damage in `deployables.rs` instead (it is solid
+world geometry and would block its own line of sight).
+
+**Not yet:** picking deployables back up, viewing teammates' drones, CCTV
+spots for the full-size map (it needs its own `CctvLayout`), real sounds
+(all gadget sounds are synthesised placeholders).
 
 ## M5 characters
 

@@ -207,7 +207,7 @@ fn use_secondaries(
         let button = buttons.secondary;
         let kind = stock.kind;
         match *activity {
-            GadgetActivity::Cooking { kind: held_kind, fuse } => {
+            GadgetActivity::Cooking { kind: held_kind, fuse, total } => {
                 if block.is_some() {
                     // Dropped: a cooking frag still goes off where you stand.
                     if fuse.is_some() {
@@ -224,7 +224,7 @@ fn use_secondaries(
                     continue;
                 }
                 if button.held {
-                    *activity = GadgetActivity::Cooking { kind: held_kind, fuse };
+                    *activity = GadgetActivity::Cooking { kind: held_kind, fuse, total };
                 } else {
                     throwables::spawn_grenade(&mut commands, entity, *team, held_kind, transform, state, input, &tuning, fuse);
                     events.write(GadgetEvent::Thrown { by: entity, kind: held_kind });
@@ -265,7 +265,11 @@ fn use_secondaries(
                 if kind.is_thrown() {
                     stock.remaining -= 1;
                     let fuse = (kind == SecondaryGadget::Frag).then_some(g.frag.fuse);
-                    *activity = GadgetActivity::Cooking { kind, fuse };
+                    *activity = GadgetActivity::Cooking {
+                        kind,
+                        fuse,
+                        total: g.frag.fuse,
+                    };
                 } else if deployables::place_target(kind, transform, state, input, &tuning, &targets).is_some() {
                     *activity = GadgetActivity::Placing { kind, progress: 0.0 };
                 } else {
