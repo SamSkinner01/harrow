@@ -44,6 +44,8 @@ mod surface;
 use bevy::prelude::*;
 
 pub use breach::BreachCharge;
+/// Doorways and windows that take a barricade (bots look for them).
+pub use interact::BarricadeSlot;
 // Public API for weapons (M3), the round loop and gadgets (M6), bots (M7).
 #[allow(unused_imports)]
 pub use impacts::surface_root;

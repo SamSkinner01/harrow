@@ -239,7 +239,8 @@ cargo run -- --version         # print the build id and exit
 Any other flag (`--map`, `--no-round`, `--round-test`, `--screenshot`...)
 except `--key` also skips the menu and works in every mode (`--menu` forces the menu).
 Join late and you watch (dead) until the next round starts; players are
-put on the smaller squad as they join.
+put on the squad with fewer people as they join, taking a bot's place
+(bots fill both squads on a host; see "Bots").
 
 ### Dedicated server
 
@@ -355,6 +356,36 @@ up with `--net-script` (`equip`, `tp`, `reinforce`, `log` by player
 name: `src/net/test_script.rs`); each client presses keys with its own
 `--gadget-test` script, which goes to the server as real input, and logs
 what it sees. Screenshots: `$OUT/<scenario>-*.png`.
+
+## Bots
+
+Solo and hosted games fill both squads with bots: 5v5 with you by
+default. They pick operators, reinforce, barricade, place stakes, hold
+angles, push sites, breach, plant and disable like players (rules in
+DESIGN.md, "M7 bots"; numbers in the `ai` section of the tuning file).
+
+```sh
+cargo run -- --bots 5                 # fewer bots (total; teams stay even: 3v3 with you)
+cargo run -- --no-bots                # just you
+cargo run -- --difficulty hard        # easy | normal | hard (tuning: ai.difficulty)
+cargo run -- --server --bots 10       # a dedicated server only gets bots when asked
+cargo run -- --ai-debug               # draw the nav grid, bot paths, goals and aim lines
+cargo run -- --ai-player              # a bot drives your character too (watch it play)
+cargo run -- --ai-test                # automated bot-only match: logs kills, plants, stuck bots, fps
+cargo run -- --ai-test --ai-matches 3 --ai-speed 2 --ai-shots shots/   # 3 matches at 2x, screenshots
+cargo run -- --ai-test --ai-spectate --ai-cam front   # chase camera on a bot, from the front
+cargo run -- --ai-test --ai-site B   # attackers always go for site B (testing)
+cargo run -- --ai-test --ai-no-reinforce   # defenders don't reinforce (to see breach charges used)
+cargo run -- --no-round --ai-player --ai-breach-test --ai-spectate   # a bot breaches into site A
+cargo run -- --no-round --ai-navtest  # plan every spawn-to-site path, log them, quit
+cargo run -- --no-round --ai-navtest --ai-navdump 0.8,-7.6,0.8,0.4   # dump grid columns on a line
+```
+
+Bots are off by default in the other automated test modes
+(`--round-script`, `--weapon-test`, `--m4`, `--no-round`, `--dummies`,
+`--gadget-test`, ...); pass `--bots N` to have them anyway. The kill feed
+(left, under the FPS counter) and your team's callouts ("Enemy spotted:
+site A (storeroom)") under it.
 
 ## Developer flags
 

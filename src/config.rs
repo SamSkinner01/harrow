@@ -53,6 +53,8 @@ pub struct Tuning {
     pub weapons: WeaponTuning,
     pub destruction: DestructionTuning,
     pub round: RoundTuning,
+    /// Bots (M7). Owned by `src/ai`.
+    pub ai: crate::ai::AiTuning,
 }
 
 /// Weapons (M3). Owned by `src/weapons`; the tuning file documents each value.

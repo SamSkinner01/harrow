@@ -18,7 +18,8 @@
 //!   either predicted, comes from input, or is replicated
 //!   (`MovementLock`).
 //! - **Interpolation** (other players): position, look angles, stance
-//!   height and lean are interpolated ~100 ms in the past; `bodies.rs`
+//!   height and lean are interpolated ~100 ms in the past;
+//!   `characters/body.rs`
 //!   shows them as M5 character models.
 //! - **Replication** (`protocol.rs`): characters' round state, the match
 //!   state ([`RoundSync`]), defusers and deployed gadgets (`round_sync.rs`,
@@ -30,7 +31,6 @@
 //! - **Session** (`server.rs`, `client.rs`): handshake with a build check,
 //!   team balancing, late joiners, disconnects.
 
-mod bodies;
 mod client;
 pub mod dedicated;
 mod destruction_sync;
@@ -121,9 +121,6 @@ impl Plugin for NetPlugin {
             gadget_sync::GadgetSyncPlugin,
             test_script::NetScriptPlugin,
         ));
-        if !self.launch.dedicated {
-            app.add_plugins(bodies::BodiesPlugin);
-        }
         if self.launch.net_trace {
             app.add_plugins(trace::NetTracePlugin);
         }

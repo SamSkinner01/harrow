@@ -228,7 +228,7 @@ fn receive_hello(
         ),
         With<ClientOf>,
     >,
-    players: Query<(Entity, Option<&Squad>, Has<NetPlayer>), With<Player>>,
+    players: Query<(Entity, Option<&Squad>, Has<NetPlayer>, Has<crate::ai::Bot>), With<Player>>,
     round: Res<Round>,
     layout: Res<KeepLayout>,
     spawn_point: Res<SpawnPoint>,
@@ -255,7 +255,7 @@ fn receive_hello(
                      Everyone needs the same build (same commit).",
                     message.build
                 ))
-            } else if (players.iter().filter(|p| p.2).count() + joined[0] + joined[1]) as u32
+            } else if (players.iter().filter(|p| p.2 && !p.3).count() + joined[0] + joined[1]) as u32
                 >= max_players
             {
                 Some(format!("Server full ({max_players} players)"))
@@ -270,10 +270,11 @@ fn receive_hello(
                     .insert(KickAt(time.elapsed_secs() + 0.5));
                 continue;
             }
-            // Balance squads: join the smaller one (ties: Red, since the
-            // host is Blue).
-            let blue = players.iter().filter(|p| p.1 == Some(&Squad::Blue)).count() + joined[0];
-            let red = players.iter().filter(|p| p.1 == Some(&Squad::Red)).count() + joined[1];
+            // Balance squads: join the one with fewer people (ties: Red,
+            // since the host is Blue). Bots don't count: they make room
+            // (`ai::keep_squads_filled`).
+            let blue = players.iter().filter(|p| !p.3 && p.1 == Some(&Squad::Blue)).count() + joined[0];
+            let red = players.iter().filter(|p| !p.3 && p.1 == Some(&Squad::Red)).count() + joined[1];
             let squad = if blue < red { Squad::Blue } else { Squad::Red };
             joined[usize::from(squad == Squad::Red)] += 1;
             let team = round.side_of(squad);
