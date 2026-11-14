@@ -22,10 +22,12 @@ licences. Add a row before committing the asset.
 Textures are fetched by `tools/scripts/fetch_textures.py` (fortress) and
 `tools/scripts/fetch_character_textures.py` (characters).
 
-Characters: gear, uniforms, the placeholder carbine and every animation are
-made by our own scripts (`tools/blender/characters/`). No animation pack was
-used: the CC0 sets that need no login don't match the MakeHuman skeleton,
-so the clips are scripted placeholders (see DESIGN.md, M5 characters).
+Characters: gear, uniforms, the carbine blockout and the hand-keyed clips
+(aim/fire, reload, prone, lean) are made by our own scripts
+(`tools/blender/characters/`). The locomotion clips (idle, walk, run,
+crouch) are CMU motion capture retargeted onto each operator at build time;
+see "Motion capture" below and DESIGN.md, "Realism pass: character
+animation".
 
 Sounds: weapons, footsteps, bullet impacts, breaking surfaces and
 explosions are recorded sounds from CC0 and CC-BY packs, listed under
@@ -98,6 +100,18 @@ CREDITS.md):
 - "2 High Quality Explosions" - Sounds (c) by Michel Baradari apollo-music.de, licensed under CC BY 3.0 (http://creativecommons.org/licenses/by/3.0/), https://opengameart.org/content/2-high-quality-explosions
 - "Big low frequency explosion boom" by Varkalandar (https://opengameart.org/content/big-low-frequency-explosion-boom), CC BY 4.0
 - 3 Explosion Bangs Copyright 2012 Iwan 'qubodup' Gabovitch <http://qubodup.net>, CC BY 3.0, https://opengameart.org/content/3-background-crash-explosion-bang-sounds
+
+## Motion capture
+
+Read from the asset staging folder at build time by
+`tools/blender/characters/retarget.py` (`build_characters.sh --mocap DIR`)
+and shipped only as animation baked into the character .glb files. The raw
+BVH files are not in the repository and must not be added (CMU's terms
+forbid redistributing the data itself, even converted).
+
+| Asset | Source URL | Licence | Used in |
+|---|---|---|---|
+| CMU Graphics Lab Motion Capture Database, BVH conversion by Bruce Hahne (cgspeed): clips 77_02 (standing), 35_17 (jog), 09_01 (run), 136_09 (crouched walk) | http://mocap.cs.cmu.edu/ (BVH mirror: https://github.com/una-dinosauria/cmu-mocap) | CMU terms (not CC): "free for all uses"; may be included in commercially sold products; the data itself may not be resold, even in converted form. Hahne adds no restrictions. Credit requested: "The data used in this project was obtained from mocap.cs.cmu.edu. The database was created with funding from NSF EIA-0196217." (see [CREDITS.md](CREDITS.md)) | `assets/models/characters/*.glb`: clips `idle` (77_02, 1.50–4.30 s), `walk` (35_17, 0.19–0.93 s), `run` (09_01, 0.08–0.82 s), `crouch_walk` and `crouch_idle` (136_09, 5.74–8.22 s). Changed: one loop cut and blended, made in place, turned to face +Y, scaled per operator by leg length, retimed (run 1.35x, crouch walk 1.8x), crouch deepened (hips at 52% of standing), pelvis/chest/head turned upright on average, legs re-solved with IK, arms replaced by our rifle hold; `crouch_idle` is one held frame of the crouch walk plus procedural breathing. |
 
 ## Tools (not shipped with the game)
 

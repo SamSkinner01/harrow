@@ -28,6 +28,13 @@ Public domain (CC0); no credit required, given with thanks:
 - 75 CC0 breaking / falling / hit sfx, 100 CC0 metal and wood SFX, and 25 CC0 bang / firework SFX by rubberduck
 - 35 wooden cracks/hits/destructions and 5 break, crunch impacts by Independent.nu
 
+## Motion capture
+
+- Motion capture data from the CMU Graphics Lab Motion Capture Database
+  (mocap.cs.cmu.edu), created with funding from NSF EIA-0196217. BVH
+  conversion by Bruce Hahne. (Retargeted and edited for the operators'
+  idle, walk, run and crouch animations.)
+
 ## Models and textures
 
 All CC0; see [ASSETS.md](ASSETS.md).

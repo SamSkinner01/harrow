@@ -629,7 +629,7 @@ Built by `tools/scripts/build_characters.sh` from one config per operator
   (skin pores/roughness from the Mindfront skin; Poly Haven poplin, twill
   and leather); per-operator colour textures are embedded in the .glb.
 - **Budget:** ~26–27k triangles per operator (body ~21k, gear 3.7–5.2k,
-  carbine 0.35k, eyes/brows/lashes 0.7k), 55 bones. Ten on screen is
+  carbine blockout 0.44k, eyes/brows/lashes 0.7k), 55 bones. Ten on screen is
   ~270k skinned triangles and ~70 draw calls plus shadows: fine on a
   mid-range PC. Measured (dev build, `--no-vsync`): the keep alone 343 fps
   (2.9 ms), with 12 animated operators (`--lineup-crowd`) 274 fps
@@ -638,21 +638,21 @@ Built by `tools/scripts/build_characters.sh` from one config per operator
   for distant characters.
 - **Builds are reproducible:** rebuilding produces byte-identical .glb
   files, so unchanged operators don't churn Git LFS.
-- **Animations:** scripted placeholders (no CC0 set without a login fits
-  this skeleton), 30 fps, in place, posed in armature axes with our own
-  two-bone IK: `idle`, `walk` (authored for 3.4 m/s), `run` (5.6),
-  `crouch_idle`, `crouch_walk` (1.9), `prone_idle`, `prone_crawl` (0.8),
-  `lean_left`/`lean_right` (spine and head pose), `fire` (aim plus one
-  recoil kick, looped at the rate of fire), `reload` (2.4 s, the magazine
-  comes out in the left hand). The game blends them by stance and speed
-  and overrides the arms (aim, fire, reload) and spine (lean).
+- **Animations:** 30 fps, in place, posed in armature axes with our own
+  two-bone IK. Locomotion (`idle`, `walk`, `run`, `crouch_idle`,
+  `crouch_walk`) is retargeted CMU motion capture; `prone_idle`,
+  `prone_crawl` (0.8 m/s), `lean_left`/`lean_right` (lower spine),
+  `fire` (aim plus one recoil kick, looped at the rate of fire) and
+  `reload` (2.4 s, the magazine comes out in the left hand) are
+  hand-keyed. The game blends them by stance and speed and overrides the
+  arms, chest and head (aim, fire, reload) and the lower spine (lean).
+  See "Realism pass: character animation".
 - **Hit zones (later):** the fixed capsules in `src/player/hitbox.rs` can
   follow bones: head on `head`, torso between `spine_01` and `spine_03`
   (or `neck_01`), legs on `thigh_*`/`calf_*`.
-- **Mocap plan:** when CC0/permissive mocap (e.g. CMU BVH) is staged,
-  retarget it onto `game_engine` in `anim.py` by mapping its joints to
-  these bone names and baking per operator; the clip names, masks and the
-  game side stay the same.
+- **Mocap:** done (realism pass): CMU BVH clips retargeted onto
+  `game_engine` by `tools/blender/characters/retarget.py` and baked per
+  operator; the clip names and `CharacterAnim` stayed the same.
 - **Not yet:** prone aiming and reloading, strafe/backpedal clips, hair
   meshes (short hair is a scalp tint under the headgear), real weapon
   models (they attach to `weapon_r`, and should hide the prop carbine).
@@ -888,3 +888,104 @@ surface lookup), `src/weapons/audio.rs`, `src/player/footsteps.rs`.
 - **Not done yet:** indoor reverb / occlusion (no CC0 indoor gunshots
   exist; walls don't muffle anything yet), shell casings, bullet whizz, a
   desert wind bed, and the round/gadget sounds are still synthesised.
+
+## Realism pass: character animation
+
+The four operators' third-person clips (`tools/blender/characters/anim.py`,
+`retarget.py`; built by `build_characters.sh`). Clip names and
+`CharacterAnim` are unchanged.
+
+- **Sources:** CMU Graphics Lab motion capture (BVH, Bruce Hahne's
+  conversion; terms and credit in ASSETS.md / CREDITS.md). The BVH files are
+  read at build time from the staging folder (`--mocap DIR`, default
+  `$HARROW_MOCAP` or `~/harrow-assets-staging/mocap`) and only ship as
+  keyframes in the .glb files; they are not in the repository.
+
+  | Clip | Source | Notes |
+  |---|---|---|
+  | `idle` | CMU 77_02 (standing), 2.8 s loop | weight shifts and breathing from the capture; the head turned back to the front on average |
+  | `walk` | CMU 35_17 (jog), one 0.73 s cycle | the game's 3.4 m/s walk is jogging pace: a captured walk (1.3–1.8 m/s) would need ~2x playback |
+  | `run` | CMU 09_01 (run), one cycle, played 1.35x | rifle carried across the chest, muzzle down-left |
+  | `crouch_walk` | CMU 136_09 (crouched walk), two steps, played 1.8x | hips lowered to 52% of standing so the head top is ~1.3 m (crouched capsule 1.2 m); the IK legs bend further, the captured foot paths stay |
+  | `crouch_idle` | the crouch walk's double-support stance, held | front foot flattened, rear on its ball, plus breathing and a slow sway |
+  | `prone_idle`, `prone_crawl`, `fire`, `reload`, `lean_*` | hand-keyed | no free source has rifle, prone or lean clips |
+
+  Quaternius' Universal Animation Library 1 and 2 (CC0) were evaluated and
+  not used: hand-keyed and stylised next to the CMU captures, and they have
+  no rifle, prone or tactical crouch clips either.
+
+- **Retargeting** (`retarget.py`): the BVH text is parsed directly (no
+  importer, no scripts), forward kinematics per frame, converted to Z up.
+  A cycle search picks the segment whose end best matches its start (pose
+  and velocity). The T-pose facing (frame 1) and the segment's direction
+  of travel are turned to +Y; the average velocity is removed (in place;
+  the bob and sway stay); everything is scaled by target/source leg length,
+  per operator. Rotations are world-space deltas from the source T-pose:
+  `target = (R_src(t) R_src(T-pose)^-1) R_target_rest`, for pelvis,
+  spine_01..03, neck_01, head, feet and toes (Hips, LowerBack, Spine,
+  Spine1, Neck1, Head, *Foot, *ToeBase). Both rests are upright with
+  straight legs, so no per-bone axis tables are needed and MakeHuman's
+  forward-angled forearms don't matter (the arms are never retargeted). The
+  legs are two-bone IK to the scaled source ankles, knees towards the
+  source thigh's forward direction, so the captured foot contacts carry
+  over exactly. Loops: the last frame's mismatch with the first is spread
+  over the cycle (positions lerped, rotations slerped), and every loop
+  starts at the left foot's touchdown.
+- **Overlays line up:** each clip's average pelvis, chest (`spine_02`,
+  `spine_03`) and head rotations are turned to the standing pose's (the
+  run keeps half its forward lean); the per-frame motion stays. `fire` and
+  `reload` own `spine_03`, neck and head plus the arms, `lean_*` own
+  `spine_01`/`spine_02`, so the aim stays level and on the eye over any
+  locomotion and lean, and aim plus lean never fight over a bone
+  (`src/characters/library.rs`, mask group `UPPER`).
+- **Rifle hold:** the arms never come from the capture. The rifle frame
+  rides on the chest (`gun_rest`: low ready; sprint carry; reload with the
+  stock under the arm) and both hands are IK'd onto it with the same
+  TAMARISK grips as the first-person arms (anatomical hand frames: wrist to
+  middle knuckle, palm from the knuckle line; finger curls per hand).
+  `weapon_r` is derived from the right-hand grip, so the real model
+  attached there (`model.third_person`) sits in the hand. The prop is an
+  AK-proportioned blockout (butt, magazine, handguard, sights at the real
+  model's positions) that the game hides when the real model is attached.
+- **Aim (`fire`):** chest bladed 30 degrees right and 14 forward, neck and
+  head flexed and tilted 15+15 degrees onto the stock, right shoulder
+  raised. The rifle is placed so its sight line (z 0.077 in the gun frame)
+  runs through the right eye 0.63 m behind the front post; the butt plate
+  then sits in the shoulder pocket (about 5 cm in from and 7 cm in front
+  of the shoulder joint; angles chosen by a small search over the pose).
+  Recoil per loop: 2 cm back, 2.5 degrees up, chest 2 degrees back.
+  Prone aiming uses the same eye-on-sight placement.
+- **Reload:** 2.4 s tactical reload: rifle tucked under the arm and rolled
+  left, eyes on the magazine well, the support hand rocks the magazine out
+  (it follows `weapon_mag`), stows it at the chest pouch, seats a new one
+  and goes back to the handguard.
+- **Lean:** `spine_01` 12 and `spine_02` 14 degrees, which moves the head
+  ~0.32 m like the first-person lean; the chest, head and arms come from
+  whatever else is playing.
+- **No foot sliding:** each locomotion clip's `speed` in `harrow_clips` is
+  measured on the retargeted, scaled feet: the median backward speed of
+  the planted contact point (heel or ball within 1.5 cm of the ground).
+  The game plays a clip at movement speed / that speed, so planted feet
+  stay put. Per operator (m/s, and the playback rate at the game's speed):
+
+  | | walk (3.4) | run (5.6) | crouch_walk (1.9) |
+  |---|---|---|---|
+  | Auger | 3.20 (1.06x) | 4.98 (1.12x) | 1.60 (1.19x) |
+  | Lark | 2.97 (1.15x) | 4.63 (1.21x) | 1.48 (1.28x) |
+  | Mortise | 3.27 (1.04x) | 5.09 (1.10x) | 1.63 (1.16x) |
+  | Fathom | 3.03 (1.12x) | 4.74 (1.18x) | 1.51 (1.26x) |
+
+  All inside `animation.rs`' clamps (walk 0.55–1.5, run 0.7–1.4, crouch
+  0.5–1.5); aiming (0.75x speed) still lands inside. Blending between
+  clips is now keyed to the game's speeds (`Clip::game_speed`), not the
+  authored ones, so 3.4 m/s is pure walk and 5.6 pure run.
+- **Heights** (head bone tip): standing 1.72–1.81 m, crouched 1.27–1.35 m
+  (the old scripted crouch was ~1.3), prone ~0.5 m.
+- **Not yet / limits:** strafe and backpedal still use the forward clips;
+  the aim always points level (no pitch from `NetAim` yet); walk and run
+  loops differ in length, so a walk/run blend is only in step where it
+  starts; the crouch idle is a held pose with procedural breathing; the
+  prone crawl is hand-keyed (0.8 m/s nominal); the real rifle model's
+  magazine does not follow `weapon_mag` during the third-person reload
+  (the prop's does); footstep sounds use their own stride (0.75 m) rather
+  than the clips' foot contacts.

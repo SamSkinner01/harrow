@@ -107,6 +107,7 @@ tools/scripts/build_characters.sh --setup        # once: install MPFB 2.0.18 + M
 tools/scripts/build_characters.sh                # Blender -> assets/models/characters/*.glb
 tools/scripts/build_characters.sh --only lark    # rebuild one operator
 tools/scripts/build_characters.sh --preview DIR  # also render each operator and some poses to DIR
+tools/scripts/build_characters.sh --mocap DIR    # where the CMU BVH clips are (see below)
 python3 tools/scripts/fetch_character_textures.py  # re-download CC0 cloth/leather detail maps
 ```
 
@@ -129,6 +130,11 @@ Characters: one config per operator in `tools/blender/characters/operators/`
 (body, face, skin, gear; commented). `--setup` changes only your Blender user
 configuration (the MPFB extension and its asset folder). On Windows use
 `tools/scripts/build_characters.ps1`. See DESIGN.md, "M5 characters".
+The locomotion clips are retargeted from CMU motion capture, which is not
+in the repository: the build reads `cmu_mocap_bvh_selection/source/*.bvh`
+from the asset staging folder (`--mocap DIR`, default `$HARROW_MOCAP`, else
+`~/harrow-assets-staging/mocap`). See DESIGN.md, "Realism pass: character
+animation", and ASSETS.md, "Motion capture".
 
 Sound effects (`assets/audio/**/*.ogg`) are cut, layered and encoded from
 CC0/CC-BY packs with Blender's bundled Python (no ffmpeg needed):

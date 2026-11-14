@@ -7,8 +7,12 @@
 //! bone, and masks decide which clips animate which bones:
 //!
 //! - locomotion clips: the whole body,
-//! - `fire`, `reload`: arms only (clavicles to fingers, and the weapon bones),
-//! - `lean_left`, `lean_right`: spine, neck and head only.
+//! - `fire`, `reload`: the arms (clavicles to fingers, and the weapon bones)
+//!   plus the chest, neck and head (`spine_03`, `neck_01`, `head`: the aim
+//!   blades the chest and puts the cheek on the stock; the reload looks at
+//!   the magazine),
+//! - `lean_left`, `lean_right`: the lower spine only (`spine_01`,
+//!   `spine_02`), so a lean and the aim never fight over a bone.
 
 use std::collections::HashMap;
 
@@ -128,14 +132,16 @@ impl Clip {
     fn mask(self) -> u64 {
         match self {
             Clip::Fire | Clip::Reload => group(LOWER) | group(SPINE),
-            Clip::LeanLeft | Clip::LeanRight => group(LOWER) | group(ARMS),
+            Clip::LeanLeft | Clip::LeanRight => group(LOWER) | group(UPPER) | group(ARMS),
             _ => 0,
         }
     }
 
-    /// Ground speed the clip was authored for, m/s (if it's locomotion).
-    /// Overridden by the `harrow_clips` extra in the .glb when present.
-    fn default_speed(self) -> f32 {
+    /// Movement speed the game uses this clip at, m/s (if it's locomotion):
+    /// the walk, sprint, crouch and prone speeds. Blending between clips is
+    /// keyed to these. Also the fallback for the authored speed, which the
+    /// `harrow_clips` extra in the .glb overrides.
+    pub fn game_speed(self) -> f32 {
         match self {
             Clip::Walk => 3.4,
             Clip::Run => 5.6,
@@ -148,8 +154,11 @@ impl Clip {
 
 // Mask groups. A node with a group's bit set does not animate that group.
 const LOWER: u32 = 0;
+/// `spine_01`, `spine_02` (lean).
 const SPINE: u32 = 1;
 const ARMS: u32 = 2;
+/// `spine_03`, `neck_01`, `head` (aim and reload, with the arms).
+const UPPER: u32 = 3;
 
 fn group(g: u32) -> u64 {
     1 << g
@@ -161,7 +170,9 @@ fn bone_group(name: &str) -> u32 {
         "clavicle", "upperarm", "lowerarm", "hand", "thumb", "index", "middle", "ring", "pinky",
         "weapon",
     ];
-    if name.starts_with("spine") || name == "neck_01" || name == "head" {
+    if name == "spine_03" || name == "neck_01" || name == "head" {
+        UPPER
+    } else if name.starts_with("spine") {
         SPINE
     } else if ARM_PREFIXES.iter().any(|p| name.starts_with(p)) {
         ARMS
@@ -290,7 +301,7 @@ fn build_rig(
         ));
     }
 
-    let mut speeds = Clip::ALL.map(Clip::default_speed);
+    let mut speeds = Clip::ALL.map(Clip::game_speed);
     if let Some(extras) = gltf
         .named_nodes
         .get("rig")
