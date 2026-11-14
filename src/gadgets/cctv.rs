@@ -4,9 +4,9 @@
 //! them (red light) and shoot them out (`Health`); every round brings them
 //! back.
 //!
-//! The spots live in [`CctvLayout`], keyed to Harrow Keep section A (two to
-//! three per site area, plus the courtyard). A map can replace the
-//! resource with its own spots.
+//! The spots live in [`CctvLayout`]: section A's are here (two to three per
+//! site area, plus the courtyard); the full Harrow Keep map inserts its own
+//! at startup (`src/map/harrow_keep/`).
 
 use avian3d::prelude::*;
 use bevy::prelude::*;
@@ -23,18 +23,12 @@ pub struct CctvPlugin;
 
 impl Plugin for CctvPlugin {
     fn build(&self, app: &mut App) {
-        let keep = map_is_keep();
-        app.insert_resource(if keep { CctvLayout::keep_section_a() } else { CctvLayout::default() })
+        let section_a = crate::map::MapChoice::from_args() == crate::map::MapChoice::SectionA;
+        app.insert_resource(if section_a { CctvLayout::keep_section_a() } else { CctvLayout::default() })
             .add_systems(PostStartup, spawn_cameras)
             .add_systems(FixedUpdate, respawn_on_reset.in_set(GadgetStage::Input))
             .add_systems(Update, dress_cameras);
     }
-}
-
-fn map_is_keep() -> bool {
-    let args: Vec<String> = std::env::args().collect();
-    let map = args.iter().position(|a| a == "--map").and_then(|i| args.get(i + 1));
-    map.is_none_or(|m| m == "keep")
 }
 
 /// One camera spot.

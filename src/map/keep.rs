@@ -42,8 +42,7 @@ impl Plugin for KeepPlugin {
 /// One lantern per room, hanging from the ceiling (slab underside).
 fn place_lamps(
     mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    assets: Res<super::lamps::LampAssets>,
     tuning: Res<crate::config::Tuning>,
 ) {
     let ground_ceiling = GROUND + WALL;
@@ -55,13 +54,7 @@ fn place_lamps(
         (3.5, upper_ceiling, -4.0),  // upper west room
         (9.0, upper_ceiling, -4.0),  // upper east room
     ] {
-        super::lamps::spawn_lamp(
-            &mut commands,
-            &mut meshes,
-            &mut materials,
-            &tuning,
-            Vec3::new(x, y, z),
-        );
+        super::lamps::spawn_lantern(&mut commands, &assets, &tuning, Vec3::new(x, y, z), true);
     }
 }
 

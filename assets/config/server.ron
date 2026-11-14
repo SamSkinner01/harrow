@@ -7,12 +7,13 @@
     name: "Harrow server",
     // UDP port. Open it in the firewall (see README "Multiplayer").
     port: 5888,
-    // "keep" or "greybox". Players must have the same map (same build).
+    // "keep" (the full map), "section_a" or "greybox". Players must have the
+    // same map (same build).
     map: "keep",
     max_players: 10,
     // error, warn, info, debug or trace.
     log_level: "info",
-    // Play rounds (keep only). false: free play.
+    // Play rounds (keep and section_a). false: free play.
     round_loop: true,
     round: (
         // The short timers from `round.test_timers` in tuning.ron.

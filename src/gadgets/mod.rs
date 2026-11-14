@@ -58,7 +58,7 @@ pub(crate) use stakes::{attach_stake_model, spawn_stake};
 #[allow(unused_imports)]
 pub use backplate::BackplateCharge;
 #[allow(unused_imports)]
-pub use cctv::CctvLayout;
+pub use cctv::{CctvLayout, CctvSpot};
 #[allow(unused_imports)]
 pub use cutter::{CutterBlade, CutterState, RingCutter};
 #[allow(unused_imports)]

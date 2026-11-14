@@ -110,8 +110,8 @@ impl ServerConfig {
         if args.iter().any(|a| a == "--round-test") {
             config.round.test_timers = true;
         }
-        // Bomb sites only exist on the keep.
-        if config.map != "keep" {
+        // Bomb sites exist on the keep and section A, not the grey-box.
+        if !crate::map::MapChoice::from_name(&config.map).has_objectives() {
             config.round_loop = false;
         }
         (config, error)
