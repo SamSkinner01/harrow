@@ -160,7 +160,8 @@ pub struct Reinforcements(pub u32);
 
 /// Breach charges a character has left (0 = doesn't carry them). The
 /// round loop / loadouts set this; attackers start with the tuning count.
-#[derive(Component, Debug, Clone, Copy)]
+/// Replicated to its player (HUD).
+#[derive(Component, Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub struct BreachCharges(pub u32);
 
 /// What a character is busy with (for HUDs and bots). Simulation state.

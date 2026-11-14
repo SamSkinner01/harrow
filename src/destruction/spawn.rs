@@ -30,16 +30,28 @@ pub struct SurfaceSpawnPlugin;
 
 impl Plugin for SurfaceSpawnPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<SurfaceMaterials>()
+        // A headless server (no render app) never draws the surfaces: no
+        // meshes (on the full map they were most of a server's memory).
+        let draws = app.get_sub_app(bevy::render::RenderApp).is_some();
+        app.insert_resource(SurfaceMeshes(draws))
+            .init_resource::<SurfaceMaterials>()
             .init_resource::<RebuildStats>()
             .add_observer(convert_piece)
             .add_systems(
                 FixedUpdate,
                 rebuild_colliders.in_set(DestructionSystems::Rebuild),
             )
-            .add_systems(PostUpdate, (assign_materials, rebuild_meshes));
+            .add_systems(
+                PostUpdate,
+                (assign_materials, rebuild_meshes.run_if(|draws: Res<SurfaceMeshes>| draws.0)),
+            );
     }
 }
+
+/// Whether soft surfaces get render meshes (false on a headless server:
+/// they keep empty ones, and only their colliders follow the cells).
+#[derive(Resource)]
+struct SurfaceMeshes(bool);
 
 /// Library materials by surface name, collected from loaded kit pieces.
 #[derive(Resource, Default)]
@@ -104,6 +116,7 @@ fn convert_piece(
     mut materials: ResMut<SurfaceMaterials>,
     mut meshes: ResMut<Assets<Mesh>>,
     tuning: Res<Tuning>,
+    draws: Res<SurfaceMeshes>,
     mut commands: Commands,
 ) {
     let root = insert.entity;
@@ -149,7 +162,7 @@ fn convert_piece(
     if !shapes.is_empty() {
         commands.entity(collider).insert(Collider::compound(shapes));
     }
-    let buffers = build_meshes(&surface, t);
+    let buffers = if draws.0 { build_meshes(&surface, t) } else { Default::default() };
     let mut parts: Vec<(Entity, Handle<Mesh>)> = Vec::with_capacity(3);
     for (material, data) in SurfaceMaterial::ALL.into_iter().zip(buffers) {
         let visible = !data.is_empty();

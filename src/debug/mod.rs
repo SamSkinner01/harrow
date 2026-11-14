@@ -27,10 +27,13 @@
 
 use std::path::PathBuf;
 
+// The FPS overlay comes with Bevy's dev tools, which pull in audio: client
+// build only.
+#[cfg(feature = "client")]
+use bevy::dev_tools::fps_overlay::{FpsOverlayConfig, FpsOverlayPlugin};
 use bevy::{
     color::palettes::css,
     diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin},
-    dev_tools::fps_overlay::{FpsOverlayConfig, FpsOverlayPlugin},
     prelude::*,
     render::view::screenshot::{Screenshot, ScreenshotCaptured, save_to_disk},
 };
@@ -48,8 +51,9 @@ pub struct DebugPlugin;
 impl Plugin for DebugPlugin {
     fn build(&self, app: &mut App) {
         let has_flag = |flag: &str| std::env::args().any(|a| a == flag);
-        app.add_plugins(FpsOverlayPlugin::default())
-            .insert_resource(DebugView {
+        #[cfg(feature = "client")]
+        app.add_plugins(FpsOverlayPlugin::default());
+        app.insert_resource(DebugView {
                 hitboxes: has_flag("--hitboxes"),
                 third_person: has_flag("--third-person"),
             })
@@ -150,9 +154,10 @@ pub struct DebugView {
 
 fn debug_keys(
     keys: Res<ButtonInput<KeyCode>>,
-    mut fps: ResMut<FpsOverlayConfig>,
+    #[cfg(feature = "client")] mut fps: ResMut<FpsOverlayConfig>,
     mut view: ResMut<DebugView>,
 ) {
+    #[cfg(feature = "client")]
     if keys.just_pressed(KeyCode::F3) {
         fps.enabled = !fps.enabled;
     }

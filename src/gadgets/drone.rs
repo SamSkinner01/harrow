@@ -43,13 +43,13 @@ impl Plugin for DronePlugin {
 }
 
 /// Recon drones a character has left to throw this round.
-#[derive(Component, Clone, Copy, Debug)]
+#[derive(Component, Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
 pub struct ReconStock {
     pub drones: u8,
     pub max: u8,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum DroneState {
     /// Thrown, tumbling; `age` seconds in the air.
     Thrown { age: f32 },
@@ -58,9 +58,11 @@ pub enum DroneState {
 }
 
 /// A recon drone. Its `Transform` is the centre of its body sphere
-/// (`radius` above the floor when it stands).
-#[derive(Component, Clone, Debug)]
+/// (`radius` above the floor when it stands). Replicated to clients with an
+/// interpolated `Transform` (`net/gadget_sync.rs`).
+#[derive(Component, Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Drone {
+    #[entities]
     pub owner: Entity,
     /// 1-based number among the owner's drones (HUD).
     pub number: u8,

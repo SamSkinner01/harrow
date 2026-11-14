@@ -3946,10 +3946,13 @@ dependencies = [
  "avian3d",
  "bevy",
  "bevy_enhanced_input",
+ "bevy_replicon",
+ "blake3",
  "ctrlc",
  "lightyear",
  "ron",
  "serde",
+ "serde_json",
 ]
 
 [[package]]
