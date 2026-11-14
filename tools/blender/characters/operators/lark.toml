@@ -1,0 +1,51 @@
+# LARK: attacker, scout. Armour 1 / speed 3.
+# Young, light and quick. No plates: a slim chest rig, a hydration pack,
+# the dart launcher on her left wrist and a high-cut helmet with goggles.
+# Rebuild with tools/scripts/build_characters.sh --only lark
+
+id = "lark"
+name = "Lark"
+team = "attackers"
+role = "scout"
+armour = 1
+speed = 3
+
+[body]
+gender = 0.0
+age = 0.42
+muscle = 0.58
+weight = 0.38
+proportions = 0.6
+height = 0.5
+height_m = 1.72
+cupsize = 0.35
+race = { african = 0.05, asian = 0.85, caucasian = 0.10 }
+
+[face]
+eyebrows = "eyebrow010"
+eyes = "brownlight"
+targets = { "nose-scale-horiz-decr" = 0.2, "chin-prominent-incr" = 0.3, "l-cheek-bones-incr" = 0.4, "r-cheek-bones-incr" = 0.4, "mouth-scale-horiz-decr" = 0.2, "head-oval" = 0.4 }
+
+[skin]
+texture = "young_asian_female"
+tint = [1.0, 0.97, 0.94]
+hair = "short"
+hair_colour = "#1c1714"
+stubble = 0.0
+
+[gear]
+helmet = "highcut"
+headset = true
+eyewear = "goggles_up"
+carrier = "chest_rig"
+pouches = ["mags_triple", "hydration", "dart_launcher", "dump_left"]
+gloves = "fingerless"
+boots = "low"
+pads = ["knees"]
+neck = "none"
+sleeves = "rolled"
+
+[palette]
+gear = "#7c6a4b"        # coyote rig instead of the team's ranger green
+gear_alt = "#5a5f45"
+helmet = "#6a6b4f"      # olive helmet
