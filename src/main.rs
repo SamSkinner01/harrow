@@ -32,6 +32,11 @@ fn main() -> AppExit {
             physics::PhysicsSetupPlugin,
             config::TuningPlugin,
         ))
-        .add_plugins((map::MapPlugin, player::PlayerPlugin, debug::DebugPlugin))
+        .add_plugins((
+            map::MapPlugin,
+            player::PlayerPlugin,
+            ui::UiPlugin,
+            debug::DebugPlugin,
+        ))
         .run()
 }

@@ -52,4 +52,28 @@
         // Seconds from upright to full lean.
         time: 0.18,
     ),
+    view: (
+        // Head bob while moving at walk speed. Set all to 0.0 to disable.
+        // Up/down, metres.
+        bob_height: 0.025,
+        // Side to side, metres.
+        bob_side: 0.012,
+        // Tilt, degrees.
+        bob_roll: 0.35,
+    ),
+    footsteps: (
+        // Metres travelled per footstep.
+        walk_stride: 0.75,
+        sprint_stride: 1.05,
+        crouch_stride: 0.55,
+        prone_stride: 0.5,
+        // How loud a step is to the game (0 = silent, 1 = sprint). Bots and
+        // detection gadgets will use this.
+        walk_loudness: 0.5,
+        sprint_loudness: 1.0,
+        crouch_loudness: 0.12,
+        prone_loudness: 0.04,
+        // Volume of your own footsteps (placeholder sound).
+        volume: 0.7,
+    ),
 )

@@ -22,7 +22,7 @@ impl Plugin for PlayerInputPlugin {
             .add_systems(Startup, spawn_controller)
             .add_systems(
                 Startup,
-                grab_cursor.run_if(not(resource_exists::<CursorGrabDisabled>)),
+                grab_cursor.run_if(not(resource_exists::<AutomatedRun>)),
             )
             // Right after bindings are evaluated, so the fixed-tick simulation
             // that runs later this frame sees this frame's input.
@@ -40,9 +40,10 @@ impl Plugin for PlayerInputPlugin {
     }
 }
 
-/// Insert to stop the game grabbing the mouse at startup (automated runs).
+/// Present during automated (scripted screenshot) runs: the game doesn't
+/// grab the mouse and player sounds are muted.
 #[derive(Resource)]
-pub struct CursorGrabDisabled;
+pub struct AutomatedRun;
 
 /// Input context for moving around on foot.
 #[derive(Component, Default, Clone)]

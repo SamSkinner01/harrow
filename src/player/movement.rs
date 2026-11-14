@@ -7,7 +7,7 @@
 use avian3d::prelude::*;
 use bevy::prelude::*;
 
-use super::{CharacterState, Lean, Player, PlayerInput, Stance};
+use super::{CharacterState, Footstep, Lean, Player, PlayerInput, Stance};
 use crate::{config::Tuning, physics::GameLayer};
 
 pub struct MovementPlugin;
@@ -36,6 +36,7 @@ pub(super) fn move_characters(
         With<Player>,
     >,
     move_and_slide: MoveAndSlide,
+    mut footsteps: MessageWriter<Footstep>,
     tuning: Res<Tuning>,
     time: Res<Time>,
 ) {
@@ -175,10 +176,39 @@ pub(super) fn move_characters(
             new_velocity.y = 0.0;
         }
 
+        // --- Footsteps: one per stride of ground covered ---------------------
+        if hit_ground {
+            let (stride, loudness) = stride_and_loudness(&state, &tuning);
+            state.stride += (position - feet).with_y(0.0).length();
+            if state.stride >= stride {
+                state.stride -= stride;
+                footsteps.write(Footstep {
+                    entity,
+                    position,
+                    loudness,
+                });
+            }
+        } else {
+            state.stride = 0.0;
+        }
+
         transform.translation = position;
         transform.rotation = facing;
         velocity.0 = new_velocity;
         state.grounded = hit_ground;
+    }
+}
+
+/// Step length and loudness for the current gait.
+pub(super) fn stride_and_loudness(state: &CharacterState, tuning: &Tuning) -> (f32, f32) {
+    let f = &tuning.footsteps;
+    if state.sprinting {
+        return (f.sprint_stride, f.sprint_loudness);
+    }
+    match state.stance {
+        Stance::Stand => (f.walk_stride, f.walk_loudness),
+        Stance::Crouch => (f.crouch_stride, f.crouch_loudness),
+        Stance::Prone => (f.prone_stride, f.prone_loudness),
     }
 }
 

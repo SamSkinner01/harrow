@@ -36,6 +36,31 @@ pub struct Tuning {
     pub movement: MovementTuning,
     pub body: BodyTuning,
     pub lean: LeanTuning,
+    pub view: ViewTuning,
+    pub footsteps: FootstepTuning,
+}
+
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct ViewTuning {
+    pub bob_height: f32,
+    pub bob_side: f32,
+    /// Degrees.
+    pub bob_roll: f32,
+}
+
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct FootstepTuning {
+    pub walk_stride: f32,
+    pub sprint_stride: f32,
+    pub crouch_stride: f32,
+    pub prone_stride: f32,
+    pub walk_loudness: f32,
+    pub sprint_loudness: f32,
+    pub crouch_loudness: f32,
+    pub prone_loudness: f32,
+    pub volume: f32,
 }
 
 #[derive(Deserialize, Clone, Debug)]

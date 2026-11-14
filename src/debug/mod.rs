@@ -19,6 +19,7 @@ use std::path::PathBuf;
 
 use bevy::{
     color::palettes::css,
+    diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin},
     dev_tools::fps_overlay::{FpsOverlayConfig, FpsOverlayPlugin},
     prelude::*,
     render::view::screenshot::{Screenshot, ScreenshotCaptured, save_to_disk},
@@ -27,7 +28,7 @@ use bevy::{
 use crate::{
     config::Tuning,
     player::{
-        CharacterState, CursorGrabDisabled, HitZone, Lean, LocalPlayer, Player, PlayerInput,
+        AutomatedRun, CharacterState, Footstep, HitZone, Lean, LocalPlayer, Player, PlayerInput,
         SpawnPoint, Stance,
     },
 };
@@ -50,7 +51,7 @@ impl Plugin for DebugPlugin {
         if let Some(auto) = AutoScreenshot::from_args() {
             // Automated run: don't steal the user's mouse.
             app.insert_resource(auto)
-                .insert_resource(CursorGrabDisabled)
+                .insert_resource(AutomatedRun)
                 .add_systems(Update, auto_screenshot.run_if(resource_exists::<AutoScreenshot>));
         }
         if let Some(spawn) = spawn_from_args() {
@@ -62,7 +63,8 @@ impl Plugin for DebugPlugin {
                 .add_systems(FixedPreUpdate, apply_forced_input);
         }
         if has_flag("--trace-player") {
-            app.add_systems(FixedPostUpdate, trace_player);
+            app.add_systems(FixedPostUpdate, trace_player)
+                .add_systems(Update, trace_footsteps);
         }
     }
 }
@@ -141,6 +143,13 @@ fn trace_player(
             "tick {:>5}: feet at {:.2} height {:.2} lean {:+.2} {:?}",
             *ticks, transform.translation, state.height, state.lean, state.stance
         );
+    }
+}
+
+/// `--trace-player`: log every footstep.
+fn trace_footsteps(mut steps: MessageReader<Footstep>) {
+    for step in steps.read() {
+        info!("footstep at {:.2} loudness {:.2}", step.position, step.loudness);
     }
 }
 
@@ -281,6 +290,7 @@ fn auto_screenshot(
     mut commands: Commands,
     mut shot: ResMut<AutoScreenshot>,
     players: Query<(&Transform, &CharacterState), With<LocalPlayer>>,
+    diagnostics: Res<DiagnosticsStore>,
 ) {
     if shot.requested {
         return;
@@ -291,6 +301,12 @@ fn auto_screenshot(
     }
     shot.requested = true;
     info!("auto screenshot -> {}", shot.path.display());
+    if let Some(fps) = diagnostics
+        .get(&FrameTimeDiagnosticsPlugin::FPS)
+        .and_then(|d| d.average())
+    {
+        info!("average fps {fps:.1}");
+    }
     for (transform, state) in &players {
         info!(
             "local player feet at {:.2} height {:.2} lean {:+.2} {:?}",

@@ -13,12 +13,13 @@
 //!    gameplay state.
 
 mod camera;
+mod footsteps;
 mod hitbox;
 mod input;
 mod movement;
 
 pub use hitbox::HitZone;
-pub use input::CursorGrabDisabled;
+pub use input::AutomatedRun;
 
 use avian3d::prelude::*;
 use bevy::prelude::*;
@@ -30,11 +31,13 @@ pub struct PlayerPlugin;
 impl Plugin for PlayerPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<SpawnPoint>()
+            .add_message::<Footstep>()
             .add_plugins((
                 input::PlayerInputPlugin,
                 movement::MovementPlugin,
                 hitbox::HitboxPlugin,
                 camera::PlayerCameraPlugin,
+                footsteps::FootstepAudioPlugin,
             ))
             .add_systems(Startup, spawn_local_player);
     }
@@ -78,6 +81,16 @@ pub struct PlayerInput {
     pub lean: Lean,
 }
 
+/// A foot hit the ground. Written by the simulation; the hook for footstep
+/// audio now, and for bots and detection gadgets later.
+#[derive(Message, Clone, Debug)]
+pub struct Footstep {
+    pub entity: Entity,
+    pub position: Vec3,
+    /// 0 = silent .. 1 = sprinting. See `footsteps` in the tuning file.
+    pub loudness: f32,
+}
+
 /// Simulation state owned by the movement code.
 #[derive(Component, Debug)]
 pub struct CharacterState {
@@ -92,6 +105,8 @@ pub struct CharacterState {
     pub prev_lean: f32,
     pub grounded: bool,
     pub sprinting: bool,
+    /// Ground distance covered since the last footstep, metres.
+    pub stride: f32,
 }
 
 impl CharacterState {
@@ -104,6 +119,7 @@ impl CharacterState {
             prev_lean: 0.0,
             grounded: false,
             sprinting: false,
+            stride: 0.0,
         }
     }
 

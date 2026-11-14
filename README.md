@@ -61,6 +61,7 @@ Bevy's API changes between releases, so everything is pinned with `=` in
 | Z | Prone (toggle) |
 | Q / E | Lean left / right (toggle) |
 | Esc / left click | Release / capture the mouse |
+| F1 | Toggle key help |
 | F3 | Toggle FPS overlay |
 | F4 | Show hit zones and movement capsule |
 | F5 | Third-person debug view |
@@ -83,11 +84,12 @@ cargo run -- --spawn 11,0,4,0,-10              # spawn at x,y,z facing yaw,pitch
 cargo run -- --auto-move 0,1,sprint            # hold strafe,forward[,sprint]
 cargo run -- --stance crouch --lean left       # hold a stance / lean
 cargo run -- --third-person --hitboxes         # start with debug views on
-cargo run -- --trace-player                    # log feet position 4x per second
+cargo run -- --trace-player                    # log position 4x per second, and every footstep
 ```
 
 Used for automated checks: e.g. spawn at the stairs, auto-move forward, and
-screenshot/log where the player ends up. Automated runs don't grab the mouse.
+screenshot/log where the player ends up. Automated runs don't grab the mouse
+and don't play player sounds.
 
 ## Layout
 

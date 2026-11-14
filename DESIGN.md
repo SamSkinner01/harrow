@@ -29,6 +29,25 @@ in the reference (e.g. "opens reinforced walls"), but must work differently.
   defuser run time 45 s, disable 7 s.
 - Round end: objective, team wipe, or timer.
 
+## Movement (M1)
+
+All numbers live in `assets/config/tuning.ron`; these are the rules.
+
+- Stances: stand / crouch / prone. You can't stand up (or crouch from prone)
+  unless the full height fits; pressing the key again cancels the request.
+- Lean left/right: camera tilts and shifts sideways; the head and upper torso
+  hit zones move with it, so leaning exposes you. Leaning stops at walls. No
+  lean while prone.
+- Sprint: forward only. Starting a sprint stands you up and straightens a
+  lean; leaning stops a sprint.
+- No jumping (matches the feel target). **PROPOSED:** a vault action for
+  low walls and windows, later.
+- Footsteps have a loudness tier: sprint 1.0, walk 0.5, crouch-walk 0.12,
+  prone 0.04. Bots and detection gadgets (e.g. Fathom's stakes) will use
+  these; crouch-walking is the quiet way to move.
+- Level rule: characters don't step up ledges, so every staircase and
+  threshold needs a ramp collider (visual steps on top).
+
 ## Destruction (decided 2026-11-13: match the reference's Y3S4 rules)
 
 Fortress logic: thick stone and rammed earth are **indestructible**; plaster,
