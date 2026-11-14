@@ -720,8 +720,8 @@
                 duration: 12.0,
                 fade_time: 3.0,
                 // Smoke puffs per cloud, and for all clouds together (cost cap).
-                particles: 36,
-                max_particles: 120,
+                particles: 46,
+                max_particles: 140,
             ),
             impact: (
                 // Throw speed, metres per second.

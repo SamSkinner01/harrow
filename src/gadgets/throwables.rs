@@ -427,10 +427,10 @@ fn create_smoke_assets(
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut images: ResMut<Assets<Image>>,
 ) {
-    let texture = puff_texture(&mut images, 64, 1.2);
+    let texture = puff_texture(&mut images, 64, 0.75);
     let materials = (0..SMOKE_STEPS)
         .map(|step| {
-            let alpha = 0.62 * (step + 1) as f32 / SMOKE_STEPS as f32;
+            let alpha = 0.88 * (step + 1) as f32 / SMOKE_STEPS as f32;
             materials.add(StandardMaterial {
                 base_color: Color::srgba(0.66, 0.66, 0.64, alpha),
                 base_color_texture: Some(texture.clone()),
@@ -491,9 +491,9 @@ fn spawn_puffs(
             let theta = i as f32 * 2.399_963;
             let up = 1.0 - 2.0 * k;
             let ring = (1.0 - up * up).max(0.0).sqrt();
-            let reach = t.radius * (0.35 + 0.65 * ((i * 7919 % 97) as f32 / 97.0).sqrt());
-            let mut offset = Vec3::new(ring * theta.cos(), up * 0.55, ring * theta.sin()) * reach;
-            let size = 1.3 + 1.0 * ((i * 104_729 % 89) as f32 / 89.0);
+            let reach = t.radius * (0.2 + 0.8 * ((i * 7919 % 97) as f32 / 97.0).powf(0.7));
+            let mut offset = Vec3::new(ring * theta.cos(), up * 0.42 + 0.1, ring * theta.sin()) * reach;
+            let size = 1.9 + 1.3 * ((i * 104_729 % 89) as f32 / 89.0);
             // Keep puffs on this side of walls and floors.
             if let Ok(dir) = Dir3::new(offset)
                 && let Some(hit) = spatial.cast_ray(cloud.centre, dir, offset.length() + size * 0.4, true, &world)

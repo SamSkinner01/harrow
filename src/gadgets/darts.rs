@@ -167,6 +167,10 @@ pub(crate) fn stick_dart(
         // Only spatial queries (bullets) find it; it never blocks anything.
         CollisionLayers::new(GameLayer::Hitbox, LayerMask::NONE),
     ));
+    // Blasts measure their distance to the tail sticking out.
+    commands.entity(dart).with_children(|c| {
+        c.spawn(super::blast_anchor(Vec3::Y * 0.08));
+    });
 }
 
 /// Spawn an attackers' dart already listening at `point` (test scripts).

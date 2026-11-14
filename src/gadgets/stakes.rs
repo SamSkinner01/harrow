@@ -131,6 +131,7 @@ pub(crate) fn spawn_stake(
             Collider::capsule(0.06, 0.12),
             Sensor,
             CollisionLayers::new(GameLayer::Hitbox, LayerMask::NONE),
+            children![super::blast_anchor(Vec3::ZERO)],
         ))
         .with_children(|parent| {
             // Spike half buried, head and light on top.

@@ -396,6 +396,7 @@ fn spawn_cutter(
             Collider::sphere(0.2),
             Sensor,
             CollisionLayers::new(GameLayer::Hitbox, LayerMask::NONE),
+            children![super::blast_anchor(Vec3::Z * 0.15)],
         ))
         .id()
 }
@@ -451,6 +452,7 @@ fn run_cutters(
                 Collider::sphere(0.12),
                 Sensor,
                 CollisionLayers::new(GameLayer::Hitbox, LayerMask::NONE),
+                children![super::blast_anchor(Vec3::ZERO)],
             ));
             events.write(GadgetEvent::CutterExposed { cutter: entity, position: at });
         }

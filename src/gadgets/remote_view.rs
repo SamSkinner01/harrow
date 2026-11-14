@@ -249,7 +249,11 @@ fn use_recon(
                         }
                     };
                     match next {
-                        Some(next) => enter(&mut commands, &mut intent, next, &mut events),
+                        Some(next) => {
+                            // Static on screen, then the next feed.
+                            events.write(GadgetEvent::ViewLeft { by: entity, lost: true });
+                            enter(&mut commands, &mut intent, next, &mut events);
+                        }
                         None => leave(&mut commands, &mut events, allowed),
                     }
                 } else if button.tapped {
@@ -518,7 +522,7 @@ fn spawn_overlay(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
             image(&mut images, 192, |_, _| {
                 let v = random();
                 let light = (v & 0xFF) as u8;
-                let alpha = ((v >> 8) & 0x3F) as u8;
+                let alpha = ((v >> 8) & 0x1F) as u8;
                 [light, light, light, alpha]
             })
         })
@@ -527,7 +531,7 @@ fn spawn_overlay(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
     let vignette = image(&mut images, 256, |x, y| {
         let d = Vec2::new(x as f32 + 0.5, y as f32 + 0.5) / 128.0 - 1.0;
         let a = ((d.length() - 0.55) / 0.85).clamp(0.0, 1.0).powf(1.6);
-        [0, 0, 0, (a * 235.0) as u8]
+        [0, 0, 0, (a * 190.0) as u8]
     });
     let full = || Node {
         position_type: PositionType::Absolute,
@@ -581,7 +585,7 @@ fn spawn_overlay(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
                         tile_y: true,
                         stretch_value: 1.0,
                     },
-                    color: Color::srgba(1.0, 1.0, 1.0, 0.8),
+                    color: Color::srgba(1.0, 1.0, 1.0, 0.55),
                     ..default()
                 },
                 full(),
@@ -711,7 +715,6 @@ fn update_overlay(
     all_cameras: Query<(), With<CctvCamera>>,
     grain_frames: Option<Res<GrainFrames>>,
     tuning: Res<Tuning>,
-    round: Res<Round>,
     time: Res<Time>,
     mut events: MessageReader<GadgetEvent>,
     (mut overlay, mut tint, mut grain): (
@@ -767,8 +770,8 @@ fn update_overlay(
         grain.image = frames.0[(now * 20.0) as usize % frames.0.len()].clone();
     }
     let clock = {
-        let s = round.elapsed.max(0.0) as u32;
-        format!("{:02}:{:02}:{:02}", 13 + s / 3600, (s / 60) % 60, s % 60)
+        let s = (now + 13.0 * 3600.0) as u32;
+        format!("{:02}:{:02}:{:02}", (s / 3600) % 24, (s / 60) % 60, s % 60)
     };
     let (text, help, tint_color, is_drone) = match view {
         RemoteView::Drone(d) => match drones.get(*d) {
@@ -783,7 +786,7 @@ fn update_overlay(
                         bars(distance, tuning.round.gadgets.drone.signal_range)
                     ),
                     "W/S drive   A/D, mouse turn   Q/E switch drone   hold G throw another   G exit",
-                    Color::srgba(0.1, 0.35, 0.3, 0.16),
+                    Color::srgba(0.1, 0.35, 0.3, 0.10),
                     true,
                 )
             }
@@ -798,7 +801,7 @@ fn update_overlay(
                     cam.name
                 ),
                 "mouse, A/D pan   Q/E switch camera   G exit",
-                Color::srgba(0.18, 0.22, 0.3, 0.2),
+                Color::srgba(0.18, 0.22, 0.3, 0.08),
                 false,
             ),
             Err(_) => ("NO SIGNAL".into(), "", Color::srgba(0.2, 0.2, 0.2, 0.4), false),

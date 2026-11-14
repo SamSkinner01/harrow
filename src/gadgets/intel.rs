@@ -87,8 +87,17 @@ fn collect_reveals(
     });
 }
 
-fn draw_markers(markers: Res<IntelMarkers>, tuning: Res<Tuning>, mut gizmos: Gizmos<IntelGizmos>) {
+fn draw_markers(
+    markers: Res<IntelMarkers>,
+    tuning: Res<Tuning>,
+    cameras: Query<(&Camera, &GlobalTransform)>,
+    mut gizmos: Gizmos<IntelGizmos>,
+) {
     let flat = Quat::from_rotation_x(FRAC_PI_2);
+    // Sideways for the current view (alarm brackets face the viewer).
+    let side = super::remote_view::view_camera(&cameras)
+        .map(|c| c.right().with_y(0.0).normalize_or(Vec3::X))
+        .unwrap_or(Vec3::X);
     let intel = &tuning.round.intel;
     for m in &markers.items {
         let ground = m.position + Vec3::Y * 0.05;
@@ -123,13 +132,8 @@ fn draw_markers(markers: Res<IntelMarkers>, tuning: Res<Tuning>, mut gizmos: Giz
                 let color = Color::from(css::RED).with_alpha(1.0 - life * 0.8);
                 let c = m.position;
                 let s = 0.35 + 0.1 * (life * 12.0).sin().abs();
-                let corners = [
-                    c + Vec3::new(-s, -s * 2.4, 0.0),
-                    c + Vec3::new(s, -s * 2.4, 0.0),
-                    c + Vec3::new(s, s * 2.4, 0.0),
-                    c + Vec3::new(-s, s * 2.4, 0.0),
-                    c + Vec3::new(-s, -s * 2.4, 0.0),
-                ];
+                let (x, y) = (side * s, Vec3::Y * s * 2.4);
+                let corners = [c - x - y, c + x - y, c + x + y, c - x + y, c - x - y];
                 gizmos.linestrip(corners, color);
                 gizmos.circle(Isometry3d::new(ground - Vec3::Y * 0.9, flat), 0.4 + life * 0.8, color);
             }

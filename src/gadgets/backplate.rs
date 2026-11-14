@@ -180,6 +180,7 @@ fn use_backplates(
                                 Collider::cuboid(0.22, 0.22, 0.08),
                                 Sensor,
                                 CollisionLayers::new(GameLayer::Hitbox, LayerMask::NONE),
+                                children![super::blast_anchor(Vec3::Z * 0.05)],
                             ));
                             events.write(GadgetEvent::BackplateSet { by: entity, position: mount.at });
                         }

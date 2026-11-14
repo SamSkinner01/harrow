@@ -140,6 +140,7 @@ pub fn spawn_drone(
                 Sensor,
                 CollisionLayers::new(GameLayer::Hitbox, LayerMask::NONE),
             ),
+            children![super::blast_anchor(Vec3::ZERO)],
         ))
         .id()
 }

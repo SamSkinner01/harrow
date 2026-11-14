@@ -47,7 +47,10 @@ impl Plugin for DeployablesPlugin {
         )
         .add_systems(
             RunFixedMainLoop,
-            slow_bridge.in_set(RunFixedMainLoopSystems::BeforeFixedMainLoop),
+            // After every input writer (keyboard, test scripts, viewers).
+            slow_bridge
+                .in_set(RunFixedMainLoopSystems::BeforeFixedMainLoop)
+                .after(super::remote_view::FreezeViewers),
         )
         .add_systems(Update, dress_deployables);
     }
@@ -132,9 +135,9 @@ pub fn place_target(
             Some(Transform::from_translation(point + normal * 0.025).looking_to(-normal, up))
         }
         SecondaryGadget::RazorWire | SecondaryGadget::BallisticCover => {
-            let (distance, half_width) = match kind {
-                SecondaryGadget::RazorWire => (g.razor_wire.distance, g.razor_wire.length / 2.0),
-                _ => (g.cover.distance, g.cover.width / 2.0),
+            let distance = match kind {
+                SecondaryGadget::RazorWire => g.razor_wire.distance,
+                _ => g.cover.distance,
             };
             let feet = transform.translation;
             let ahead = feet + forward * distance;
@@ -151,13 +154,10 @@ pub fn place_target(
                 return None;
             }
             let floor = above - Vec3::Y * hit.distance;
-            // Room for it: its ends must not be inside a wall.
-            let right = yaw * Vec3::X;
-            let room = |side: Vec3| -> bool {
-                let start = floor + Vec3::Y * 0.3;
-                Dir3::new(side).ok().is_none_or(|dir| spatial.cast_ray(start, dir, half_width * 0.8, true, &world).is_none())
-            };
-            if !room(right) && !room(-right) {
+            // The middle must be clear (a doorway is fine: wire and cover
+            // ends may tuck into the jambs).
+            let middle = Collider::sphere(0.12);
+            if !spatial.shape_intersections(&middle, floor + Vec3::Y * 0.35, Quat::IDENTITY, &world).is_empty() {
                 return None;
             }
             Some(Transform::from_translation(floor).with_rotation(yaw))
@@ -197,6 +197,7 @@ pub fn spawn_deployable(
                     Health::new(w.health),
                     at,
                     Visibility::default(),
+                    children![super::blast_anchor(Vec3::Y * w.height / 2.0)],
                 ))
                 .id()
         }
@@ -241,6 +242,7 @@ pub fn spawn_deployable(
                 Collider::cuboid(0.1, 0.1, 0.06),
                 Sensor,
                 CollisionLayers::new(GameLayer::Hitbox, LayerMask::NONE),
+                children![super::blast_anchor(Vec3::Z * 0.03)],
             ))
             .id(),
     }

@@ -9,12 +9,14 @@
 //! | `op auger\|lark\|mortise\|fathom` | become that operator (free play), on its side |
 //! | `secondary <name>` | carry that secondary (breach, frag, flash, smoke, wire, cover, impact, alarm) |
 //! | `tp x y z [yaw pitch]`, `look yaw pitch` | place / aim the player (degrees; yaw 0 = -Z, 90 = -X) |
+//! | `aimat x y z` | aim the player's eyes at a point |
 //! | `move strafe forward`, `stance stand\|crouch\|prone` | hold a movement input / stance |
 //! | `hold3 secs`, `tap3` | hold / tap the unique-gadget key |
 //! | `hold4 secs`, `tap4` | hold / tap the secondary-gadget key |
 //! | `g [secs]`, `next`, `prev` | recon key (tap, or hold), switch drone / camera |
 //! | `drive strafe forward` | drone drive axis while connected (`drive 0 0` stops) |
 //! | `dlook yaw pitch` | drone heading and camera tilt, or CCTV pan and tilt (degrees) |
+//! | `dface x z` | turn the drone you are driving towards a point |
 //! | `reinforce` | reinforce the wall/hatch aimed at, plate on your side |
 //! | `hardbreach r` | hard breach (radius r) where you aim |
 //! | `fire` | pull the trigger once (a real M3 shot) |
@@ -90,6 +92,7 @@ enum Command {
     Secondary(SecondaryGadget),
     Teleport(Vec3, Option<(f32, f32)>),
     Look(f32, f32),
+    AimAt(Vec3),
     Move(Vec2),
     Stance(Stance),
     Unique(f32),
@@ -98,6 +101,7 @@ enum Command {
     Cycle(i32),
     Drive(Vec2),
     DroneLook(f32, f32),
+    DroneFace(f32, f32),
     Reinforce,
     HardBreach(f32),
     Fire,
@@ -153,6 +157,7 @@ impl Script {
                 },
                 "tp" => Command::Teleport(v3(2), (words.len() >= 7).then(|| (num(5, 0.0), num(6, 0.0)))),
                 "look" => Command::Look(num(2, 0.0), num(3, 0.0)),
+                "aimat" => Command::AimAt(v3(2)),
                 "move" => Command::Move(Vec2::new(num(2, 0.0), num(3, 0.0))),
                 "stance" => Command::Stance(match arg {
                     "crouch" => Stance::Crouch,
@@ -168,6 +173,7 @@ impl Script {
                 "prev" => Command::Cycle(-1),
                 "drive" => Command::Drive(Vec2::new(num(2, 0.0), num(3, 0.0))),
                 "dlook" => Command::DroneLook(num(2, 0.0), num(3, 0.0)),
+                "dface" => Command::DroneFace(num(2, 0.0), num(3, 0.0)),
                 "reinforce" => Command::Reinforce,
                 "hardbreach" => Command::HardBreach(num(2, 0.5)),
                 "fire" => Command::Fire,
@@ -257,6 +263,7 @@ fn run_script(
     mut breaches: MessageWriter<HardBreach>,
     mut reinforce: MessageWriter<ReinforceRequest>,
     mut resets: MessageWriter<RoundReset>,
+    (mut meshes, mut materials): (ResMut<Assets<Mesh>>, ResMut<Assets<StandardMaterial>>),
     mut commands: Commands,
 ) {
     let now = time.elapsed_secs();
@@ -301,6 +308,11 @@ fn run_script(
                 input.yaw = yaw.to_radians().rem_euclid(std::f32::consts::TAU);
                 input.pitch = pitch.to_radians();
             }
+            Command::AimAt(p) => {
+                let to = p - eye;
+                input.yaw = (-to.x).atan2(-to.z).rem_euclid(std::f32::consts::TAU);
+                input.pitch = (to.y / to.length().max(1e-4)).asin();
+            }
             Command::Move(axis) => held.movement = Some(axis),
             Command::Stance(stance) => held.stance = Some(stance),
             Command::Unique(secs) => held.unique_until = now + secs,
@@ -309,6 +321,19 @@ fn run_script(
             Command::Cycle(by) => held.cycle += by,
             Command::Drive(axis) => held.drive = axis,
             Command::DroneLook(yaw, pitch) => held.look = Some((yaw.to_radians(), pitch.to_radians())),
+            Command::DroneFace(x, z) => {
+                let driving = logs.player.get(me).ok().and_then(|p| p.7.copied());
+                match driving.and_then(|v| match v {
+                    RemoteView::Drone(d) => logs.drones.get(d).ok(),
+                    RemoteView::Camera(_) => None,
+                }) {
+                    Some((_, _, at, _)) => {
+                        let to = Vec3::new(x, at.translation.y, z) - at.translation;
+                        held.look = Some(((-to.x).atan2(-to.z), 0.0));
+                    }
+                    None => warn!("gadget test: dface: not driving a drone"),
+                }
+            }
             Command::Reinforce => match aim_world() {
                 Some((collider, _)) => {
                     reinforce.write(ReinforceRequest {
@@ -436,6 +461,12 @@ fn run_script(
                     Transform::from_translation(p).with_rotation(Quat::from_rotation_y(yaw)),
                     Visibility::default(),
                     (RigidBody::Kinematic, CustomPositionIntegration, TransformInterpolation, LinearVelocity::ZERO),
+                    // A stand-in body so screenshots show where it is.
+                    children![(
+                        Mesh3d(meshes.add(Capsule3d::new(0.3, 1.2))),
+                        MeshMaterial3d(materials.add(Color::srgb(0.55, 0.55, 0.6))),
+                        Transform::from_xyz(0.0, 0.9, 0.0),
+                    )],
                 ));
             }
             Command::WalkerMove(axis) => held.walker_move = axis,
@@ -590,7 +621,7 @@ fn log_state(q: &LogQueries, me: Entity, at: Vec3) {
         info!("  walker {e} at {:.2} health {:.0} slow {:?}", t.translation, h.current, slow.map(|s| s.0));
     }
     for (e, name, s, gt) in &q.surfaces {
-        if gt.translation().distance(at) < 4.0 {
+        if gt.translation().distance(at) < 6.5 {
             info!(
                 "  surface {e} {name}: {:.0}% intact, reinforced {}, broken {}",
                 s.intact_fraction() * 100.0,

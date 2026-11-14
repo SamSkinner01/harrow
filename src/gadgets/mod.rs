@@ -77,7 +77,7 @@ use crate::{
     combat::{Dead, Team},
     config::BodyTuning,
     destruction::DestructionSystems,
-    player::{CharacterState, LocalPlayer, Player, PlayerInput, input_captured},
+    player::{CharacterState, HitZone, LocalPlayer, Player, PlayerInput, input_captured},
     round::{Round, RoundPhase, RoundReset, RoundSystems},
 };
 
@@ -621,6 +621,14 @@ fn create_gadget_assets(
         unit_sphere: meshes.add(Sphere::new(0.5)),
         unit_cylinder: meshes.add(Cylinder::new(0.5, 1.0)),
     });
+}
+
+/// Child marking where blasts measure their distance to a gadget.
+/// Destruction's explosion damage uses a target's hit zones, or else a
+/// point 1 m above it (inside the ceiling for a wall camera). This zone
+/// has no collider, so bullets and melee never see it.
+pub(crate) fn blast_anchor(at: Vec3) -> impl Bundle {
+    (Name::new("Blast anchor"), HitZone::Torso, Transform::from_translation(at))
 }
 
 /// A box of `size` at `at` (local), using the shared unit cube.

@@ -135,6 +135,7 @@ fn spawn_all(commands: &mut Commands, layout: &CctvLayout, tuning: &Tuning) {
             Collider::cuboid(0.16, 0.14, 0.3),
             Sensor,
             CollisionLayers::new(GameLayer::Hitbox, LayerMask::NONE),
+            children![super::blast_anchor(Vec3::ZERO)],
         ));
     }
 }
