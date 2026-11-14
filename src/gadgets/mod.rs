@@ -274,7 +274,7 @@ fn create_gadget_assets(
     commands.insert_resource(GadgetAssets {
         dart_body: meshes.add(Cylinder::new(0.012, 0.13)),
         dart_fin: meshes.add(Cuboid::new(0.05, 0.035, 0.002)),
-        dart_light: meshes.add(Sphere::new(0.012)),
+        dart_light: meshes.add(Sphere::new(0.016)),
         stake_spike: meshes.add(Cylinder::new(0.016, 0.30)),
         stake_head: meshes.add(Cylinder::new(0.045, 0.035)),
         stake_light: meshes.add(Sphere::new(0.014)),

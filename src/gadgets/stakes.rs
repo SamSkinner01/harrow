@@ -103,7 +103,12 @@ fn place_stakes(
     }
 }
 
+/// Height of the stake's hit volume centre above the floor.
+const HIT_CENTRE: f32 = 0.12;
+
 /// A stake standing in the floor at `point` (also used by test scripts).
+/// The entity sits at the centre of its hit volume, so bullets that hit
+/// the collider hit the entity with the `Health`.
 pub(crate) fn spawn_stake(
     commands: &mut Commands,
     assets: &GadgetAssets,
@@ -120,7 +125,7 @@ pub(crate) fn spawn_stake(
             GadgetOwner { entity: owner, team },
             DeployedGadget,
             Health::new(tuning.round.stakes.health),
-            Transform::from_translation(point),
+            Transform::from_translation(point + Vec3::Y * HIT_CENTRE),
             Visibility::default(),
             // Hit volume around the exposed part, for bullets.
             Collider::capsule(0.06, 0.12),
@@ -132,17 +137,17 @@ pub(crate) fn spawn_stake(
             parent.spawn((
                 Mesh3d(a.stake_spike.clone()),
                 MeshMaterial3d(a.steel.clone()),
-                Transform::from_xyz(0.0, 0.05, 0.0),
+                Transform::from_xyz(0.0, 0.05 - HIT_CENTRE, 0.0),
             ));
             parent.spawn((
                 Mesh3d(a.stake_head.clone()),
                 MeshMaterial3d(a.dark_metal.clone()),
-                Transform::from_xyz(0.0, 0.2, 0.0),
+                Transform::from_xyz(0.0, 0.2 - HIT_CENTRE, 0.0),
             ));
             parent.spawn((
                 Mesh3d(a.stake_light.clone()),
                 MeshMaterial3d(a.stake_glow.clone()),
-                Transform::from_xyz(0.0, 0.225, 0.0),
+                Transform::from_xyz(0.0, 0.225 - HIT_CENTRE, 0.0),
                 StakeLight,
             ));
         })
@@ -206,7 +211,7 @@ fn detect(
             if *walker_team != other_team(owner.team) || state.saturated_for > 0.0 {
                 continue;
             }
-            let offset = step.position - at.translation;
+            let offset = step.position - (at.translation - Vec3::Y * HIT_CENTRE);
             if offset.with_y(0.0).length() > tune.radius || offset.y.abs() > tune.vertical_reach {
                 continue;
             }

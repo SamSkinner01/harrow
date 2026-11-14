@@ -187,6 +187,10 @@ pub(crate) fn spawn_listening_dart(
         .id();
     stick_dart(commands, dart, point, direction, tuning);
     spawn_dart_model(commands, assets, dart, true);
+    commands.write_message(GadgetEvent::DartStuck {
+        position: point,
+        team,
+    });
     dart
 }
 

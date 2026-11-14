@@ -242,16 +242,21 @@ fn reset_characters(
     });
 }
 
-/// Who can't walk this tick: planting/disabling, choosing an operator,
-/// attackers during prep (if tuned so), and everyone after the match.
+/// Who can't walk this tick: planting/disabling, the dead, choosing an
+/// operator, attackers during prep (if tuned so), and everyone after the
+/// match.
 fn update_movement_locks(
     round: Res<Round>,
     tuning: Res<Tuning>,
-    players: Query<(Entity, &Team, Has<ObjectiveInteraction>, Has<MovementLock>), With<Player>>,
+    players: Query<
+        (Entity, &Team, Has<ObjectiveInteraction>, Has<Dead>, Has<MovementLock>),
+        With<Player>,
+    >,
     mut commands: Commands,
 ) {
-    for (entity, team, interacting, locked) in &players {
+    for (entity, team, interacting, dead, locked) in &players {
         let should = interacting
+            || dead
             || match round.phase {
                 RoundPhase::OperatorSelect | RoundPhase::MatchEnd => true,
                 RoundPhase::Prep => *team == Team::Attackers && tuning.round.attackers_hold_in_prep,

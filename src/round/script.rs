@@ -12,7 +12,11 @@
 //!   operator screen.
 //! - `move strafe,forward[,sprint]`, `stop`, `stance stand|crouch|prone`,
 //!   `look yaw,pitch` (degrees), `teleport x,y,z[,yaw[,pitch]]`.
-//! - `kill`: the local player dies (1000 damage).
+//! - `kill`: the local player dies (1000 damage). `hurt N`: N damage
+//!   (armour applies).
+//! - `shoot`: a test bullet from the local player's eye along the look
+//!   direction (world and hit-zone layers, like M3's bullets); whatever it
+//!   hits that has `Health` takes 100 damage.
 //! - `walker attackers|defenders x,y,z[,yaw]`: spawn a stand-in character
 //!   (a grey capsule) on that team; `walker-move strafe,forward[,sprint]`,
 //!   `walker-stance stand|crouch|prone` and `walker-kill` drive all of them.
@@ -30,7 +34,10 @@
 
 use std::path::PathBuf;
 
-use avian3d::prelude::{CustomPositionIntegration, LinearVelocity, RigidBody, TransformInterpolation};
+use avian3d::prelude::{
+    CustomPositionIntegration, LinearVelocity, RigidBody, SpatialQuery, SpatialQueryFilter,
+    TransformInterpolation,
+};
 use bevy::{
     prelude::*,
     render::view::screenshot::{Screenshot, save_to_disk},
@@ -44,7 +51,8 @@ use super::{
 use crate::{
     combat::{DamageKind, DamageMessage, Health, Noise, NoiseKind, Team},
     config::Tuning,
-    gadgets::{GadgetAssets, GadgetIntent, spawn_listening_dart, spawn_stake},
+    gadgets::{GadgetAssets, GadgetIntent, eye_and_look, spawn_listening_dart, spawn_stake},
+    physics::GameLayer,
     player::{CharacterState, LocalPlayer, Player, PlayerInput, Stance},
 };
 
@@ -71,7 +79,10 @@ impl Plugin for RoundScriptPlugin {
         app.insert_resource(Script { steps, next: 0 })
             .init_resource::<ScriptInput>()
             .add_systems(Startup, create_walker_assets)
-            .add_systems(FixedUpdate, (run_script, log_status).in_set(RoundSystems::Script))
+            .add_systems(
+                FixedUpdate,
+                ((run_script, script_shoot).chain(), log_status).in_set(RoundSystems::Script),
+            )
             .add_systems(
                 RunFixedMainLoop,
                 apply_script_input
@@ -108,6 +119,8 @@ enum Command {
     Look(f32, f32),
     Teleport(Vec3, Option<f32>, Option<f32>),
     Kill,
+    Hurt(f32),
+    Shoot,
     Walker(Team, Vec3, f32),
     WalkerMove(Vec2, bool),
     WalkerStance(Stance),
@@ -131,6 +144,8 @@ struct ScriptInput {
     walker_move: Vec2,
     walker_sprint: bool,
     walker_stance: Stance,
+    /// A `shoot` waiting for `script_shoot`.
+    shoot: bool,
 }
 
 /// A stand-in character spawned by the script.
@@ -271,6 +286,8 @@ fn parse_step(text: &str) -> Result<Step, String> {
             Command::Teleport(vec3(&n)?, n.get(3).copied(), n.get(4).copied())
         }
         "kill" => Command::Kill,
+        "hurt" => Command::Hurt(args.parse().map_err(|_| "hurt expects a number")?),
+        "shoot" => Command::Shoot,
         "dart" => {
             let n = floats(args)?;
             let dir = if n.len() >= 6 { Vec3::new(n[3], n[4], n[5]) } else { Vec3::NEG_Y };
@@ -370,15 +387,17 @@ fn run_script(
                     player_input.pitch = pitch.to_radians();
                 }
             }
-            Command::Kill => {
+            Command::Kill | Command::Hurt(_) => {
+                let amount = if let Command::Hurt(n) = step.command { n } else { 1000.0 };
                 damage.write(DamageMessage {
                     target: me,
-                    amount: 1000.0,
+                    amount,
                     kind: DamageKind::Bullet,
                     zone: None,
                     source: None,
                 });
             }
+            Command::Shoot => input.shoot = true,
             Command::Walker(team, at, yaw) => {
                 let yaw = yaw.to_radians();
                 let height = tuning.body.stand_height;
@@ -494,22 +513,68 @@ fn apply_script_input(
     }
 }
 
-/// Once a second: round, phase, timer, score, and where the player is.
+/// A test bullet, the way M3's hitscan will see the world: world geometry
+/// and hit-zone sensors (where deployed gadgets live).
+fn script_shoot(
+    mut input: ResMut<ScriptInput>,
+    tuning: Res<Tuning>,
+    spatial: SpatialQuery,
+    player: Query<
+        (Entity, &Transform, &CharacterState, &PlayerInput, &Children),
+        With<LocalPlayer>,
+    >,
+    targets: Query<(&Name, Has<Health>)>,
+    mut damage: MessageWriter<DamageMessage>,
+) {
+    if !std::mem::take(&mut input.shoot) {
+        return;
+    }
+    let Ok((me, transform, state, player_input, children)) = player.single() else {
+        return;
+    };
+    let (eye, look) = eye_and_look(transform, state, player_input, &tuning.body, tuning.lean.offset);
+    // Not our own hit zones.
+    let filter = SpatialQueryFilter::from_mask([GameLayer::World, GameLayer::Hitbox])
+        .with_excluded_entities(children.iter().chain([me]));
+    let Some(hit) = spatial.cast_ray(eye, look, 50.0, true, &filter) else {
+        info!("script: shot hit nothing");
+        return;
+    };
+    let (name, has_health) = targets
+        .get(hit.entity)
+        .map(|(n, h)| (n.as_str().to_string(), h))
+        .unwrap_or(("unnamed".into(), false));
+    info!(
+        "script: shot hit {} ({name}) at {:.1} m, has health: {has_health}",
+        hit.entity, hit.distance
+    );
+    if has_health {
+        damage.write(DamageMessage {
+            target: hit.entity,
+            amount: 100.0,
+            kind: DamageKind::Bullet,
+            zone: None,
+            source: Some(me),
+        });
+    }
+}
+
+/// Once a second: round, phase, timer, score, and the local player.
 fn log_status(
     round: Res<Round>,
-    player: Query<(&Transform, &Team), With<LocalPlayer>>,
+    player: Query<(&Transform, &Team, &Health), With<LocalPlayer>>,
     mut ticks: Local<u32>,
 ) {
     *ticks += 1;
     if *ticks % 64 != 0 {
         return;
     }
-    let (at, team) = player
+    let (at, team, health) = player
         .single()
-        .map(|(t, team)| (t.translation, format!("{team:?}")))
-        .unwrap_or((Vec3::ZERO, "-".into()));
+        .map(|(t, team, h)| (t.translation, format!("{team:?}"), h.current))
+        .unwrap_or((Vec3::ZERO, "-".into(), 0.0));
     info!(
-        "status: round {} {:?} {:.1}s left, score blue {} red {}, local {team} at {at:.2}",
+        "status: round {} {:?} {:.1}s left, score blue {} red {}, local {team} health {health:.0} at {at:.2}",
         round.number, round.phase, round.time_left, round.score_blue, round.score_red
     );
 }
