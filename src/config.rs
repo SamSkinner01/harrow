@@ -32,8 +32,36 @@ impl Plugin for TuningPlugin {
 #[serde(deny_unknown_fields)]
 pub struct Tuning {
     pub look: LookTuning,
+    pub controls: ControlTuning,
     pub movement: MovementTuning,
     pub body: BodyTuning,
+    pub lean: LeanTuning,
+}
+
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct ControlTuning {
+    pub sprint: ButtonMode,
+    pub crouch: ButtonMode,
+    pub lean: ButtonMode,
+}
+
+/// Whether an input acts while held or flips on/off with each press.
+#[derive(Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ButtonMode {
+    Hold,
+    Toggle,
+}
+
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct LeanTuning {
+    /// Camera roll at full lean, degrees.
+    pub angle: f32,
+    /// Sideways head/camera shift at full lean, metres.
+    pub offset: f32,
+    /// Seconds from upright to full lean.
+    pub time: f32,
 }
 
 #[derive(Deserialize, Clone, Debug)]
@@ -51,6 +79,8 @@ pub struct LookTuning {
 pub struct MovementTuning {
     pub walk_speed: f32,
     pub sprint_speed: f32,
+    pub crouch_speed: f32,
+    pub prone_speed: f32,
     pub acceleration: f32,
     pub deceleration: f32,
     pub gravity: f32,
@@ -64,7 +94,11 @@ pub struct MovementTuning {
 pub struct BodyTuning {
     pub radius: f32,
     pub stand_height: f32,
+    pub crouch_height: f32,
+    pub prone_height: f32,
     pub eye_from_top: f32,
+    pub crouch_time: f32,
+    pub prone_time: f32,
 }
 
 #[derive(Resource)]

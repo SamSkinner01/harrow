@@ -27,4 +27,6 @@ pub enum GameLayer {
     World,
     /// Character movement bodies.
     Character,
+    /// Character hit zones. Sensors: only bullets (spatial queries) see them.
+    Hitbox,
 }

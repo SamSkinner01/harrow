@@ -11,9 +11,17 @@
         // Vertical field of view, degrees.
         fov: 72.0,
     ),
+    controls: (
+        // Hold or Toggle for each.
+        sprint: Hold,
+        crouch: Toggle,
+        lean: Toggle,
+    ),
     movement: (
         walk_speed: 3.4,
         sprint_speed: 5.6,
+        crouch_speed: 1.9,
+        prone_speed: 0.8,
         // How quickly you reach target speed (m/s gained per second).
         acceleration: 30.0,
         // How quickly you stop when you let go of the keys.
@@ -27,7 +35,21 @@
     body: (
         radius: 0.3,
         stand_height: 1.8,
+        crouch_height: 1.2,
+        prone_height: 0.6,
         // Eye position below the top of the body.
         eye_from_top: 0.18,
+        // Seconds to go between stand and crouch.
+        crouch_time: 0.25,
+        // Seconds to go between stand and prone.
+        prone_time: 0.9,
+    ),
+    lean: (
+        // Camera tilt at full lean, degrees.
+        angle: 14.0,
+        // How far the head (and camera) moves sideways at full lean, metres.
+        offset: 0.32,
+        // Seconds from upright to full lean.
+        time: 0.18,
     ),
 )

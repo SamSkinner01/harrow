@@ -56,10 +56,17 @@ Bevy's API changes between releases, so everything is pinned with `=` in
 |---|---|
 | Mouse | Look |
 | W A S D | Move |
-| Left Shift (hold) | Sprint (forward only) |
+| Left Shift (hold) | Sprint (forward only; stands you up, cancels lean) |
+| C | Crouch (toggle) |
+| Z | Prone (toggle) |
+| Q / E | Lean left / right (toggle) |
 | Esc / left click | Release / capture the mouse |
 | F3 | Toggle FPS overlay |
+| F4 | Show hit zones and movement capsule |
+| F5 | Third-person debug view |
 | F12 | Save screenshot to `screenshots/` |
+
+Hold vs. toggle for sprint, crouch and lean is set in the tuning file.
 
 ## Tuning
 
@@ -74,6 +81,8 @@ cargo run -- --screenshot out.png              # screenshot after 120 frames, th
 cargo run -- --screenshot out.png --screenshot-frames 300
 cargo run -- --spawn 11,0,4,0,-10              # spawn at x,y,z facing yaw,pitch (degrees)
 cargo run -- --auto-move 0,1,sprint            # hold strafe,forward[,sprint]
+cargo run -- --stance crouch --lean left       # hold a stance / lean
+cargo run -- --third-person --hitboxes         # start with debug views on
 cargo run -- --trace-player                    # log feet position 4x per second
 ```
 
