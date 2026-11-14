@@ -8,7 +8,7 @@ use avian3d::prelude::LinearVelocity;
 use bevy::prelude::*;
 
 use super::{CharacterState, Footstep, LocalPlayer, PlayerInput, movement::stride_and_loudness};
-use crate::{config::Tuning, debug::DebugView};
+use crate::{config::Tuning, debug::DebugView, weapons::AimView};
 
 pub struct PlayerCameraPlugin;
 
@@ -74,7 +74,10 @@ fn update_view_bob(
 const THIRD_PERSON_OFFSET: Vec3 = Vec3::new(0.7, 0.3, 3.2);
 
 fn follow_local_player(
-    player: Single<(&Transform, &PlayerInput, &CharacterState), With<LocalPlayer>>,
+    player: Single<
+        (&Transform, &PlayerInput, &CharacterState, Option<&AimView>),
+        With<LocalPlayer>,
+    >,
     camera: Single<
         (&mut Transform, &mut Projection, &ViewBob),
         (With<PlayerCamera>, Without<LocalPlayer>),
@@ -83,8 +86,10 @@ fn follow_local_player(
     fixed_time: Res<Time<Fixed>>,
     view: Res<DebugView>,
 ) {
-    let (body, input, state) = player.into_inner();
+    let (body, input, state, aim) = player.into_inner();
     let (mut transform, mut projection, bob) = camera.into_inner();
+    // Weapon ADS zoom and recoil kick (M3).
+    let aim = aim.copied().unwrap_or_default();
 
     // Body position is already interpolated by Avian; blend height and lean
     // the same way so crouch and lean are smooth at any frame rate.
@@ -92,7 +97,7 @@ fn follow_local_player(
 
     // Look angles come straight from input (not the fixed tick), so turning
     // is never delayed or stepped.
-    let look = Quat::from_euler(EulerRot::YXZ, input.yaw, input.pitch, 0.0);
+    let look = Quat::from_euler(EulerRot::YXZ, input.yaw + aim.yaw, input.pitch + aim.pitch, 0.0);
     let right = Quat::from_rotation_y(input.yaw) * Vec3::X;
     let eye = body.translation
         + Vec3::Y * (height - tuning.body.eye_from_top)
@@ -113,7 +118,7 @@ fn follow_local_player(
     }
 
     if let Projection::Perspective(perspective) = projection.as_mut() {
-        let fov = tuning.look.fov.to_radians();
+        let fov = tuning.look.fov.to_radians() * aim.fov_scale;
         if perspective.fov != fov {
             perspective.fov = fov;
         }

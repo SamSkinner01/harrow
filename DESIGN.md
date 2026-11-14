@@ -48,6 +48,78 @@ All numbers live in `assets/config/tuning.ron`; these are the rules.
 - Level rule: characters don't step up ledges, so every staircase and
   threshold needs a ramp collider (visual steps on top).
 
+## M3 weapons
+
+All numbers live in the `weapons` section of `assets/config/tuning.ron`;
+these are the rules (code: `src/weapons/`).
+
+**Loadout (placeholder until operators, M6):** every character carries a
+primary and a sidearm. Both are original designs:
+- **TAMARISK**, assault rifle: full auto, 30-round curved magazine, compact
+  open reflex sight, skeletal stock, octagonal sand-coloured handguard.
+- **ACACIA**, sidearm: semi-auto (one shot per click, rate-capped),
+  15-round magazine, two-tone, three-dot iron sights.
+Weapons spawn full with a round chambered (30+1, 15+1).
+
+**Firing.** Hitscan from the true eye position (the same point the camera
+uses, including the lean offset, so leaning round a corner shoots from where
+you see). Direction = look angles + recoil + random spread. The fire rate is
+exact over time (no rounding to the 64 Hz tick). You can't fire or aim while
+sprinting or for a moment after.
+
+**Damage model.** Each weapon has base damage per bullet, falling off
+linearly between two distances to a minimum share. Body region multiplies
+it: **any bullet to the head kills** (like the feel target; can be switched
+to a multiplier), torso 1x, legs reduced. Bullets stop in the first body
+they hit (no over-penetration through people). Friendly fire is on.
+Operator armour (M6) scales body and leg damage when it lands; head shots
+kill through any armour. Deployed gadgets (hit volumes with health but no
+body region) take the bullet's base damage and stop it.
+
+**Penetration.** Soft surfaces (plaster, wooden floors, hatches, crates,
+barricades: anything the kit marks soft) let bullets through; each one costs
+a share of the damage, up to a maximum number of soft layers. Hard surfaces
+(stone, and anything without a surface kind) stop the bullet. Every surface
+a bullet enters sends a `SurfaceImpact` (kind `Bullet`) at the entry point
+with the bullet's direction; destruction (M4) uses these to open holes.
+Head shots through a soft wall still kill.
+
+**Recoil.** Each weapon has a fixed, learnable pattern: shot N of a burst
+always kicks the view by the same amount (mostly up, wandering left and
+right later in the spray), repeating the pattern's tail on long sprays.
+Kicks are smaller while aimed. The view kick is shown by the camera. After a
+short pause the view drifts back to where you aimed and the pattern starts
+over. Visual weapon kick is separate and cosmetic.
+
+**Spread.** Bullets land randomly inside a cone: wide from the hip, tight
+when aimed. Moving widens it (scaled by speed); crouching and prone tighten
+it. Sustained fire adds bloom (only part of it while aimed), which shrinks
+once you stop. The first shot after a pause is much more accurate than the
+rest. The random spread is seeded by the shot count, so the same inputs
+always give the same shots (needed for server-side hit checks, M8).
+
+**Aim down sights.** Right mouse, hold or toggle (tuning). Aiming takes a
+fraction of a second, zooms the view per weapon, slows walking, and lines
+the weapon's sight up with the eye. No aiming while reloading or sprinting.
+
+**Reloads and switching.** A tactical reload (rounds left) keeps one in the
+chamber (magazine + 1); an empty reload is slower and gives a full
+magazine. Pulling the trigger on empty clicks and starts a reload (option).
+Switching weapons lowers the current one, then raises the other; it cancels
+a reload. Keys 1 / 2 or the mouse wheel. With the defuser in hand (M6) the
+weapon is lowered: no firing, aiming or reloading.
+
+**Noise.** Every shot and every reload start is a gameplay `Noise`
+(gunfire is loud, reloads quiet; loudness in the tuning file), so detection
+gadgets and later bots hear them.
+
+**Feedback.** HUD ammo (magazine / reserve), weapon name, reload progress,
+and a hit marker (white X on body hits, larger red X on head shots, held
+longer on kills). Bullet impacts show a short dust puff and chips (sparks on
+stone); nothing permanent. Training dummies (`--dummies`) flash red when
+hit, show a health bar, fall over at zero and stand up again after a few
+seconds.
+
 ## Controls (key map)
 
 Every module binds its own keys; this is the shared map so they don't clash.
