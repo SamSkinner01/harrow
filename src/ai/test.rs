@@ -61,7 +61,8 @@ impl Plugin for AiTestPlugin {
         let shots = value("--ai-shots").map(PathBuf::from);
         let spectate = shots.is_some() || args.iter().any(|a| a == "--ai-spectate");
         if spectate {
-            app.insert_resource(Spectator::default()).add_systems(
+            let front = value("--ai-cam").as_deref() == Some("front");
+            app.insert_resource(Spectator { front, ..default() }).add_systems(
                 PostUpdate,
                 chase_camera.before(TransformSystems::Propagate),
             );
@@ -326,6 +327,8 @@ struct Spectator {
     chosen_at: f32,
     position: Option<Vec3>,
     weapon_camera_off: bool,
+    /// `--ai-cam front`.
+    front: bool,
 }
 
 /// Follow an interesting bot from behind its shoulder (replaces the
@@ -375,7 +378,13 @@ fn chase_camera(
     let forward = yaw * Vec3::NEG_Z;
     let right = yaw * Vec3::X;
     let head = feet + Vec3::Y * 1.55;
-    let wanted = head - forward * 2.4 + right * 0.75 + Vec3::Y * 0.35;
+    // `--ai-cam front`: a close look at the body and weapon from the front
+    // right; otherwise over the shoulder.
+    let wanted = if spectator.front {
+        head + forward * 1.9 + right * 0.9 - Vec3::Y * 0.25
+    } else {
+        head - forward * 2.4 + right * 0.75 + Vec3::Y * 0.35
+    };
     // Don't put the camera inside a wall.
     let filter = avian3d::prelude::SpatialQueryFilter::from_mask(crate::physics::GameLayer::World);
     let delta = wanted - head;
@@ -389,7 +398,11 @@ fn chase_camera(
         None => target,
     };
     spectator.position = Some(position);
-    let look_at = head + forward * 6.0 + Vec3::Y * (input.pitch.sin() * 6.0);
+    let look_at = if spectator.front {
+        head - Vec3::Y * 0.4
+    } else {
+        head + forward * 6.0 + Vec3::Y * (input.pitch.sin() * 6.0)
+    };
     *transform = Transform::from_translation(position).looking_at(look_at, Vec3::Y);
 }
 

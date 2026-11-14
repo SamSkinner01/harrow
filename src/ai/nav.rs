@@ -463,6 +463,16 @@ pub struct NavBuilder {
     region: Option<RegionUpdate>,
     /// Soft surfaces and where they are, to find removed ones.
     known: HashMap<Entity, (Vec2, Vec2)>,
+    /// Surfaces whose walkable shape changed this round (re-sampled again
+    /// when a new round restores them).
+    touched: bevy::platform::collections::HashSet<Entity>,
+}
+
+impl NavBuilder {
+    /// Built, and no area waiting to be patched.
+    pub fn idle(&self) -> bool {
+        self.stage == Stage::Done && self.dirty.is_empty() && self.region.is_none()
+    }
 }
 
 #[derive(Default, Clone, Copy, PartialEq, Eq, Debug)]
@@ -923,16 +933,25 @@ fn track_surfaces(
         if change.violent || change.removed.len() >= 40 {
             if let Some(&b) = builder.known.get(&change.surface) {
                 marks.push(b);
+                builder.touched.insert(change.surface);
             }
         }
     }
     for b in broken.read() {
         if let Some(&bounds) = builder.known.get(&b.surface) {
             marks.push(bounds);
+            builder.touched.insert(b.surface);
         }
     }
     if resets.read().last().is_some() {
-        marks.extend(builder.known.values().copied());
+        // Restored: only what changed shape needs looking at again (placed
+        // barricades going away show up as removals above).
+        let touched: Vec<Entity> = builder.touched.drain().collect();
+        for entity in touched {
+            if let Some(&b) = builder.known.get(&entity) {
+                marks.push(b);
+            }
+        }
     }
     if !grid.ready && builder.stage != Stage::Done {
         // The first build will see everything anyway.
@@ -1106,21 +1125,21 @@ fn update_regions(
     }
     let now = time.elapsed_secs();
     if builder.region.is_none() {
-        // Merge everything that has waited long enough (colliders are
-        // rebuilt on the fixed tick, so give it a moment).
-        let ready: Vec<(Vec2, Vec2)> = builder
-            .dirty
-            .iter()
-            .filter(|(_, _, at)| now - at >= 0.1)
-            .map(|(a, b, _)| (*a, *b))
-            .collect();
-        if ready.is_empty() {
+        // The first area that has waited long enough (colliders are rebuilt
+        // on the fixed tick, so give it a moment), merged with any waiting
+        // area that overlaps it; far-apart areas are done one by one.
+        let Some(first) = builder.dirty.iter().position(|(_, _, at)| now - at >= 0.1) else {
             return;
-        }
-        builder.dirty.retain(|(_, _, at)| now - at < 0.1);
-        let mut lo = Vec2::splat(f32::MAX);
-        let mut hi = Vec2::splat(f32::MIN);
-        for (a, b) in ready {
+        };
+        let (mut lo, mut hi, _) = builder.dirty.swap_remove(first);
+        loop {
+            let pad = Vec2::splat(1.0);
+            let overlapping = builder
+                .dirty
+                .iter()
+                .position(|(a, b, _)| a.cmple(hi + pad).all() && b.cmpge(lo - pad).all());
+            let Some(i) = overlapping else { break };
+            let (a, b, _) = builder.dirty.swap_remove(i);
             lo = lo.min(a);
             hi = hi.max(b);
         }
@@ -1137,11 +1156,15 @@ fn update_regions(
     }
     let Some(mut region) = builder.region else { return };
     let sampler = Sampler::new(&spatial, &colliders, &surfaces, &tuning);
-    let budget = Duration::from_secs_f32(tuning.ai.nav.update_budget_ms.max(0.2) / 1000.0);
-    let start = Instant::now();
     let width = region.max.x - region.min.x + 1;
     let height = region.max.y - region.min.y + 1;
     let columns = width * height;
+    // Big areas (a new round restoring the map) get the build budget, so
+    // paths through them work again quickly.
+    let nav = &tuning.ai.nav;
+    let budget_ms = if columns > 300 { nav.build_budget_ms } else { nav.update_budget_ms };
+    let budget = Duration::from_secs_f32(budget_ms.max(0.2) / 1000.0);
+    let start = Instant::now();
     // Linking covers a one-column ring around the region too.
     let ring_min = (region.min - IVec2::ONE).max(IVec2::ZERO);
     let ring_max = (region.max + IVec2::ONE).min(IVec2::new(grid.nx - 1, grid.nz - 1));

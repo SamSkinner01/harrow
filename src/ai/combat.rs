@@ -127,7 +127,8 @@ fn fight(
         let state = &mut *state;
         let c = &mut state.combat;
         state.buttons.trigger = false;
-        state.buttons.aim = false;
+        // Holding an angle: already aimed down sights, like a player would.
+        state.buttons.aim = state.nav.arrived && matches!(state.goal.kind, GoalKind::Hold) && state.goal.watch.is_some();
         state.look.combat = None;
         c.stand_still = false;
         if !shooting_allowed {

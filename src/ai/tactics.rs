@@ -139,6 +139,7 @@ fn analyse_map(
     time: Res<Time<Real>>,
     mut last: Local<f32>,
     mut pending_reset: Local<Option<f32>>,
+    builder: Res<super::nav::NavBuilder>,
 ) {
     let now = time.elapsed_secs();
     if resets.read().last().is_some() {
@@ -153,7 +154,7 @@ fn analyse_map(
     let Some(layout) = layout else { return };
     let stale = grid.revision != tactics.revision && now - *last > 3.0;
     // After a reset the grid is patched over a few frames; wait for it.
-    let reset_due = pending_reset.is_some_and(|at| now - at > 0.6);
+    let reset_due = pending_reset.is_some_and(|at| now - at > 0.3) && builder.idle();
     if tactics.ready && !stale && !reset_due {
         return;
     }

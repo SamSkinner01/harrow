@@ -128,7 +128,7 @@ pub struct LookState {
 }
 
 /// Searches allowed per tick across all bots.
-const SEARCHES_PER_TICK: u32 = 2;
+const SEARCHES_PER_TICK: u32 = 1;
 
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn drive(

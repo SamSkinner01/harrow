@@ -180,6 +180,8 @@ pub struct Mind {
     pub roam: Option<Vec3>,
     pub roam_until: f32,
     pub dart_at: f32,
+    /// Moved to the contested site this round.
+    pub rotated: bool,
     /// When the bot arrived at its goal (for activities).
     pub arrived_at: Option<f32>,
     /// Activity button timing (press once, then wait).
@@ -237,6 +239,7 @@ fn reset_minds(
         state.mind.retreat_cooldown = 0.0;
         state.mind.roam = None;
         state.mind.dart_at = 0.0;
+        state.mind.rotated = false;
     }
 }
 
@@ -704,6 +707,29 @@ fn defender_jobs(
 /// Defenders without jobs: anchors hold, roamers roam and hunt.
 fn defend(ctx: &Ctx, state: &mut BotState, bot: &mut Bot) -> Goal {
     let b = &ctx.tuning.ai.behaviour;
+    // Rotate: if attackers are reported at or near another site and none
+    // near mine, about half the anchors go to help (once a round).
+    if state.mind.role == Role::Anchor && !state.mind.rotated && ctx.tactics.sites.len() > 1 {
+        let near = |centre: Vec3| {
+            ctx.intel
+                .contacts(ctx.team)
+                .iter()
+                .filter(|c| ctx.now - c.time < 5.0 && c.pos.distance(centre) < 9.0)
+                .count()
+        };
+        let mine = state.mind.site.and_then(|s| ctx.tactics.site(s));
+        if let Some(mine) = mine
+            && near(mine.centre) == 0
+            && let Some(hot) = ctx.tactics.sites.iter().filter(|s| s.id != mine.id).max_by_key(|s| near(s.centre))
+            && near(hot.centre) > 0
+            && bot.index % 2 == 0
+        {
+            info!("ai: defender {} rotates to site {}", bot.index, hot.id.letter());
+            state.mind.site = Some(hot.id);
+            state.mind.rotated = true;
+            state.mind.hold_since = ctx.now;
+        }
+    }
     let Some(site) = state.mind.site.and_then(|s| ctx.tactics.site(s)).or(ctx.tactics.sites.first()) else {
         return Goal::default();
     };
