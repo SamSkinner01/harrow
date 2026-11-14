@@ -2,8 +2,10 @@
 
 This bundle is the headless Harrow server for x86_64 Linux: no window, GPU,
 audio or input devices. It needs **glibc 2.35 or newer** (Ubuntu 22.04+,
-Debian 12+, Fedora 36+, Rocky/Alma 10) and about 150 MB of RAM. One server
-runs one match on UDP port 5888 (configurable) for up to 10 players.
+Debian 12+, Fedora 36+, Rocky/Alma 10) and about 500 MB of RAM for the full
+Harrow Keep (about 220 MB for section A): a 1 GB VPS works, 2 GB is
+comfortable. One server runs one match on UDP port 5888 (configurable) for
+up to 10 players.
 
 ```
 harrow                     the server binary (dedicated build)

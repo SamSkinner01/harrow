@@ -57,8 +57,9 @@ RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
 SystemCallArchitectures=native
 SystemCallFilter=@system-service
 UMask=0077
-# A runaway server can't take the whole VPS down (it needs ~100-200 MB).
-MemoryMax=1G
+# A runaway server can't take the whole VPS down (the full map needs about
+# 500 MB, section A about 220 MB).
+MemoryMax=1536M
 TasksMax=256
 
 [Install]

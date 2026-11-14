@@ -880,8 +880,10 @@ RAM. A headless server reads `assets/` through `LeanAssetReader`
 `.glb` models become a 1x1 stand-in, everything else (kit and prop
 meshes: collision; character skeletons and animations; tuning) loads
 normally. Soft surfaces build no render meshes without a render app
-(like the map's static batching). Memory, dev build: section A 755 ->
-277 MB; full map 1136 -> 522 MB. Release lean build: see README-VPS.md.
+(like the map's static batching). Memory (RSS, idle): dev build,
+section A 755 -> 277 MB, full map 1136 -> 522 MB; release lean build
+(the VPS bundle) 213 MB on section A, 435-490 MB on the full map
+(`tools/scripts/server_memory.sh`).
 
 **Keys.** `netcode_key(secret)`: no secret, the development key; a
 secret (server config `key`, `--key`, `HARROW_KEY`) becomes the netcode
