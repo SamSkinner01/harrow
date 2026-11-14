@@ -18,6 +18,7 @@ mod hitbox;
 mod input;
 mod movement;
 
+pub use camera::PlayerCamera;
 pub use hitbox::HitZone;
 #[allow(unused_imports)] // used by M3+ input systems
 pub use input::{AutomatedRun, input_captured};

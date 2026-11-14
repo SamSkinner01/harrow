@@ -86,11 +86,13 @@ fn spawn_desert_floor(
         MeshMaterial3d(library.get("sand").expect("sand material")),
         Transform::from_xyz(0.0, DESERT_FLOOR_Y, 0.0),
     ));
-    // Collision: a thick slab whose top is the desert floor.
+    // Collision: an infinite plane (half-space). A 2 km box here caused
+    // precision errors in the stand-up headroom probe.
     commands.spawn((
+        Name::new("Desert floor collider"),
         RigidBody::Static,
-        Collider::cuboid(SIZE, 1.0, SIZE),
-        Transform::from_xyz(0.0, DESERT_FLOOR_Y - 0.5, 0.0),
+        Collider::half_space(Vec3::Y),
+        Transform::from_xyz(0.0, DESERT_FLOOR_Y, 0.0),
     ));
 }
 
