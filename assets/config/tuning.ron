@@ -114,7 +114,242 @@
         volume: 0.7,
     ),
     // ---- Weapons (M3) ----
-    weapons: (),
+    // Angles are degrees, times seconds, distances metres.
+    weapons: (
+        // Aim down sights with the right mouse button: Hold or Toggle.
+        ads_mode: Hold,
+        // After a sprint you can't fire or aim for this long.
+        sprint_recovery: 0.25,
+        // Time to lower the weapon in your hands when switching (then the
+        // new weapon's draw_time).
+        holster_time: 0.2,
+        // Pulling the trigger on an empty magazine starts a reload.
+        auto_reload: true,
+        // How loud weapons are to gameplay (detection gadgets, later bots),
+        // on the footstep scale (1.0 = a sprinting footstep).
+        noise: (
+            gunshot: 3.0,
+            reload: 0.6,
+        ),
+        // Damage multiplier by body region. With headshot_kills, any bullet
+        // to the head is lethal (like the feel target); otherwise `head`
+        // applies.
+        damage: (
+            headshot_kills: true,
+            head: 2.5,
+            torso: 1.0,
+            legs: 0.75,
+        ),
+        // Bullets pass through soft surfaces (plaster, wood) and stop at
+        // hard ones (stone).
+        penetration: (
+            // Share of damage kept after each soft surface (0.6 = 60%).
+            soft_damage_kept: 0.6,
+            // How many soft surfaces one bullet can pass through.
+            max_soft_layers: 2,
+            // Furthest a bullet travels, metres.
+            range: 300.0,
+        ),
+        // Primary: TAMARISK assault rifle.
+        primary: (
+            name: "TAMARISK",
+            // The 3D model in your hands. To use a different model, change
+            // these (no code needed); `pose` below places it on screen.
+            model: (
+                // glTF file under assets/. Path changes need a restart;
+                // the rest applies on save.
+                path: "models/weapons/tamarisk.glb",
+                // Uniform scale (0.01 for a model made in centimetres).
+                scale: 1.0,
+                // Turns the model so the barrel points away from you and the
+                // top is up: (yaw, pitch, roll), degrees.
+                rotation: (0.0, 0.0, 0.0),
+                // Point on the sight line (lined up with your eye when aiming)
+                // and the barrel tip, in the model's own units, e.g.
+                // Some((0.0, 0.12, 0.0)). None = take them from the nodes
+                // named sight_node / muzzle_node in the model.
+                sight: None,
+                muzzle: None,
+                sight_node: "SIGHT",
+                muzzle_node: "MUZZLE",
+                // Parts animated by reloads / shots: Some("node name") or None.
+                magazine_node: Some("MAGAZINE"),
+                slide_node: None,
+            ),
+            // Damage per bullet before the body-region multiplier.
+            damage: 42.0,
+            // Damage drops linearly from full at falloff_start metres to
+            // falloff_min (share of full) at falloff_end metres.
+            falloff_start: 25.0,
+            falloff_end: 40.0,
+            falloff_min: 0.65,
+            // Rounds per minute.
+            rpm: 750.0,
+            // true: fires while the trigger is held. false: one shot per click.
+            full_auto: true,
+            magazine: 30,
+            // Reloading with rounds left keeps one in the chamber (30 + 1).
+            chamber: true,
+            // Spare rounds carried at spawn.
+            reserve: 150,
+            // Reload time with rounds left / from empty (includes chambering).
+            reload_tactical: 2.4,
+            reload_empty: 3.0,
+            // Time to raise this weapon after switching to it.
+            draw_time: 0.55,
+            // Time to go from hip to fully aimed.
+            ads_time: 0.32,
+            // Aiming zooms the view by this much (1.0 = no zoom).
+            ads_zoom: 1.25,
+            // Move speed while fully aimed (1.0 = normal).
+            ads_move_speed: 0.75,
+            recoil: (
+                // View kick per shot in degrees: (right, up). Shot 1 uses the
+                // first pair, shot 2 the second... After the end of the list
+                // the last `repeat_last` pairs repeat. Same every time, so it
+                // can be learned.
+                pattern: [
+                    (0.0, 0.30), (0.03, 0.42), (-0.04, 0.46), (0.08, 0.48),
+                    (0.12, 0.50), (0.10, 0.50), (-0.06, 0.48), (-0.14, 0.45),
+                    (-0.18, 0.42), (-0.08, 0.40), (0.10, 0.40), (0.18, 0.38),
+                    (0.14, 0.36), (-0.02, 0.36), (-0.16, 0.36), (-0.20, 0.34),
+                    (-0.06, 0.34), (0.12, 0.34),
+                ],
+                repeat_last: 6,
+                // Kick multiplier while fully aimed.
+                ads_scale: 0.85,
+                // After this long without firing, the view drifts back...
+                recovery_delay: 0.15,
+                // ...at this many degrees per second (0 = never returns).
+                recovery_speed: 9.0,
+            ),
+            spread: (
+                // Random bullet spread, degrees (radius of the cone).
+                // Standing still, from the hip / fully aimed:
+                hip: 1.8,
+                ads: 0.12,
+                // Added when moving at walking speed (hip / aimed):
+                moving_hip: 1.0,
+                moving_ads: 0.35,
+                // Multipliers when crouched / prone.
+                crouch_scale: 0.85,
+                prone_scale: 0.7,
+                // Added per shot during a burst, up to max_bloom; once you
+                // stop firing it shrinks at bloom_recovery degrees per second.
+                per_shot: 0.08,
+                max_bloom: 1.2,
+                // Share of that bloom that applies while fully aimed.
+                ads_bloom_scale: 0.3,
+                bloom_recovery: 4.0,
+                // The first shot after a pause of first_shot_reset seconds
+                // gets this share of the spread (0 = perfectly accurate).
+                first_shot_scale: 0.25,
+                first_shot_reset: 0.25,
+            ),
+            // Where the weapon sits on screen, metres from the eye.
+            pose: (
+                // Where the model origin (the grip, on our models) sits at the
+                // hip: (right, up, forward). Aiming lines the sight point up
+                // with the eye instead.
+                hip: (0.15, -0.2, 0.42),
+                // Eye to the sight point when aiming.
+                ads_distance: 0.2,
+                // Visual kick per shot: backwards (metres) and upwards (degrees).
+                kick_back: 0.025,
+                kick_up: 2.5,
+            ),
+        ),
+        // Sidearm: ACACIA pistol.
+        sidearm: (
+            name: "ACACIA",
+            model: (
+                path: "models/weapons/acacia.glb",
+                scale: 1.0,
+                rotation: (0.0, 0.0, 0.0),
+                sight: None,
+                muzzle: None,
+                sight_node: "SIGHT",
+                muzzle_node: "MUZZLE",
+                magazine_node: Some("MAGAZINE"),
+                slide_node: Some("SLIDE"),
+            ),
+            damage: 48.0,
+            falloff_start: 12.0,
+            falloff_end: 25.0,
+            falloff_min: 0.6,
+            // Fastest you can click.
+            rpm: 450.0,
+            full_auto: false,
+            magazine: 15,
+            chamber: true,
+            reserve: 60,
+            reload_tactical: 2.0,
+            reload_empty: 2.4,
+            draw_time: 0.4,
+            ads_time: 0.22,
+            ads_zoom: 1.1,
+            ads_move_speed: 0.85,
+            recoil: (
+                pattern: [(0.0, 1.1), (0.15, 1.2), (-0.2, 1.2), (0.1, 1.25)],
+                repeat_last: 4,
+                ads_scale: 0.85,
+                recovery_delay: 0.08,
+                recovery_speed: 16.0,
+            ),
+            spread: (
+                hip: 1.4,
+                ads: 0.2,
+                moving_hip: 0.8,
+                moving_ads: 0.3,
+                crouch_scale: 0.85,
+                prone_scale: 0.7,
+                per_shot: 0.25,
+                max_bloom: 1.0,
+                ads_bloom_scale: 0.3,
+                bloom_recovery: 5.0,
+                first_shot_scale: 0.3,
+                first_shot_reset: 0.3,
+            ),
+            pose: (
+                hip: (0.13, -0.15, 0.34),
+                ads_distance: 0.3,
+                kick_back: 0.03,
+                kick_up: 6.0,
+            ),
+        ),
+        // The weapon in your hands (looks only).
+        view: (
+            // Field of view of the weapon camera, degrees. Lower = bigger weapon.
+            fov: 60.0,
+            // How far the weapon lags behind mouse look, and the most it can.
+            sway: 0.02,
+            sway_max: 4.0,
+            // Weapon bob while walking (follows the footsteps), metres.
+            bob_height: 0.012,
+            bob_side: 0.01,
+            // Sway and bob multiplier while fully aimed (0 = rock steady).
+            ads_steadiness: 0.15,
+        ),
+        effects: (
+            // How long the muzzle flash shows, seconds.
+            muzzle_flash_time: 0.05,
+            // Brightness of the light the flash casts on nearby walls, lumens.
+            muzzle_light: 600000.0,
+            // How long a bullet impact puff lasts, and the most at once.
+            impact_time: 0.35,
+            max_impacts: 64,
+            // How long the hit marker shows.
+            hit_marker_time: 0.25,
+            // Weapon sound volume (placeholder sounds).
+            volume: 0.6,
+        ),
+        // Training dummies (`--dummies`).
+        dummies: (
+            health: 100.0,
+            // Seconds a dummy stays down before standing back up.
+            respawn_time: 3.0,
+        ),
+    ),
     // ---- Destruction (M4) ----
     // Plaster walls, wooden floors, hatches and barricades are split into
     // small cells that bullets, melee and explosives knock out.

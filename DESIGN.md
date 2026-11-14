@@ -48,6 +48,78 @@ All numbers live in `assets/config/tuning.ron`; these are the rules.
 - Level rule: characters don't step up ledges, so every staircase and
   threshold needs a ramp collider (visual steps on top).
 
+## M3 weapons
+
+All numbers live in the `weapons` section of `assets/config/tuning.ron`;
+these are the rules (code: `src/weapons/`).
+
+**Loadout (placeholder until operators, M6):** every character carries a
+primary and a sidearm. Both are original designs:
+- **TAMARISK**, assault rifle: full auto, 30-round curved magazine, compact
+  open reflex sight, skeletal stock, octagonal sand-coloured handguard.
+- **ACACIA**, sidearm: semi-auto (one shot per click, rate-capped),
+  15-round magazine, two-tone, three-dot iron sights.
+Weapons spawn full with a round chambered (30+1, 15+1).
+
+**Firing.** Hitscan from the true eye position (the same point the camera
+uses, including the lean offset, so leaning round a corner shoots from where
+you see). Direction = look angles + recoil + random spread. The fire rate is
+exact over time (no rounding to the 64 Hz tick). You can't fire or aim while
+sprinting or for a moment after.
+
+**Damage model.** Each weapon has base damage per bullet, falling off
+linearly between two distances to a minimum share. Body region multiplies
+it: **any bullet to the head kills** (like the feel target; can be switched
+to a multiplier), torso 1x, legs reduced. Bullets stop in the first body
+they hit (no over-penetration through people). Friendly fire is on.
+Operator armour (M6) scales body and leg damage when it lands; head shots
+kill through any armour. Deployed gadgets (hit volumes with health but no
+body region) take the bullet's base damage and stop it.
+
+**Penetration.** Soft surfaces (plaster, wooden floors, hatches, crates,
+barricades: anything the kit marks soft) let bullets through; each one costs
+a share of the damage, up to a maximum number of soft layers. Hard surfaces
+(stone, and anything without a surface kind) stop the bullet. Every surface
+a bullet enters sends a `SurfaceImpact` (kind `Bullet`) at the entry point
+with the bullet's direction; destruction (M4) uses these to open holes.
+Head shots through a soft wall still kill.
+
+**Recoil.** Each weapon has a fixed, learnable pattern: shot N of a burst
+always kicks the view by the same amount (mostly up, wandering left and
+right later in the spray), repeating the pattern's tail on long sprays.
+Kicks are smaller while aimed. The view kick is shown by the camera. After a
+short pause the view drifts back to where you aimed and the pattern starts
+over. Visual weapon kick is separate and cosmetic.
+
+**Spread.** Bullets land randomly inside a cone: wide from the hip, tight
+when aimed. Moving widens it (scaled by speed); crouching and prone tighten
+it. Sustained fire adds bloom (only part of it while aimed), which shrinks
+once you stop. The first shot after a pause is much more accurate than the
+rest. The random spread is seeded by the shot count, so the same inputs
+always give the same shots (needed for server-side hit checks, M8).
+
+**Aim down sights.** Right mouse, hold or toggle (tuning). Aiming takes a
+fraction of a second, zooms the view per weapon, slows walking, and lines
+the weapon's sight up with the eye. No aiming while reloading or sprinting.
+
+**Reloads and switching.** A tactical reload (rounds left) keeps one in the
+chamber (magazine + 1); an empty reload is slower and gives a full
+magazine. Pulling the trigger on empty clicks and starts a reload (option).
+Switching weapons lowers the current one, then raises the other; it cancels
+a reload. Keys 1 / 2 or the mouse wheel. With the defuser in hand (M6) the
+weapon is lowered: no firing, aiming or reloading.
+
+**Noise.** Every shot and every reload start is a gameplay `Noise`
+(gunfire is loud, reloads quiet; loudness in the tuning file), so detection
+gadgets and later bots hear them.
+
+**Feedback.** HUD ammo (magazine / reserve), weapon name, reload progress,
+and a hit marker (white X on body hits, larger red X on head shots, held
+longer on kills). Bullet impacts show a short dust puff and chips (sparks on
+stone); nothing permanent. Training dummies (`--dummies`) flash red when
+hit, show a health bar, fall over at zero and stand up again after a few
+seconds.
+
 ## Controls (key map)
 
 Every module binds its own keys; this is the shared map so they don't clash.
@@ -346,6 +418,95 @@ draws your team's (`--show-all-intel` draws both, for testing).
 **Not yet:** recon drones (attacker prep), ring cutter and backplate
 charges, shared secondaries, overtime, a dead-player spectator view,
 character models for other players.
+
+## M5 characters
+
+Built by `tools/scripts/build_characters.sh` from one config per operator
+(`tools/blender/characters/operators/<id>.toml`) into
+`assets/models/characters/<id>.glb`. Spawned and animated by
+`src/characters/`.
+
+- **Body:** MPFB 2.0.18, driven headless through its Python service API:
+  macro sliders (gender, age, muscle, weight, proportions) and face
+  targets from the config, on MakeHuman's CC0 base mesh. Scaled so the top
+  of the head is at `height_m` (1.72–1.79 m; helmets add ~4 cm, so every
+  operator stands ~1.8 m like the player capsule). Feet at the origin,
+  facing game -Z.
+- **Skeleton:** MPFB's `game_engine` rig: 53 deforming bones with
+  Unreal-mannequin-style names (`pelvis`, `spine_01..03`, `neck_01`,
+  `head`, `clavicle_l`, `upperarm_l`, `lowerarm_l`, `hand_l`, fingers,
+  `thigh_l`, `calf_l`, `foot_l`, `ball_l`), plus `weapon_r` (rifle socket,
+  child of `hand_r`) and `weapon_mag`. Chosen over Rigify, whose generated
+  rig has hundreds of control and mechanism bones that would have to be
+  stripped for export; the naming also suits retargeting common game
+  animation sets (and mocap) later.
+- **Uniform:** not a separate mesh. The body is split by bone weights into
+  shirt, trousers, gloves and boots (clean plane-cut seams), pushed out
+  slightly and vertex-coloured. Sleeves can be rolled; gloves can be
+  fingerless. Hair is a buzz-cut tint on the scalp.
+- **Gear:** scripted mid-detail blockouts, fitted to each body by casting
+  rays at it, and skinned from the nearest body surface (hard items ride
+  one bone). Menu (config `[gear]`):
+
+  | Slot | Options |
+  |---|---|
+  | helmet | `highcut` (rails, mount, counterweight, chin strap), `full` (ear coverage, jaw guard, raised visor), `cap`, `none` |
+  | headset | ear cups and boom mic (headband when there's no helmet) |
+  | eyewear | `goggles_up` (on the helmet), `glasses`, `none` |
+  | carrier | `chest_rig` (no plates; X-harness), `plate` (front/back plates, cummerbund), `heavy` (plus side plates, collar, shoulder guards, groin flap), `none` |
+  | pouches | `mags_triple`, `admin`, `radio_left`, `dump_left`, `grenades`, `med_pouch`, `hydration`, `thigh_holster`; signature kit: `breach_pack` (Auger's Ring Cutter disc), `dart_launcher` (Lark's wrist launcher), `charge_cases` (Mortise), `stake_quiver` (Fathom) |
+  | gloves / boots | `full`/`fingerless`/`none`; `high`/`low` (sole and collar added) |
+  | pads, neck, sleeves | `knees`, `elbows`; `gaiter`; `long`/`rolled` |
+
+- **Team read:** attackers wear olive and coyote with tan helmets, goggles
+  and backpacks; defenders wear slate, charcoal and near-black, no
+  backpacks, and have the visibly different headgear (Mortise's full
+  helmet and jaw guard, Fathom's soft cap). More armour = more plates.
+
+  | Operator | Body | Kit |
+  |---|---|---|
+  | Auger (A, 2/2) | male, mid-30s, solid | high-cut helmet, goggles, plate carrier, breach pack with the cutter disc |
+  | Lark (A, 1/3) | female, early 20s, light | high-cut helmet, goggles, chest rig, hydration pack, wrist launcher, rolled sleeves |
+  | Mortise (D, 3/1) | male, 40s, big | full helmet with jaw guard and visor, heavy carrier, charge cases, elbow and knee pads |
+  | Fathom (D, 1/3) | female, late 20s, lean | soft cap, glasses, gaiter, chest rig, stake quiver, thigh holster |
+
+- **Materials (realism pass):** seven per operator, so ~7 draw calls:
+  `skin` (1024 px CC0 MakeHuman/Mindfront skin times vertex colour),
+  `uniform`, `webbing`, `leather` (vertex colour plus tiling CC0 cloth and
+  leather detail maps: weave/grain normals and roughness), `hard` (helmet
+  shells, hardware, lenses, carbine; smoother, untextured), `eyes`, and
+  `brows` (eyebrow + eyelash atlas, alpha cut-out). Detail maps are shared
+  by everyone and loaded once by the game from `assets/textures/characters/`
+  (skin pores/roughness from the Mindfront skin; Poly Haven poplin, twill
+  and leather); per-operator colour textures are embedded in the .glb.
+- **Budget:** ~26–27k triangles per operator (body ~21k, gear 3.7–5.2k,
+  carbine 0.35k, eyes/brows/lashes 0.7k), 55 bones. Ten on screen is
+  ~270k skinned triangles and ~70 draw calls plus shadows: fine on a
+  mid-range PC. Measured (dev build, `--no-vsync`): the keep alone 343 fps
+  (2.9 ms), with 12 animated operators (`--lineup-crowd`) 274 fps
+  (3.65 ms), so ~0.06 ms per character. **LOD plan:** the build already decimates the body by bone region;
+  a second export at ~10k body triangles (gear unchanged) would make LOD1
+  for distant characters.
+- **Builds are reproducible:** rebuilding produces byte-identical .glb
+  files, so unchanged operators don't churn Git LFS.
+- **Animations:** scripted placeholders (no CC0 set without a login fits
+  this skeleton), 30 fps, in place, posed in armature axes with our own
+  two-bone IK: `idle`, `walk` (authored for 3.4 m/s), `run` (5.6),
+  `crouch_idle`, `crouch_walk` (1.9), `prone_idle`, `prone_crawl` (0.8),
+  `lean_left`/`lean_right` (spine and head pose), `fire` (aim plus one
+  recoil kick, looped at the rate of fire), `reload` (2.4 s, the magazine
+  comes out in the left hand). The game blends them by stance and speed
+  and overrides the arms (aim, fire, reload) and spine (lean).
+- **Hit zones (later):** the fixed capsules in `src/player/hitbox.rs` can
+  follow bones: head on `head`, torso between `spine_01` and `spine_03`
+  (or `neck_01`), legs on `thigh_*`/`calf_*`.
+- **Mocap plan:** when CC0/permissive mocap (e.g. CMU BVH) is staged,
+  retarget it onto `game_engine` in `anim.py` by mapping its joints to
+  these bone names and baking per operator; the clip names, masks and the
+  game side stay the same.
+- **Not yet:** prone aiming and reloading, strafe/backpedal clips, hair
+  meshes (short hair is a scalp tint under the headgear), real weapon
+  models (they attach to `weapon_r`, and should hide the prop carbine).
 
 ## Fortress kit (M2)
 
