@@ -23,6 +23,8 @@ ENV HARROW_BUILD_COMMIT=${HARROW_BUILD_COMMIT} CARGO_BUILD_JOBS=${JOBS}
 WORKDIR /src
 COPY Cargo.toml Cargo.lock build.rs ./
 COPY src ./src
+# The tuning file is also compiled in (the fallback when it can't be read).
+COPY assets/config ./assets/config
 # The lean server build: no window system, audio or gamepad libraries.
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/src/target \
