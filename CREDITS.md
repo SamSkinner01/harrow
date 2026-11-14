@@ -37,4 +37,12 @@ Public domain (CC0); no credit required, given with thanks:
 
 ## Models and textures
 
-All CC0; see [ASSETS.md](ASSETS.md).
+All CC0 (no credit required), given with thanks; details in
+[ASSETS.md](ASSETS.md):
+
+- AKM by LonesomeDucky (opengameart.org): the TAMARISK rifle
+- Service Pistol by Mateusz Sadek, Poly Haven (polyhaven.com): the ACACIA sidearm
+- Textures from Poly Haven by Dimitrios Savva, Amal Kumar, Rob Tuytel,
+  colormass and Rico Cilliers
+- Human base mesh, skeleton and skins from MakeHuman (makehumancommunity.org)
+  via MPFB, including skins by Mindfront

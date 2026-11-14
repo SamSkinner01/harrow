@@ -54,11 +54,15 @@ All numbers live in the `weapons` section of `assets/config/tuning.ron`;
 these are the rules (code: `src/weapons/`).
 
 **Loadout (placeholder until operators, M6):** every character carries a
-primary and a sidearm. Both are original designs:
-- **TAMARISK**, assault rifle: full auto, 30-round curved magazine, compact
-  open reflex sight, skeletal stock, octagonal sand-coloured handguard.
+primary and a sidearm. Names and numbers are ours; since the realism pass
+the models are realistic CC0 guns (see "Realism pass: weapons and arms"):
+- **TAMARISK**, assault rifle: full auto, 30-round curved magazine, iron
+  sights. Model: a weathered AK-pattern rifle (wood furniture, bakelite
+  magazine).
 - **ACACIA**, sidearm: semi-auto (one shot per click, rate-capped),
-  15-round magazine, two-tone, three-dot iron sights.
+  15-round magazine, iron sights. Model: a worn P38-style pistol with wood
+  grips. (The original blockouts, a reflex-sighted carbine and a two-tone
+  pistol, are kept as `*_blockout.glb`.)
 Weapons spawn full with a round chambered (30+1, 15+1).
 
 **Firing.** Hitscan from the true eye position (the same point the camera
@@ -989,3 +993,66 @@ The four operators' third-person clips (`tools/blender/characters/anim.py`,
   magazine does not follow `weapon_mag` during the third-person reload
   (the prop's does); footstep sounds use their own stride (0.75 m) rather
   than the clips' foot contacts.
+
+
+## Realism pass: weapons and arms
+
+**Weapon models.** TAMARISK uses the CC0 "AKM" by LonesomeDucky
+(OpenGameArt), ACACIA the CC0 "Service Pistol" by Mateusz Sadek (Poly
+Haven). We compared the AKM with the 3dmodelscc0 AK-47 and M4A1 (which have
+separate magazines): the AKM's weathered 4k PBR finish reads far more
+real, so it won and its magazine was split off in Blender instead.
+`tools/blender/weapons/import_models.py` (`tools/scripts/import_weapons.sh`)
+turns the staged downloads into game files with the blockouts' conventions:
+metres, barrel down -Z, origin at the top-back of the pistol grip (where the
+web of the hand sits), `MAGAZINE`/`SLIDE` nodes, `SIGHT` (front sight tip,
+level with the rear sight), `MUZZLE`, plus `RACK` (charging handle / slide
+serrations) and `MAG_GRIP` (where the support hand holds the magazine).
+The AKM is scaled to a real AKM's 0.88 m; the pistol's stamped serial and
+proof mark are blurred out. Textures are 2k JPEG (2.4 MB and 6 MB files);
+the viewmodel adds mipmaps to them.
+
+**In first person** (tuning `weapons.*.pose`): aiming puts the eye 0.72 m
+behind the front sight for both guns, which for the rifle is just behind
+the receiver: the rear notch and the front post line up at the screen
+centre over the receiver cover, as on the real rifle. The muzzle flash sits
+on the `MUZZLE` node.
+
+**First-person arms.** Gloved, sleeved forearms and hands built with the
+operators' own MPFB pipeline (same skeleton, uniform and glove colours; one
+file per team, `arms_attackers.glb` olive/coyote, `arms_defenders.glb`
+slate/black) by `tools/scripts/build_arms.sh`
+(`tools/blender/characters/arms.py`): the dressed body is cut down to the
+forearms, hands and lower upper arms (~8.6k triangles), then posed on each
+weapon with the same two-bone IK as the operators' clips, using anatomical
+hand frames (wrist to middle knuckle, palm from the knuckle line; this
+rig's hand bones don't point along the fingers) and per-finger curls.
+Per weapon: `<arms>_hold`, `<arms>_reload` and `<arms>_reload_empty`. The
+reload clips replay the magazine path `viewmodel.rs` uses (out 12-32 %,
+fetch off screen, in 55-75 %, seat; on an empty reload the support hand
+then pulls the charging handle / racks the slide), and the game scrubs
+them to the reload's progress, so the support hand carries the magazine at
+any reload time without runtime IK. In game (`src/weapons/arms.rs`) the
+arms are a child of the weapon rig, so aim, sway, bob, kick, sprint,
+switching and the reload tilt move them with the weapon; the rig node's
+`harrow_arms` extra places them for each weapon's grip. You see your
+team's arms. A weapon's `model.arms` names its clips; a model without arms
+(`None`, e.g. the blockouts) shows the weapon alone.
+`build_arms.sh --preview DIR` renders the first-person views (hip, aimed,
+reload moments) and close-ups of each hand, for posing without the game.
+
+**Third person.** `weapons.*.model.third_person` is the weapon model's
+transform on a character's `weapon_r` bone (bone frame: origin where the
+web of the right hand grips, +Y along the barrel, +Z up). Our models share
+that origin, so it is just the turn from the model's axes (barrel -Z, +Y
+up): offset (0, 0, 0), rotation (0, 90, 0). `weapons::third_person_transform(def)`
+gives the Bevy `Transform`; spawn the weapon's scene as a child of
+`weapon_r` with it and set `Character::prop_weapon = false`.
+`--lineup --lineup-weapons [sidearm]` shows it on the lineup. Not done: the
+third-person reload doesn't move the real magazine with `weapon_mag` (the
+prop's magazine did).
+
+**Not yet:** the arms' sleeves are the operators' uniform mesh (no cloth
+folds or cuffs), hands use one static grip per weapon (the trigger finger
+doesn't move when firing), and there is no environment map, so the guns'
+metal is lit by the sun and ambient light only.

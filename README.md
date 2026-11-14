@@ -115,16 +115,28 @@ On Windows use `tools/scripts/build_kit.ps1`. Kit conventions are documented
 at the top of `tools/blender/kit/pieces.py`; the piece list is in DESIGN.md.
 
 ```sh
-tools/scripts/build_weapons.sh                     # Blender -> assets/models/weapons/*.glb
-tools/scripts/build_weapons.sh --only tamarisk     # rebuild one weapon
-tools/scripts/build_weapons.sh --preview sheet.png # render the weapons to an image
+tools/scripts/import_weapons.sh                    # staged CC0 guns -> assets/models/weapons/{tamarisk,acacia}.glb
+tools/scripts/import_weapons.sh --only acacia      # one weapon
+tools/scripts/import_weapons.sh --preview DIR      # render them instead of exporting
+tools/scripts/build_weapons.sh                     # scripted blockouts -> assets/models/weapons/*_blockout.glb
+tools/scripts/build_weapons.sh --preview sheet.png # render the blockouts to an image
+tools/scripts/build_arms.sh                        # first-person arms -> assets/models/characters/arms_*.glb
+tools/scripts/build_arms.sh --only defenders --preview DIR  # one team, plus first-person renders per weapon
 ```
 
-(`build_weapons.ps1` on Windows.) Weapon conventions (axes, origin at the
-grip, `SIGHT`/`MUZZLE` empties, `MAGAZINE`/`SLIDE` nodes) are at the top of
-`tools/blender/weapons/models.py`. To use a different weapon model, change
-its `model` block in the tuning file (path, scale, rotation, sight and muzzle
-points or node names, magazine/slide node names) and its `pose`; no code.
+The realistic weapon models are made from CC0 downloads that are not in the
+repository: `import_weapons.sh` reads them from the asset staging folder
+(`$HARROW_ASSET_STAGING`, default `~/harrow-assets-staging`); see ASSETS.md.
+The blockouts are kept as fallbacks (`build_weapons.ps1` on Windows).
+Weapon conventions (axes, origin at the grip, `SIGHT`/`MUZZLE` empties,
+`MAGAZINE`/`SLIDE` nodes) are at the top of
+`tools/blender/weapons/models.py` and `import_models.py`. To use a different
+weapon model, change its `model` block in the tuning file (path, scale,
+rotation, sight and muzzle points or node names, magazine/slide node names,
+the third-person attach transform, the arms clips) and its `pose`; no code.
+The first-person arms are posed on the realistic models (rebuild them with
+`build_arms.sh` after changing a model or a weapon's `hip` pose a lot; it
+needs MPFB, see `--setup` below).
 
 Characters: one config per operator in `tools/blender/characters/operators/`
 (body, face, skin, gear; commented). `--setup` changes only your Blender user
@@ -299,6 +311,7 @@ cargo run -- --no-viewmodel                    # don't draw the weapon in your h
 cargo run -- --lineup                          # the four operators in the courtyard, cycling animations
 cargo run -- --lineup-state crouch_walk        # ... all holding one state (names in src/characters/lineup.rs)
 cargo run -- --lineup-crowd --no-vsync         # 12 operators, for checking what a full match costs
+cargo run -- --lineup --lineup-weapons         # ... holding the real rifle (or `--lineup-weapons sidearm`)
 ```
 
 Used for automated checks: e.g. spawn at the stairs, auto-move forward, and
