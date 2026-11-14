@@ -265,7 +265,7 @@ def dress(body, marks, cfg, colours, materials):
     # Boots: lose the toes before inflating.
     boot_verts = {vi for p, r in zip(mesh.polygons, regions) if r == "boot" for vi in p.vertices}
     if boot_verts:
-        smooth_region(body, boot_verts, 12, 0.6)
+        smooth_region(body, boot_verts, 40, 0.6)
 
     # Inflation per vertex: the largest offset of any polygon using it.
     offsets = [0.0] * len(mesh.vertices)

@@ -1176,6 +1176,28 @@ def boots(g, kind):
             grown.append((cx + v2.x, cy + v2.y))
         faces = _prism(g, grown, -0.002, 0.03)
         g.finish(faces, col["sole"])
+        # Shoe: the convex hull of the foot below the ankle, pushed out a
+        # little. Hides the toes and gives a proper toe box.
+        ankle_z = m.ankle[side].z + 0.012
+        foot = [p for p in pts if p.z < ankle_z and p.x * sign > 0]
+        hull_pts = list(dict.fromkeys((round(p.x, 5), round(p.y, 5), round(p.z, 5)) for p in foot))
+        if len(hull_pts) >= 4:
+            centre = sum((Vector(p) for p in hull_pts), Vector()) / len(hull_pts)
+            centre.z = 0.03
+            existing = set(g.bm.faces)
+            verts = []
+            for p in hull_pts:
+                v = Vector(p)
+                d = v - centre
+                v = v + d.normalized() * 0.009 if d.length > 1e-4 else v
+                v.z = max(v.z, 0.0)
+                verts.append(g.bm.verts.new(v))
+            bmesh.ops.convex_hull(g.bm, input=verts, use_existing_faces=False)
+            hull = [f for f in g.bm.faces if f not in existing]
+            loose = [v for v in verts if v.is_valid and not v.link_faces]
+            if loose:
+                bmesh.ops.delete(g.bm, geom=loose, context="VERTS")
+            g.finish(hull, col["boots"], smooth=True)
         # Collar at the top of the shaft.
         calf = m.knee[side]
         shin = (m.ankle[side] - calf).normalized()
