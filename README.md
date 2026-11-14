@@ -128,12 +128,13 @@ a timed list of `<seconds> <command>` separated by `;`.
 
 ```sh
 # shoot the plaster wall, take a screenshot, quit
-cargo run -- --spawn 7,0,-2.3,0,0 --m4 "0 lamp 7.5 2.2 -2 3e7; 1 fire bullet 40 12; 3 shot out.png; 3.5 quit"
+cargo run -- --no-round --spawn 7,0,-2.3,0,0 --m4 "0 lamp 7.5 2.2 -2 3e7; 1 fire bullet 40 12; 3 shot out.png; 3.5 quit"
 # reinforce as a defender (hold F 5.6 s), shoot it, then hard-breach it
-cargo run -- --spawn 7,0,-2.6,0,0 --m4 "0.5 team defenders; 1 interact 5.6; 7 fire bullet 30 10; 9 hardbreach 0.5; 10 log; 10.5 quit"
+cargo run -- --no-round --spawn 7,0,-2.6,0,0 --m4 "0.5 team defenders; 1 interact 5.6; 7 fire bullet 30 10; 9 hardbreach 0.5; 10 log; 10.5 quit"
 ```
 
-Commands: `team`, `look`, `tp`, `move`, `stance`, `fire bullet|pellet`,
+Use `--no-round` for free play (otherwise the round loop respawns and
+locks the player). Commands: `team`, `look`, `tp`, `move`, `stance`, `fire bullet|pellet`,
 `melee`, `interact`, `gadget`, `explode`, `hardbreach`, `reinforce`, `lamp`,
 `dummy`, `log` (surfaces, player, rebuild cost, FPS), `shot`, `quit`.
 

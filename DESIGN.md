@@ -186,6 +186,18 @@ radius. It falls off if its surface breaks.
 **Hard breach** (the `HardBreach` message) is the API for M6's Ring Cutter
 (radius about 0.5 m) and Backplate Charge (fist-sized).
 
+**Round loop.** Reinforcing and barricading are allowed in prep, action and
+planted (and in free play); breach charges whenever attackers may use
+gadgets (not during prep). Every new round restores the map: walls, floors
+and hatches intact and unreinforced, the map's barricades back up,
+defenders' barricades and placed charges gone, 2 reinforcements per
+defender, and 3 breach charges for anyone whose secondary gadget is the
+soft-breach charge (in free play, every attacker). While a defender is
+planting or disabling the defuser, F belongs to the round loop.
+Destruction is heard by gadgets and bots as `Noise`: explosions 6,
+breaking a hatch or barricade 1.5, melee hits 1, finishing a reinforcement
+0.8 (footstep scale).
+
 **Debris** is cosmetic: chunks in the surface's material (each casts one ray
 per frame while moving; no colliders) and camera-facing dust puffs, capped at
 250 chunks and 60 puffs, oldest first.

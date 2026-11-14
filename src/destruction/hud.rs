@@ -115,7 +115,10 @@ fn update_hud(
         Team::Attackers if charges.iter().any(|c| c.owner == entity) => {
             "V melee   4 detonate breach charge".to_string()
         }
-        Team::Attackers => format!("V melee   4 (hold) breach charge ({} left)", breach.0),
+        Team::Attackers if breach.0 > 0 => {
+            format!("V melee   4 (hold) breach charge ({} left)", breach.0)
+        }
+        Team::Attackers => "V melee".to_string(),
     };
     for mut text in &mut gadget {
         if text.0 != line {

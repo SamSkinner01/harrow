@@ -5,7 +5,7 @@
 //! time since start):
 //!
 //! ```text
-//! --m4 "1 look 0 -5; 1.5 fire bullet 30 4; 4 shot /tmp/a.png; 4.5 quit"
+//! --no-round --m4 "1 look 0 -5; 1.5 fire bullet 30 4; 4 shot /tmp/a.png; 4.5 quit"
 //! ```
 //!
 //! | Command | Effect |

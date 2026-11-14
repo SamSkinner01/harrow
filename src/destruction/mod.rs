@@ -10,14 +10,18 @@
 //!   cells with timber studs/joists inside. The mesh (`build.rs`) and a
 //!   compound box collider are rebuilt from the cells, for that one surface,
 //!   only when it changes.
-//! - **Impacts** (`impacts.rs`, fixed tick): every [`SurfaceImpact`](crate::combat::SurfaceImpact) (bullets
-//!   and pellets from weapons, melee and explosions from here) knocks out
-//!   cells. The result depends only on the impacts, so it's deterministic.
+//! - **Impacts** (`impacts.rs`, fixed tick): every
+//!   [`SurfaceImpact`](crate::combat::SurfaceImpact) (bullets and pellets
+//!   from weapons, melee and explosions from here) knocks out cells. The
+//!   result depends only on the impacts, so it's deterministic.
 //!   [`Explosion`] opens surfaces in range and hurts people; [`HardBreach`]
 //!   cuts through anything, reinforced or not.
 //! - **Actions** (fixed tick, from [`DestructionIntent`]): melee (V),
 //!   reinforcing and barricading (hold F), the breach charge (hold 4 to
 //!   place, press 4 to detonate).
+//! - **Round loop** (`round_link.rs`): the [`DestructionGate`] follows the
+//!   round phase, each new round restores the map and refills counts,
+//!   loadouts decide who carries breach charges, destruction makes `Noise`.
 //! - **Presentation** (every frame): mesh rebuilds, debris and dust, a small
 //!   HUD, a camera nudge on melee.
 //!
@@ -33,6 +37,7 @@ mod impacts;
 mod input;
 mod interact;
 mod melee;
+mod round_link;
 mod spawn;
 mod surface;
 
@@ -48,6 +53,7 @@ pub use surface::{NotReinforceable, SoftSurface, SurfaceMaterial, SurfaceMount, 
 use crate::{
     combat::Team,
     config::Tuning,
+    round::RoundSystems,
     player::{CharacterState, PlayerInput},
 };
 
@@ -68,12 +74,16 @@ impl Plugin for DestructionPlugin {
             .configure_sets(
                 FixedUpdate,
                 (
+                    DestructionSystems::Reset,
                     DestructionSystems::Actions,
                     DestructionSystems::Explosions,
                     DestructionSystems::ApplyImpacts,
                     DestructionSystems::Rebuild,
                 )
-                    .chain(),
+                    .chain()
+                    // After the round flow: phase changes, resets and the
+                    // defuser interaction are settled for this tick.
+                    .after(RoundSystems::Flow),
             )
             .add_observer(equip_character)
             .add_plugins((
@@ -86,6 +96,7 @@ impl Plugin for DestructionPlugin {
                 debris::DebrisPlugin,
                 hud::DestructionHudPlugin,
                 debug::DestructionDebugPlugin,
+                round_link::RoundLinkPlugin,
             ));
     }
 }
@@ -95,6 +106,8 @@ impl Plugin for DestructionPlugin {
 /// tick (otherwise they open one tick later).
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub enum DestructionSystems {
+    /// A new round restores every surface.
+    Reset,
     /// Melee, reinforcing, barricading, breach charges.
     Actions,
     /// [`Explosion`]s turn into surface impacts and damage.
@@ -105,8 +118,8 @@ pub enum DestructionSystems {
     Rebuild,
 }
 
-/// What the round loop allows right now. The round loop (M6) sets these;
-/// everything defaults to allowed so the sandbox works without it.
+/// What may happen right now. Follows the round phase (`round_link.rs`);
+/// everything is allowed in free play. Other code may also write it.
 #[derive(Resource, Debug, Clone)]
 pub struct DestructionGate {
     /// Defenders may reinforce (prep and action phases).

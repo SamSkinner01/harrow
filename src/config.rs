@@ -71,6 +71,7 @@ pub struct DestructionTuning {
     pub reinforce: ReinforceTuning,
     pub breach_charge: BreachChargeTuning,
     pub debris: DebrisTuning,
+    pub noise: DestructionNoiseTuning,
 }
 
 #[derive(Deserialize, Clone, Debug)]
@@ -145,6 +146,15 @@ pub struct BreachChargeTuning {
     pub breach_radius: f32,
     pub damage_radius: f32,
     pub max_damage: f32,
+}
+
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct DestructionNoiseTuning {
+    pub explosion: f32,
+    pub breaking: f32,
+    pub melee: f32,
+    pub reinforce: f32,
 }
 
 #[derive(Deserialize, Clone, Debug)]

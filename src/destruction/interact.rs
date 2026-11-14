@@ -20,6 +20,7 @@ use super::{
 };
 use crate::{
     combat::{Dead, SurfaceKind, Team},
+    round::ObjectiveInteraction,
     config::Tuning,
     physics::GameLayer,
     player::{CharacterState, PlayerInput},
@@ -30,6 +31,7 @@ pub struct InteractPlugin;
 impl Plugin for InteractPlugin {
     fn build(&self, app: &mut App) {
         app.add_observer(register_opening)
+            .add_observer(stop_when_dead)
             .add_systems(
                 FixedUpdate,
                 interact
@@ -38,6 +40,11 @@ impl Plugin for InteractPlugin {
             );
     }
 }
+
+/// A barricade a defender put up (removed when a new round starts; the
+/// map's own barricades are restored instead).
+#[derive(Component, Debug)]
+pub struct PlacedBarricade;
 
 /// A doorway or window in a wall piece that can take a barricade. Added to
 /// the wall piece's root when it loads.
@@ -57,6 +64,20 @@ impl BarricadeSlot {
 
     pub fn piece_name(&self) -> &'static str {
         if self.window { "barricade_window" } else { "barricade_door" }
+    }
+}
+
+/// Dying stops whatever you were doing.
+fn stop_when_dead(
+    add: On<Add<Dead>>,
+    mut activities: Query<&mut Activity>,
+    mut cancelled: MessageWriter<ReinforceCancelled>,
+) {
+    if let Ok(mut activity) = activities.get_mut(add.entity) {
+        if let Activity::Reinforcing { surface, .. } = *activity {
+            cancelled.write(ReinforceCancelled { player: add.entity, surface });
+        }
+        *activity = Activity::Idle;
     }
 }
 
@@ -113,6 +134,7 @@ pub(super) fn interact(
             &mut Activity,
             &mut MeleeState,
             &mut Reinforcements,
+            Has<ObjectiveInteraction>,
         ),
         Without<Dead>,
     >,
@@ -131,9 +153,15 @@ pub(super) fn interact(
     let t = &tuning.destruction;
     let dt = time.delta_secs();
     let world = SpatialQueryFilter::from_mask(GameLayer::World);
-    for (entity, input, state, transform, intent, team, mut activity, mut buttons, mut left) in
+    for (entity, input, state, transform, intent, team, mut activity, mut buttons, mut left, objective) in
         &mut characters
     {
+        // Planting or disabling the defuser: F belongs to the round loop.
+        let intent = if objective {
+            &DestructionIntent { interact: false, ..*intent }
+        } else {
+            intent
+        };
         let pressed = intent.interact && !buttons.prev.interact;
         buttons.prev.interact = intent.interact;
         let (eye, dir) = eye_and_aim(transform, state, input, &tuning);
@@ -201,6 +229,7 @@ pub(super) fn interact(
                 }
                 commands.spawn((
                     Name::new(slot_data.piece_name()),
+                    PlacedBarricade,
                     at.compute_transform(),
                     Visibility::default(),
                     RigidBody::Static,

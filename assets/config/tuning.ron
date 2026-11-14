@@ -246,6 +246,18 @@
             // Seconds a chunk lies on the floor before fading out.
             lifetime: 5.0,
         ),
+        // How loud destruction is to gameplay (detection gadgets, bots).
+        // Same scale as footsteps: 1.0 = a sprinting footstep.
+        noise: (
+            // Any explosion (breach charges, grenades).
+            explosion: 6.0,
+            // A hatch breaking open or a barricade coming down.
+            breaking: 1.5,
+            // A melee swing that hits something.
+            melee: 1.0,
+            // Finishing a reinforcement (metal clanging into place).
+            reinforce: 0.8,
+        ),
     ),
     // ---- Round loop, operators and gadgets (M6) ----
     round: (
