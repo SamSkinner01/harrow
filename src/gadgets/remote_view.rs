@@ -38,7 +38,7 @@ use crate::{
     config::Tuning,
     destruction::DestructionIntent,
     player::{CharacterState, LocalPlayer, Player, PlayerInput},
-    round::{MovementLock, Round, RoundIntent, RoundPhase, RoundSystems},
+    round::{MovementLock, Round, RoundIntent, RoundPhase, RoundReset, RoundSystems},
     weapons::WeaponInput,
 };
 
@@ -54,6 +54,9 @@ impl Plugin for RemoteViewPlugin {
                 (
                     use_recon.in_set(GadgetStage::Use),
                     lock_viewers.after(RoundSystems::Locks),
+                    // Right after respawning, before the next frozen-input
+                    // restore could undo the new spawn's facing.
+                    end_views_on_reset.after(RoundSystems::Reactions),
                 ),
             )
             .add_systems(
@@ -313,6 +316,22 @@ fn use_recon(
             }
             None => {}
         }
+    }
+}
+
+/// A new round: everyone is back in their body.
+fn end_views_on_reset(
+    mut resets: MessageReader<RoundReset>,
+    viewers: Query<Entity, With<RemoteView>>,
+    mut events: MessageWriter<GadgetEvent>,
+    mut commands: Commands,
+) {
+    if resets.read().last().is_none() {
+        return;
+    }
+    for viewer in &viewers {
+        commands.entity(viewer).remove::<(RemoteView, FrozenInput)>();
+        events.write(GadgetEvent::ViewLeft { by: viewer, lost: false });
     }
 }
 

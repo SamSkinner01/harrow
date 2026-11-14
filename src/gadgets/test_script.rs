@@ -543,7 +543,7 @@ struct LogQueries<'w, 's> {
     walkers: Query<
         'w,
         's,
-        (Entity, &'static Transform, &'static Health, Option<&'static GadgetSpeedScale>),
+        (Entity, &'static Transform, &'static Health, Option<&'static GadgetSpeedScale>, &'static CharacterState),
         (With<TestWalker>, Without<LocalPlayer>),
     >,
     surfaces: Query<'w, 's, (Entity, &'static Name, &'static SoftSurface, &'static GlobalTransform)>,
@@ -617,8 +617,14 @@ fn log_state(q: &LogQueries, me: Entity, at: Vec3) {
     for (e, h) in &q.dummies {
         info!("  dummy {e} health {:.1}", h.current);
     }
-    for (e, t, h, slow) in &q.walkers {
-        info!("  walker {e} at {:.2} health {:.0} slow {:?}", t.translation, h.current, slow.map(|s| s.0));
+    for (e, t, h, slow, state) in &q.walkers {
+        info!(
+            "  walker {e} at {:.2} health {:.0} slow {:?} stance {:?}",
+            t.translation,
+            h.current,
+            slow.map(|s| s.0),
+            state.stance
+        );
     }
     for (e, name, s, gt) in &q.surfaces {
         if gt.translation().distance(at) < 6.5 {

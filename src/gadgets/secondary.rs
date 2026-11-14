@@ -147,12 +147,12 @@ fn apply_secondary_flag(
 /// default) operator.
 fn choose_on_select_screen(
     round: Res<Round>,
-    mut pickers: Query<(&GadgetButtons, &Team, &mut OperatorChoice), With<Player>>,
+    mut pickers: Query<(Entity, &GadgetButtons, &Team, &mut OperatorChoice), With<Player>>,
 ) {
     if round.phase != RoundPhase::OperatorSelect {
         return;
     }
-    for (buttons, team, mut choice) in &mut pickers {
+    for (entity, buttons, team, mut choice) in &mut pickers {
         if !buttons.secondary.pressed {
             continue;
         }
@@ -164,7 +164,9 @@ fn choose_on_select_screen(
         let options = op.info().secondaries;
         let current = choice.secondary_for(op);
         let i = options.iter().position(|g| *g == current).unwrap_or(0);
-        choice.set_secondary(op, options[(i + 1) % options.len()]);
+        let next = options[(i + 1) % options.len()];
+        choice.set_secondary(op, next);
+        info!("gadget: {entity} picks {} for {}", next.name(), op.info().callsign);
     }
 }
 
