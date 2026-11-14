@@ -45,7 +45,6 @@ pub struct Tuning {
     #[allow(dead_code)]
     pub weapons: WeaponTuning,
     pub destruction: DestructionTuning,
-    #[allow(dead_code)]
     pub round: RoundTuning,
 }
 
@@ -157,10 +156,116 @@ pub struct DebrisTuning {
     pub lifetime: f32,
 }
 
-/// Round loop and gadgets (M6). Owned by `src/round` and `src/gadgets`.
+/// Round loop, operators and gadgets (M6). Owned by `src/round` and
+/// `src/gadgets`. Every value is explained in the tuning file.
 #[derive(Deserialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
-pub struct RoundTuning {}
+pub struct RoundTuning {
+    pub timers: RoundTimers,
+    /// Used instead of `timers` with `--round-test`.
+    pub test_timers: RoundTimers,
+    pub rounds_to_win: u32,
+    pub test_rounds_to_win: u32,
+    pub swap_sides_every: u32,
+    pub attackers_hold_in_prep: bool,
+    pub disable_reach: f32,
+    pub pickup_reach: f32,
+    pub armour_damage: RatingScale,
+    pub speed_multiplier: RatingScale,
+    pub operators: OperatorRoster,
+    pub darts: DartTuning,
+    pub stakes: StakeTuning,
+    pub intel: IntelTuning,
+    pub volume: f32,
+}
+
+/// Seconds for each part of a round.
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct RoundTimers {
+    pub select: f32,
+    pub prep: f32,
+    pub action: f32,
+    pub plant: f32,
+    pub defuser: f32,
+    pub disable: f32,
+    pub round_end: f32,
+    pub match_end: f32,
+}
+
+/// A value for each armour or speed rating (1 to 3).
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct RatingScale {
+    pub rating_1: f32,
+    pub rating_2: f32,
+    pub rating_3: f32,
+}
+
+impl RatingScale {
+    pub fn get(&self, rating: u8) -> f32 {
+        match rating {
+            0 | 1 => self.rating_1,
+            2 => self.rating_2,
+            _ => self.rating_3,
+        }
+    }
+}
+
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct OperatorRoster {
+    pub auger: OperatorNumbers,
+    pub lark: OperatorNumbers,
+    pub mortise: OperatorNumbers,
+    pub fathom: OperatorNumbers,
+}
+
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct OperatorNumbers {
+    pub armour: u8,
+    pub speed: u8,
+    /// How many of the unique gadget the operator carries.
+    pub gadgets: u8,
+}
+
+/// Lark's sensor darts.
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct DartTuning {
+    pub speed: f32,
+    pub drop: f32,
+    pub max_flight: f32,
+    pub listen_time: f32,
+    pub radius: f32,
+    pub min_loudness: f32,
+    pub health: f32,
+    pub hiss_radius: f32,
+}
+
+/// Fathom's seismic stakes.
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct StakeTuning {
+    pub place_distance: f32,
+    pub radius: f32,
+    pub vertical_reach: f32,
+    pub min_loudness: f32,
+    pub ping_interval: f32,
+    pub saturate_loudness: f32,
+    pub saturate_radius: f32,
+    pub saturate_time: f32,
+    pub health: f32,
+}
+
+/// How long revealed positions stay on screen.
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct IntelTuning {
+    pub ripple_time: f32,
+    pub ping_time: f32,
+}
 
 #[derive(Deserialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
@@ -171,6 +276,16 @@ pub struct LightingTuning {
     pub sun: f32,
     /// Ambient (sky fill) brightness, cd/m2.
     pub ambient: f32,
+    /// Max eye-adaptation boost in dark scenes, stops (0 = off).
+    pub adaptation_max: f32,
+    /// Average scene log2 luminance below which adaptation kicks in.
+    pub adaptation_threshold: f32,
+    /// Interior lantern spot-light intensity (game units).
+    pub lamp_intensity: f32,
+    /// Lantern colour (sRGB).
+    pub lamp_colour: (f32, f32, f32),
+    /// Lantern light range, metres.
+    pub lamp_range: f32,
 }
 
 #[derive(Deserialize, Clone, Debug)]
