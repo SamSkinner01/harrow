@@ -6,12 +6,14 @@
 
 use avian3d::prelude::*;
 use bevy::{
+    asset::RenderAssetUsages,
     camera::Exposure,
     curve::cubic_splines::LinearSpline,
     light::CascadeShadowConfigBuilder,
-    mesh::VertexAttributeValues,
+    mesh::Indices,
     post_process::auto_exposure::{AutoExposure, AutoExposureCompensationCurve, AutoExposurePlugin},
     prelude::*,
+    render::render_resource::PrimitiveTopology,
 };
 
 use super::materials::MaterialLibrary;
@@ -64,34 +66,85 @@ fn spawn_sun(mut commands: Commands) {
     ));
 }
 
+/// Rectangles (world x/z) where the desert floor is left out, e.g. over a
+/// basement or a sunken stair. Insert before `Startup`; the floor's visible
+/// surface and its collider both skip them.
+#[derive(Resource, Clone, Default, Debug)]
+pub struct DesertHoles(pub Vec<Rect>);
+
 fn spawn_desert_floor(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     library: Res<MaterialLibrary>,
+    holes: Option<Res<DesertHoles>>,
 ) {
-    const SIZE: f32 = 2000.0;
-    let mut mesh = Plane3d::default().mesh().size(SIZE, SIZE).build();
-    // Plane UVs run 0..1 across the whole plane; the material library expects
-    // metres.
-    if let Some(VertexAttributeValues::Float32x2(uvs)) = mesh.attribute_mut(Mesh::ATTRIBUTE_UV_0) {
-        for uv in uvs {
-            uv[0] *= SIZE;
-            uv[1] *= SIZE;
-        }
+    const HALF: f32 = 1000.0;
+    let holes = holes.map(|h| h.0.clone()).unwrap_or_default();
+    let material = library.get("sand").expect("sand material");
+    for rect in desert_pieces(HALF, &holes) {
+        let (min, max) = (rect.min, rect.max);
+        // UVs in metres from the world origin, so dunes and other sand
+        // pieces (kit UVs are world metres too) line up with the floor.
+        let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default())
+            .with_inserted_attribute(
+                Mesh::ATTRIBUTE_POSITION,
+                vec![[min.x, 0.0, min.y], [max.x, 0.0, min.y], [max.x, 0.0, max.y], [min.x, 0.0, max.y]],
+            )
+            .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, vec![[0.0, 1.0, 0.0]; 4])
+            .with_inserted_attribute(
+                Mesh::ATTRIBUTE_UV_0,
+                vec![[min.x, min.y], [max.x, min.y], [max.x, max.y], [min.x, max.y]],
+            )
+            .with_inserted_indices(Indices::U32(vec![0, 2, 1, 0, 3, 2]));
+        mesh.generate_tangents().ok();
+        commands.spawn((
+            Name::new("Desert floor"),
+            Mesh3d(meshes.add(mesh)),
+            MeshMaterial3d(material.clone()),
+            Transform::from_xyz(0.0, DESERT_FLOOR_Y, 0.0),
+        ));
+        // Collision: a thick slab whose top is the desert floor.
+        let size = max - min;
+        let centre = (min + max) / 2.0;
+        commands.spawn((
+            RigidBody::Static,
+            Collider::cuboid(size.x, 1.0, size.y),
+            Transform::from_xyz(centre.x, DESERT_FLOOR_Y - 0.5, centre.y),
+        ));
     }
-    mesh.generate_tangents().ok();
-    commands.spawn((
-        Name::new("Desert floor"),
-        Mesh3d(meshes.add(mesh)),
-        MeshMaterial3d(library.get("sand").expect("sand material")),
-        Transform::from_xyz(0.0, DESERT_FLOOR_Y, 0.0),
-    ));
-    // Collision: a thick slab whose top is the desert floor.
-    commands.spawn((
-        RigidBody::Static,
-        Collider::cuboid(SIZE, 1.0, SIZE),
-        Transform::from_xyz(0.0, DESERT_FLOOR_Y - 0.5, 0.0),
-    ));
+}
+
+/// Split the square floor (-half..half) into rectangles that cover it
+/// except for `holes`: a grid on every hole edge, empty cells dropped and
+/// neighbouring cells in a row merged.
+fn desert_pieces(half: f32, holes: &[Rect]) -> Vec<Rect> {
+    let mut xs = vec![-half, half];
+    let mut zs = vec![-half, half];
+    for hole in holes {
+        xs.extend([hole.min.x, hole.max.x]);
+        zs.extend([hole.min.y, hole.max.y]);
+    }
+    for v in [&mut xs, &mut zs] {
+        v.retain(|c| c.abs() <= half);
+        v.sort_by(f32::total_cmp);
+        v.dedup();
+    }
+    let mut pieces = Vec::new();
+    for z in zs.windows(2) {
+        let mut run: Option<Rect> = None;
+        for x in xs.windows(2) {
+            let cell = Rect::new(x[0], z[0], x[1], z[1]);
+            let empty = holes.iter().any(|h| h.contains(cell.center()));
+            match (&mut run, empty) {
+                (Some(r), false) => r.max.x = cell.max.x,
+                (None, false) => run = Some(cell),
+                (Some(_), true) => pieces.extend(run.take()),
+                (None, true) => {}
+            }
+        }
+        pieces.extend(run);
+    }
+    pieces
 }
 
 /// Sun, ambient, exposure and eye adaptation from the `lighting` section of

@@ -382,4 +382,8 @@ def all_pieces():
             barricade("barricade_window", 1.0, 1.0, 1.1, broken),
         ]
     pieces.append(sandbags())
+    # Map pieces live in their own module (imported here to avoid a cycle).
+    from .map_pieces import all_map_pieces
+
+    pieces += all_map_pieces()
     return pieces

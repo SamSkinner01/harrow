@@ -79,6 +79,10 @@
         lamp_intensity: 400000.0,
         lamp_colour: (1.0, 0.78, 0.52),
         lamp_range: 9.0,
+        // Lanterns that cast no shadows (small rooms; shadows cost a render
+        // pass each) light through walls, so they are dimmer and reach less
+        // far: intensity and range are multiplied by this.
+        unshadowed_lamp_scale: 0.7,
     ),
     // Per-surface look. scale = metres one texture repeat covers.
     // tint multiplies the texture colour (1.0 = unchanged; above 1 brightens).
@@ -90,6 +94,9 @@
         "wood": (scale: 1.57, tint: (1.0, 1.0, 1.0)),
         "metal": (scale: 1.0, tint: (1.0, 1.0, 1.0)),
         "burlap": (scale: 0.27, tint: (1.0, 1.0, 1.0)),
+        "rock": (scale: 2.7, tint: (1.25, 1.12, 0.95)),
+        "fabric": (scale: 1.2, tint: (0.9, 0.8, 0.75)),
+        "gravel": (scale: 2.48, tint: (1.25, 1.15, 1.0)),
     },
     footsteps: (
         // Metres travelled per footstep.
@@ -366,5 +373,11 @@
         ),
         // Volume of round and gadget sounds (beeps, hiss, ticks).
         volume: 0.6,
+        // Harrow Keep has four bomb-site pairs (basement, ground, upper,
+        // top) and four attacker spawns. Each round uses one pair, and one of
+        // that pair's spawns for the attackers. Cycle = in order, one step
+        // per round; Random; Fixed(n) = always the nth (from 1).
+        site_pairs: Cycle,
+        attacker_spawns: Cycle,
     ),
 )

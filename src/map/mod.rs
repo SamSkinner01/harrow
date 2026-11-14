@@ -1,11 +1,13 @@
 //! Maps: environment (sun, sky, desert), the fortress kit loader and
 //! material library, and the playable areas.
 //!
-//! `--map keep` (default): Harrow Keep, first section, built from the kit.
+//! `--map keep` (default, also `--map` alone): Harrow Keep, the full map.
+//! `--map section_a`: the first small section (M2), one building and a courtyard.
 //! `--map greybox`: the M1 controller test area.
 
 mod environment;
 mod greybox;
+mod harrow_keep;
 mod keep;
 mod kit;
 mod lamps;
@@ -23,21 +25,46 @@ impl Plugin for MapPlugin {
             environment::EnvironmentPlugin,
             lamps::LampsPlugin,
         ));
-        match map_from_args().as_deref() {
-            Some("greybox") => app.add_plugins(greybox::GreyboxPlugin),
-            Some("keep") | None => app.add_plugins(keep::KeepPlugin),
-            Some(other) => {
-                warn!("unknown --map {other:?}; loading the keep");
-                app.add_plugins(keep::KeepPlugin)
-            }
+        match MapChoice::from_args() {
+            MapChoice::Greybox => app.add_plugins(greybox::GreyboxPlugin),
+            MapChoice::SectionA => app.add_plugins(keep::KeepPlugin),
+            MapChoice::Keep => app.add_plugins(harrow_keep::HarrowKeepPlugin),
         };
     }
 }
 
-fn map_from_args() -> Option<String> {
-    let args: Vec<String> = std::env::args().collect();
-    args.iter()
-        .position(|a| a == "--map")
-        .and_then(|i| args.get(i + 1))
-        .cloned()
+/// Which map `--map` asks for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MapChoice {
+    /// Harrow Keep, the full map (default).
+    Keep,
+    /// The first section built in M2.
+    SectionA,
+    /// The grey-box movement test area.
+    Greybox,
+}
+
+impl MapChoice {
+    pub fn from_args() -> Self {
+        let args: Vec<String> = std::env::args().collect();
+        let value = args
+            .iter()
+            .position(|a| a == "--map")
+            .and_then(|i| args.get(i + 1))
+            .filter(|v| !v.starts_with("--"));
+        match value.map(String::as_str) {
+            None | Some("keep") => MapChoice::Keep,
+            Some("section_a") => MapChoice::SectionA,
+            Some("greybox") => MapChoice::Greybox,
+            Some(other) => {
+                warn!("unknown --map {other:?} (keep, section_a or greybox); loading the keep");
+                MapChoice::Keep
+            }
+        }
+    }
+
+    /// Maps with bomb sites and spawns (the round loop runs on these).
+    pub fn has_objectives(self) -> bool {
+        self != MapChoice::Greybox
+    }
 }

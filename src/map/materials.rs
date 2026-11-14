@@ -44,7 +44,7 @@ impl Plugin for MaterialsPlugin {
 /// tuning file. Real-world texture widths from Poly Haven are listed by
 /// `tools/scripts/fetch_textures.py`.
 const SURFACES: &[&str] = &[
-    "stone", "plaster", "flagstone", "sand", "wood", "metal", "burlap",
+    "stone", "plaster", "flagstone", "sand", "wood", "metal", "burlap", "rock", "fabric", "gravel",
 ];
 
 #[derive(Resource)]
