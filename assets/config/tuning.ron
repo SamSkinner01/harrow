@@ -110,6 +110,112 @@
     weapons: (),
     // ---- Destruction (M4) ----
     destruction: (),
-    // ---- Round loop and gadgets (M6) ----
-    round: (),
+    // ---- Round loop, operators and gadgets (M6) ----
+    round: (
+        // Seconds for each part of a round.
+        timers: (
+            // Choosing an operator before each round (press 1 or 2).
+            select: 15.0,
+            // Defenders set up; attackers wait at their spawn.
+            prep: 45.0,
+            // Attackers push. Time running out without a plant = defenders win.
+            action: 180.0,
+            // Hold F this long inside a site to plant the defuser.
+            plant: 7.0,
+            // A planted defuser runs this long, then the attackers win.
+            defuser: 45.0,
+            // Hold F this long next to a planted defuser to disable it.
+            disable: 7.0,
+            // The result banner shows this long before the next round.
+            round_end: 5.0,
+            // The match result shows this long, then a new match starts.
+            match_end: 10.0,
+        ),
+        // Short timers used with --round-test (automated checks).
+        test_timers: (
+            select: 1.0,
+            prep: 2.0,
+            action: 8.0,
+            plant: 2.0,
+            defuser: 3.0,
+            disable: 2.0,
+            round_end: 1.5,
+            match_end: 2.0,
+        ),
+        // Rounds a team needs to win the match.
+        rounds_to_win: 4,
+        // Same, with --round-test.
+        test_rounds_to_win: 3,
+        // Teams swap attack and defence after this many rounds (1 = every round).
+        swap_sides_every: 1,
+        // true = attackers can't leave their spawn during prep. (They would be
+        // driving recon drones, which aren't built yet.)
+        attackers_hold_in_prep: true,
+        // How close (metres) a defender must be to a planted defuser to disable it.
+        disable_reach: 1.5,
+        // How close (metres) an attacker must walk to a dropped defuser to pick it up.
+        pickup_reach: 1.2,
+        // Damage taken for each armour rating (1.0 = full damage, 0.8 = 20% less).
+        armour_damage: (rating_1: 1.0, rating_2: 0.9, rating_3: 0.8),
+        // Movement speed for each speed rating (1.0 = normal speed).
+        speed_multiplier: (rating_1: 0.9, rating_2: 1.0, rating_3: 1.1),
+        // Operators: armour and speed ratings (1 to 3) and how many of their
+        // unique gadget they carry.
+        operators: (
+            auger: (armour: 2, speed: 2, gadgets: 2),   // ring cutters
+            lark: (armour: 1, speed: 3, gadgets: 4),    // sensor darts
+            mortise: (armour: 3, speed: 1, gadgets: 3), // backplate charges
+            fathom: (armour: 1, speed: 3, gadgets: 3),  // seismic stakes
+        ),
+        // Lark's sensor darts.
+        darts: (
+            // Launch speed, metres per second.
+            speed: 40.0,
+            // How fast a dart's flight curves down (metres per second, per second).
+            drop: 4.0,
+            // A dart that hits nothing within this many seconds is lost.
+            max_flight: 1.5,
+            // Seconds a stuck dart listens for.
+            listen_time: 8.0,
+            // Defender sounds within this many metres show to attackers.
+            radius: 6.0,
+            // Quietest sound a dart picks up. Footsteps: sprint 1.0, walk 0.5,
+            // crouch-walk 0.12, prone 0.04, so crouch-walking is not heard.
+            min_loudness: 0.2,
+            // Damage a dart takes before it breaks.
+            health: 10.0,
+            // Defenders within this many metres hear a hiss when a dart lands.
+            hiss_radius: 10.0,
+        ),
+        // Fathom's seismic stakes.
+        stakes: (
+            // How far in front of you (metres) a stake is hammered into the floor.
+            place_distance: 0.9,
+            // Attacker footsteps within this many metres (sideways) are pinged.
+            radius: 6.0,
+            // ...and within this many metres above or below (one floor is 3.2).
+            vertical_reach: 4.0,
+            // Quietest footstep a stake feels (walk 0.5, crouch-walk 0.12).
+            min_loudness: 0.2,
+            // Seconds between pings for the same attacker and stake.
+            ping_interval: 0.5,
+            // A sound at least this loud (gunshot 3, ring cutter 5, explosion 6)...
+            saturate_loudness: 4.0,
+            // ...within this many metres...
+            saturate_radius: 8.0,
+            // ...blinds the stake for this many seconds.
+            saturate_time: 10.0,
+            // Damage a stake takes before it breaks.
+            health: 20.0,
+        ),
+        // How long revealed positions stay on screen, seconds.
+        intel: (
+            // Ripple markers from Lark's darts.
+            ripple_time: 1.5,
+            // Pings from Fathom's stakes.
+            ping_time: 2.0,
+        ),
+        // Volume of round and gadget sounds (beeps, hiss, ticks).
+        volume: 0.6,
+    ),
 )

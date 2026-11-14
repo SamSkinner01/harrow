@@ -15,8 +15,13 @@ licences. Add a row before committing the asset.
 
 Textures are fetched by `tools/scripts/fetch_textures.py`.
 
-Sounds: the footstep sound is synthesised in code (`src/player/footsteps.rs`);
-no external audio yet.
+Sounds: the footstep sound is synthesised in code (`src/player/footsteps.rs`),
+and so are the round and gadget sounds (defuser beeps, result chords, dart
+hiss, stake tick: `src/round/sound.rs`); no external audio yet.
+
+Models made in code (no external assets): the defuser device
+(`src/round/defuser.rs`), sensor darts and seismic stakes (`src/gadgets/`),
+and the bomb-site floor markings (`src/round/sites.rs`).
 
 ## Tools (not shipped with the game)
 

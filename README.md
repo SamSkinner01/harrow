@@ -61,6 +61,10 @@ Bevy's API changes between releases, so everything is pinned with `=` in
 | C | Crouch (toggle) |
 | Z | Prone (toggle) |
 | Q / E | Lean left / right (toggle) |
+| F (hold) | Plant the defuser in a site (attackers) / disable it (defenders) |
+| 3 | Unique gadget (operator ability) |
+| 5 | Equip / stow the defuser (attackers) |
+| 1 / 2 | Pick an operator on the selection screen |
 | Esc / left click | Release / capture the mouse |
 | F1 | Toggle key help |
 | F3 | Toggle FPS overlay |
@@ -99,11 +103,23 @@ cargo run -- --stance crouch --lean left       # hold a stance / lean
 cargo run -- --third-person --hitboxes         # start with debug views on
 cargo run -- --trace-player                    # log position 4x per second, and every footstep
 cargo run -- --no-vsync                        # uncapped frame rate (performance checks)
+cargo run -- --team defenders --operator fathom  # your starting side and operator (solo testing)
+cargo run -- --no-round --operator lark          # free play: no round loop; --operator still gives that gadget
+cargo run -- --round-test                        # short round timers and a short match (round.test_timers)
+cargo run -- --round-script "action@0.5: hold; planted@1: shot out.png; planted@2: quit"
+                                               # scripted automated run; commands in src/round/script.rs
+cargo run -- --show-all-intel                    # show both teams' gadget reveals (testing)
 ```
 
 Used for automated checks: e.g. spawn at the stairs, auto-move forward, and
 screenshot/log where the player ends up. Automated runs don't grab the mouse
 and don't play player sounds.
+
+The round loop (Harrow Keep only) starts with operator selection. In
+`--screenshot` runs everyone is auto-picked; `--round-script` runs pick
+with `pick N` or let the timer run out, can spawn stand-in characters
+(`walker`), plant (`plant A`), place gadgets (`dart`, `stake`), shoot,
+take screenshots (`shot`) and quit, and log the round state once a second.
 
 ## Layout
 
