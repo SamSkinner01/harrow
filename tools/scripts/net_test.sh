@@ -39,6 +39,8 @@
 #           with no extra rollbacks (net-trace rollback counter).
 #   cutter  Bravo reinforces a wall, Alpha clamps a ring cutter on it and
 #           cuts through: the hole is the same on all three instances.
+#   cover   Bravo sets ballistic cover, Alpha walks into it: stopped on
+#           its own client too (the cover's collider exists on clients).
 #   walk    the wire scenario's walk without wire (rollback baseline).
 #   cctv    Bravo watches the courtyard camera, Alpha shoots it out: Bravo's
 #           feed moves to the next camera.
@@ -67,7 +69,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ $GADGETS == all ]]; then
-    for scenario in frag smoke flash drone wire cutter cctv; do
+    for scenario in frag smoke flash drone wire cover cutter cctv; do
         "$0" --gadgets "$scenario" --latency "$LATENCY" --jitter "$JITTER" --loss "$LOSS"
     done
     exit 0
@@ -144,6 +146,14 @@ if [[ -n $GADGETS ]]; then
             BRAVO="7 look 0 0; 8 hold4 1.8; 11 log; 15 aimat 8.5 0.5 8; 17.6 shot $S-bravo.png; 20 log; 21 quit"
             ALPHA="7 look 180 0; 16 log; 17 move 0 1; 17.4 log; 17.8 log; 18.2 log; 18.4 shot $S-alpha.png; 18.6 log; 19 log; 19.4 log; 20.5 move 0 0; 21 log; 22 quit"
             ;;
+        cover)
+            # Bravo sets ballistic cover at z~8.1 and steps aside; Alpha walks
+            # into it: stopped by the cover on its own client (predicted
+            # collision, no extra rollbacks) as on the server.
+            SERVER="6 equip Bravo mortise cover; 6 equip Alpha lark; 6 tp Bravo 8.5 0 9; 6 tp Alpha 8.5 0 4; 17 log; 18 tp Bravo 11 0 3.5; 22.5 log"
+            BRAVO="7 look 0 0; 8 hold4 1.8; 11 log; 15 aimat 8.5 0.8 8; 19 shot $S-bravo.png; 21 quit"
+            ALPHA="7 look 180 0; 16 log; 17 move 0 1; 18.2 log; 19 log; 19.8 log; 20.5 move 0 0; 21 log; 21.3 shot $S-alpha.png; 22 quit"
+            ;;
         walk)
             # The wire scenario's walk without the wire: rollback baseline.
             SERVER="6 equip Bravo mortise wire; 6 equip Alpha lark; 6 tp Bravo 8.5 0 9; 6 tp Alpha 8.5 0 4; 18 tp Bravo 11 0 3.5; 21.6 log"
@@ -162,7 +172,7 @@ if [[ -n $GADGETS ]]; then
             BRAVO="8 g; 9.5 log; 10 shot $S-bravo-view.png; 13 log; 13.5 shot $S-bravo-next.png; 14.5 g; 15 log; 16 quit"
             ALPHA="8 aimat 13.6 2.7 0.45; 9.8 shot $S-alpha.png; 11 fire; 11.4 fire; 11.8 fire; 13 log; 14 shot $S-alpha-after.png; 15 quit"
             ;;
-        *) echo "unknown scenario $GADGETS (frag smoke flash drone wire cutter cctv all)" >&2; exit 2 ;;
+        *) echo "unknown scenario $GADGETS (frag smoke flash drone wire cover walk cutter cctv all)" >&2; exit 2 ;;
     esac
     # Positions are on Harrow Keep section A (the first, small map).
     NET+=(--map section_a)
@@ -195,7 +205,7 @@ if [[ -n $GADGETS ]]; then
             | grep -oE "rollbacks [0-9]+ \([0-9]+ ticks\)( \| others' private state [0-9]+)?" \
             | sed 's/^/last trace: /' || true
     done
-    if [[ $GADGETS == wire || $GADGETS == walk ]]; then
+    if [[ $GADGETS == wire || $GADGETS == walk || $GADGETS == cover ]]; then
         echo
         echo "== $GADGETS: Alpha's rollbacks, once a second (walking north at t=17..20.5) =="
         strip "$S-alpha.log" | grep "net-trace: InGame" | grep -oE "rollbacks [0-9]+ \([0-9]+ ticks\)" | uniq -c

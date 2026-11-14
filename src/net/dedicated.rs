@@ -355,6 +355,14 @@ pub struct ServerConfigPlugin {
 
 impl Plugin for ServerConfigPlugin {
     fn build(&self, app: &mut App) {
+        // Bevy's own SIGINT/SIGTERM handler politely declines when the
+        // server was started with SIGINT ignored (a background job of a
+        // script, nohup), and SIGTERM would then kill it mid-tick. In that
+        // case install it ourselves (if Bevy's is in place this fails,
+        // harmlessly).
+        if ctrlc::set_handler(bevy::app::TerminalCtrlCHandlerPlugin::gracefully_exit).is_ok() {
+            info!("SIGINT/SIGTERM handler installed (SIGINT was ignored at start)");
+        }
         app.insert_resource(self.config.clone())
             .add_systems(Startup, apply_round_settings)
             .add_systems(PreUpdate, apply_round_tuning.after(TuningSystems));
