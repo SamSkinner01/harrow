@@ -1130,13 +1130,27 @@ undercroft (B) are long east-west lanes linking the stairs.
 - The desert floor leaves holes over the basement and the cellar steps
   (`DesertHoles`); nothing below ground shows from outside.
 - Static batching (`src/map/batch.rs`): after load, all hard kit meshes are
-  merged per material and 16 m cell (about 6000 pieces into 294 meshes);
-  soft pieces stay separate for destruction. `--no-batch` disables it.
-- 51 lanterns, 15 with shadow maps (larger rooms and sites); the others
-  are dimmer and shorter-ranged (`lighting.unshadowed_lamp_scale`).
-- Every staircase has a ramp collider and is checked by walking up it
-  (see the M2 map report); spawn points get temporary floors until the map
-  has loaded.
+  merged per material and 16 m cell (about 6000 meshes into 295) and the
+  originals are despawned; soft pieces stay separate for destruction.
+  `--no-batch` disables it; a headless server skips it.
+- 51 lanterns, 15 of them shadow-casting (larger rooms and sites), and
+  those only cast while a camera is within `lighting.lamp_shadow_distance`
+  (16 m) and not on a floor above them; the others are dimmer and
+  shorter-ranged (`lighting.unshadowed_lamp_scale`).
+- Every staircase has a ramp collider; spawn points get temporary floors
+  until the map has loaded.
+
+**Checked (2026-11-14):** all 30 flights walked up by script (keep, towers,
+gatehouse, barracks, granary, terrace, rampart and cellar steps); six
+attacker routes walked segment by segment from the spawn ruins to both
+sites of every pair, plus the whole wall-walk ring (towers, barracks roof,
+gatehouse roof); round tests plant and win on three different pairs and
+the pairs rotate per round; stand-in attackers on every spawn are hidden
+from the walls, towers and keep windows. Performance (debug build,
+`--no-vsync`, round running, default window, RTX 4070 Ti Super, other
+builds running): median 190 to 390 fps over eight views (outside the gate,
+yard, tower roof across the compound, terrace, great hall, map room,
+basement, signal room).
 
 **Section A (M2)**, `--map section_a`, `src/map/keep.rs`: the first
 playable piece. A two-storey building (12 x 8 m) on the north side of a
