@@ -22,8 +22,10 @@
 //!   `characters/body.rs`
 //!   shows them as M5 character models.
 //! - **Replication** (`protocol.rs`): characters' round state, the match
-//!   state ([`RoundSync`]), defusers and deployed gadgets. HUD and sound
-//!   events are forwarded as messages (`events.rs`).
+//!   state ([`RoundSync`]), defusers and deployed gadgets (`round_sync.rs`,
+//!   `gadget_sync.rs`: cutters, charges, grenades, smoke, wire, cover,
+//!   alarms, drones, CCTV, remote views, per-player gadget state). HUD and
+//!   sound events are forwarded as messages (`events.rs`).
 //! - **Lag compensation** (`lag_comp.rs`): the server keeps ~300 ms of
 //!   hit-zone history per character and can rewind to what a shooter saw.
 //! - **Session** (`server.rs`, `client.rs`): handshake with a build check,
@@ -33,11 +35,13 @@ mod client;
 pub mod dedicated;
 mod destruction_sync;
 mod events;
+mod gadget_sync;
 pub mod input;
 pub mod lag_comp;
 pub mod protocol;
 mod round_sync;
 mod server;
+mod test_script;
 mod trace;
 pub mod tuning_sync;
 
@@ -51,7 +55,7 @@ pub use protocol::{NetAim, NetPlayer, RoundSync, SimPosition};
 use crate::{
     combat::CombatSystems,
     destruction::DestructionSystems,
-    gadgets::GadgetSystems,
+    gadgets::{GadgetSpeedSystems, GadgetSystems},
     physics::TICK_HZ,
     player::PlayerInputSystems,
     round::RoundSystems,
@@ -63,10 +67,21 @@ use crate::{
 /// incompatibly; builds are also compared by [`BUILD_ID`] on connect.
 pub const PROTOCOL_ID: u64 = 0x4841_5252_4f57_0008;
 
-/// Netcode private key. **Development only**: every build has the same
-/// key, so it only keeps out other games' packets, not attackers. A public
-/// server needs a real key from a matchmaking backend.
+/// Netcode private key when no secret is set. **Development only**: every
+/// build has it, so it only keeps out other games' packets, not people.
 pub const DEV_PRIVATE_KEY: [u8; 32] = *b"harrow-dev-key-do-not-trust-this";
+
+/// The netcode private key for a shared secret (`--key`, `HARROW_KEY`, or
+/// `key` in the server config). Clients make their own connect tokens, so
+/// the key is a shared secret: a server with one only accepts clients that
+/// use the same secret (others time out: "Server not responding"). No
+/// secret: [`DEV_PRIVATE_KEY`].
+pub fn netcode_key(secret: Option<&str>) -> [u8; 32] {
+    match secret.map(str::trim).filter(|s| !s.is_empty()) {
+        None => DEV_PRIVATE_KEY,
+        Some(secret) => blake3::derive_key("harrow 2026-11 netcode private key", secret.as_bytes()),
+    }
+}
 
 /// Identifies this exact build: crate version and git commit. Client and
 /// server must match.
@@ -103,6 +118,8 @@ impl Plugin for NetPlugin {
             destruction_sync::DestructionSyncPlugin,
             lag_comp::LagCompPlugin,
             tuning_sync::TuningSyncPlugin,
+            gadget_sync::GadgetSyncPlugin,
+            test_script::NetScriptPlugin,
         ));
         if self.launch.net_trace {
             app.add_plugins(trace::NetTracePlugin);
@@ -125,6 +142,12 @@ impl Plugin for NetPlugin {
             ),
         )
         .configure_sets(FixedPostUpdate, CombatSystems.run_if(simulating))
+        // Razor wire's slow-down is predicted: set before the predicted
+        // history is recorded (every machine, rollback replays included).
+        .configure_sets(
+            FixedPostUpdate,
+            GadgetSpeedSystems.before(lightyear::prelude::PredictionSystems::UpdateHistory),
+        )
         // A rollback replay restores old input into `PlayerInput`; read this
         // frame's mouse and keys after it, so none of it is lost.
         .configure_sets(

@@ -30,7 +30,7 @@ use lightyear::{
 };
 
 use super::{
-    BUILD_ID, DEV_PRIVATE_KEY, NetAim, NetPlayer, PROTOCOL_ID, SimPosition,
+    BUILD_ID, NetAim, NetPlayer, PROTOCOL_ID, SimPosition, netcode_key,
     dedicated::ServerConfig,
     input::{NetInput, SeenPresses},
     lag_comp::PoseHistory,
@@ -116,6 +116,12 @@ fn start_server(
         _ => return,
     };
     let max_clients = config.as_ref().map_or(10, |c| c.max_players as usize);
+    // A dedicated server's key comes from its config (which the command
+    // line and HARROW_KEY override); a host's from the command line.
+    let secret = match &config {
+        Some(c) => c.key.clone(),
+        None => launch.key.clone(),
+    };
     let address = SocketAddr::new(Ipv4Addr::UNSPECIFIED.into(), port);
     let server = commands
         .spawn((
@@ -128,7 +134,7 @@ fn start_server(
             Endpoint::new(super::client::conditioner(&launch)),
             NetcodeServer::new(NetcodeConfig {
                 protocol_id: PROTOCOL_ID,
-                private_key: DEV_PRIVATE_KEY,
+                private_key: netcode_key(secret.as_deref()),
                 max_clients,
                 // Clients type whatever address reaches us (LAN IP, public
                 // IP, VPN name), which never equals our 0.0.0.0 bind
@@ -142,7 +148,14 @@ fn start_server(
         ))
         .id();
     commands.trigger(Start { entity: server });
-    info!("net: server listening on UDP {address} (build {BUILD_ID}, up to {max_clients} clients)");
+    info!(
+        "net: server listening on UDP {address} (build {BUILD_ID}, up to {max_clients} clients, {})",
+        if secret.is_some() {
+            "private: clients need the server's key"
+        } else {
+            "open: development key, anyone with the game can join"
+        }
+    );
     // Replicate at most once per tick.
     commands.insert_resource(ReplicationMetadata::new(super::tick_duration()));
 }
@@ -380,6 +393,8 @@ fn spawn_client_character(
                 // We despawn it ourselves, to drop the defuser first.
                 lifetime: Lifetime::Persistent,
             },
+            // Its gadget stock, flash and views go to this client only.
+            super::gadget_sync::PrivateTo(link),
         ),
     ));
     if late {

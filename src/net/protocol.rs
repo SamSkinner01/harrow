@@ -12,7 +12,14 @@
 //!   character every tick; inputs are redundant and buffered by Lightyear.
 //! - *State* that clients display (HUD, models): `app.component::<C>()
 //!   .replicate()` below. `C` needs `Serialize + Deserialize`, and entity
-//!   fields must be marked `#[entities]` so they are mapped.
+//!   fields must be marked `#[entities]` so they are mapped. Never mark a
+//!   field that holds a map entity (walls, surfaces: every machine builds
+//!   its own map, so they aren't replicated): `#[serde(skip)]` it instead
+//!   (mapping an unknown entity spawns an empty one on the client).
+//! - *State only its player should see* (stock, flash): add it to the
+//!   scope of `PrivateTo` (`gadget_sync.rs`).
+//! - *Moving entities the server spawns*: give them `InterpolationTarget`
+//!   and their `Transform` is interpolated.
 //! - *State the local player's movement reads* must also be predicted:
 //!   `.replicate().predict()` (plus a rollback tolerance for floats).
 //! - *State of other players that moves smoothly*: add interpolation.
@@ -27,16 +34,27 @@ use lightyear::{
 };
 use serde::{Deserialize, Serialize};
 
-use super::input::NetInput;
+use bevy_replicon::prelude::AppVisibilityExt;
+
+use super::{
+    gadget_sync::{NetActivity, NetLoadout, PrivateTo, ViewSerial},
+    input::NetInput,
+};
 use crate::{
     combat::{Dead, Health, Team},
-    gadgets::{GadgetEvent, GadgetOwner, Reveal, SeismicStake, SensorDart, UniqueGadget},
+    gadgets::{
+        BackplateCharge, BallisticCover, CctvCamera, CutterBlade, Drone, FallingPlug, Flashed,
+        GadgetActivity, GadgetEvent, GadgetOwner, GadgetSpeedScale, Grenade, ProximityAlarm,
+        RazorWire, ReconStock, RemoteView, Reveal, RingCutter, SecondaryStock, SeismicStake,
+        SensorDart, SmokeCloud, UniqueGadget,
+    },
     player::{CharacterState, Player},
     round::{
         MovementLock, ObjectiveInteraction, Round, RoundEvent, Squad,
         defuser::{DefuserCarrier, DefuserDevice, DroppedDefuser},
-        operators::{Operator, OperatorChoice},
+        operators::{Loadout, Operator, OperatorChoice},
     },
+    destruction::BreachCharges,
     weapons::{BulletHit, MoveSpeedScale, ShotFired, WeaponEvent, WeaponState},
 };
 
@@ -141,15 +159,50 @@ impl Plugin for ProtocolPlugin {
 
         // --- Objective and gadget entities ----------------------------------
         // Characters send `SimPosition` instead (their `Transform` is eased
-        // between ticks for rendering).
+        // between ticks for rendering); cut-out plugs are animated locally.
+        // Moving gadgets (grenades, drones: `InterpolationTarget`) are
+        // shown interpolated, like other players.
         app.component::<Transform>()
-            .replicate_filtered::<Without<Player>>();
+            .replicate_filtered::<(Without<Player>, Without<FallingPlug>)>()
+            .add_interpolation_with(TransformLinearInterpolation::lerp);
         app.component::<DefuserDevice>().replicate();
         app.component::<DroppedDefuser>().replicate();
         app.component::<SensorDart>().replicate();
         app.component::<SeismicStake>().replicate();
         app.component::<GadgetOwner>().replicate();
         // M4: destruction travels as surface edits (`destruction_sync.rs`).
+
+        // --- Gadgets (M6 part two), see `gadget_sync.rs` --------------------
+        // World objects, seen by everyone.
+        app.component::<RingCutter>().replicate();
+        app.component::<CutterBlade>().replicate();
+        // Sent once: clients animate the fall themselves.
+        app.component::<FallingPlug>().replicate_once();
+        app.component::<BackplateCharge>().replicate();
+        app.component::<Grenade>().replicate();
+        app.component::<SmokeCloud>().replicate();
+        app.component::<RazorWire>().replicate();
+        app.component::<BallisticCover>().replicate();
+        // Clients only need where it is (its beeps are events).
+        app.component::<ProximityAlarm>().replicate_once();
+        app.component::<Drone>().replicate();
+        app.component::<CctvCamera>().replicate();
+        // Per player, sent to that player only (`PrivateTo`, below).
+        app.component::<Flashed>().replicate();
+        app.component::<Loadout>().replicate_as::<NetLoadout>();
+        app.component::<SecondaryStock>().replicate();
+        app.component::<BreachCharges>().replicate();
+        app.component::<ReconStock>().replicate();
+        app.component::<GadgetActivity>().replicate_as::<NetActivity>();
+        app.component::<RemoteView>().replicate();
+        app.component::<ViewSerial>().replicate();
+        // Razor wire slows movement, so the owner predicts it (clients
+        // compute it from replicated wire too: `gadgets/deployables.rs`).
+        app.component::<GadgetSpeedScale>()
+            .replicate()
+            .predict()
+            .with_rollback_condition(|a, b| (a.0 - b.0).abs() > 1e-4);
+        app.add_visibility_filter::<PrivateTo>();
     }
 }
 

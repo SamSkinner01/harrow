@@ -25,7 +25,30 @@ pub struct KitPlugin;
 
 impl Plugin for KitPlugin {
     fn build(&self, app: &mut App) {
-        app.add_observer(prepare_piece);
+        app.add_observer(prepare_piece)
+            .add_systems(Update, detect_loaded.run_if(not(resource_exists::<KitLoaded>)));
+    }
+}
+
+/// Inserted once every kit piece of the map has spawned and been prepared
+/// (and transforms have settled). Colliders exist from about then on.
+#[derive(Resource)]
+pub struct KitLoaded;
+
+fn detect_loaded(
+    pieces: Query<(), With<KitPiece>>,
+    waiting: Query<(), (With<KitPiece>, Without<SurfaceKind>)>,
+    mut stable_frames: Local<u32>,
+    mut commands: Commands,
+) {
+    if pieces.is_empty() || !waiting.is_empty() {
+        *stable_frames = 0;
+        return;
+    }
+    *stable_frames += 1;
+    if *stable_frames >= 3 {
+        info!("map loaded: {} kit pieces", pieces.iter().count());
+        commands.insert_resource(KitLoaded);
     }
 }
 

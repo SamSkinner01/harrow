@@ -368,6 +368,19 @@ pub struct RoundTuning {
     /// Ring cutter, backplate charges, shared secondaries, drones, CCTV
     /// (M6 part two). Defined in `src/gadgets/tuning.rs`.
     pub gadgets: crate::gadgets::tuning::GadgetTuning,
+    /// Which site pair each round uses (maps with several pairs).
+    pub site_pairs: Rotation,
+    /// Which of the pair's attacker spawn areas each round uses.
+    pub attacker_spawns: Rotation,
+}
+
+/// How each round picks from a list (site pairs, spawn areas): `Cycle` (in
+/// order, one step per round), `Random`, or `Fixed(n)` (1-based).
+#[derive(Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Rotation {
+    Cycle,
+    Random,
+    Fixed(u32),
 }
 
 /// Seconds for each part of a round.
@@ -477,6 +490,12 @@ pub struct LightingTuning {
     pub lamp_colour: (f32, f32, f32),
     /// Lantern light range, metres.
     pub lamp_range: f32,
+    /// Lanterns without shadows (small rooms on the full map): intensity
+    /// and range multiplier, so less light leaks through walls.
+    pub unshadowed_lamp_scale: f32,
+    /// Shadow-casting lanterns only render shadows within this many metres
+    /// of the camera (each shadow map costs a render pass).
+    pub lamp_shadow_distance: f32,
 }
 
 #[derive(Deserialize, Clone, Debug)]

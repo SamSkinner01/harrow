@@ -372,10 +372,12 @@ Nobody can walk during selection.
   play) is never "wiped". Anything with a `Team` and `Health` counts as a
   member (players, bots, training dummies). Dead characters can't walk.
 
-**Bomb sites.** Site A is the ground-floor storeroom, site B the upper-floor
-east room. Each is a trigger volume (your feet must be inside), marked with
-painted ochre floor lines and a HUD label with distance. Attackers spawn
-outside the courtyard gate, defenders inside the building on both floors.
+**Bomb sites.** Each round uses one site pair of the map (Harrow Keep has
+four; see "Map: Harrow Keep"). Each site is a trigger volume (your feet
+must be inside), marked with painted ochre floor lines and a HUD label with
+distance. On section A, site A is the ground-floor storeroom and site B the
+upper-floor east room; attackers spawn outside the courtyard gate,
+defenders inside the building on both floors.
 
 **Defuser.** One attacker carries it (handed out at prep; you first if you
 attack). Key 5 equips/stows it; holding F inside a site plants it (and
@@ -970,6 +972,69 @@ or interpolated) state.
   code: identical holes, debris and dust. Late joiners get the round's
   edit log. Not yet: barricades and breach charges placed at runtime
   (their effect on walls is synced, the entities aren't).
+- Gadgets (M6 part two, `net/gadget_sync.rs`), below.
+
+### Gadgets over the network (M8 part two, 2026-11-14)
+
+The server runs every gadget's simulation, as in solo; clients show it.
+
+- **World objects, everyone sees them:** ring cutters (state, progress,
+  angle, the exposed blade as its own entity), backplate charges, grenades
+  in flight, smoke clouds, razor wire, ballistic cover, proximity alarms,
+  drones and CCTV cameras, each with its `Transform`. Grenades and drones
+  carry `InterpolationTarget`, so their `Transform` is interpolated like
+  other players (and their model stays hidden for the ~100 ms until
+  interpolation starts). The cut-out plug is sent once (`replicate_once`)
+  and falls on each client by itself; alarms are sent once too (their
+  beeps are events). Clients pour their own smoke puffs from the cloud's
+  state. The gadget model code dresses everything on `Added<..>`, on every
+  machine. Server-only entity fields (the wall a cutter or backplate sits
+  on: map entities aren't networked) are `#[serde(skip)]`.
+- **Ballistic cover is world geometry on clients too:** they add the same
+  body (`gadgets::cover_body`: name, static collider, `SurfaceKind::Hard`),
+  so predicted movement bumps into it and bullet impacts on it (surface
+  edits keyed by name and place) find it.
+- **CCTV:** the cameras exist on every machine from startup (map spots).
+  A client drops its own while connected and uses the server's (their
+  health and destruction are the server's); they come back at the menu.
+- **Per-player state, sent only to its player:** `Flashed` (blind/deaf:
+  the white-out and muffle happen on that client only), `Loadout`,
+  `SecondaryStock`, `BreachCharges`, `ReconStock`, `GadgetActivity` (HUD
+  progress bars; sent without its server-side entity targets),
+  `RemoteView`, `ViewSerial`. A replicon visibility filter (`PrivateTo`,
+  the owning link, on every client's character) hides that scope from
+  everyone else; `--net-trace` counts other players' private state on
+  clients (must be 0). Clients don't recompute what a loadout implies
+  (stock, breach charges): they get the server's.
+- **One-off happenings:** forwarded `GadgetEvent`s (sounds, notices). The
+  blast, flashbang and backplate visuals and the cut-through dust are
+  drawn from the events (or the plug's arrival), so clients get them too.
+  Events can name an entity that hasn't been replicated yet (a drone
+  thrown this tick): on the client that field is a placeholder.
+- **Remote views:** the server puts `RemoteView` on the viewer; it counts
+  as a `MovementLock` reason in the round flow. The viewer's client
+  freezes its own body exactly like the server (`FrozenInput`, so the
+  predicted character holds still and no shots go out), and the server
+  re-freezes after applying a client's input, which would otherwise undo
+  it. Drone look angles are absolute: a client resets them when a new
+  view arrives and echoes `ViewSerial` (bumped by the server on every view
+  change) in its input; the server ignores angles meant for an older view.
+  Driving is server-side: the owner sees its drone move one round trip
+  plus the interpolation delay late (prediction is a later step); looking
+  around is immediate.
+- **Razor wire is predicted:** `GadgetSpeedScale` is set after every tick
+  (`FixedPostUpdate`, before prediction history) on every machine that
+  simulates the character, from the replicated wire placements and the
+  server's wire tuning (sent in `Welcome`); movement multiplies it in and
+  allows no sprint below 1. It is replicated with `.predict()`, so a
+  rollback restores it. Walking through wire adds no rollbacks: none at
+  all on a clean link; with 80 ms RTT and 10 ms jitter a full-speed walk
+  rolls back a few times with or without wire (`net_test.sh --gadgets
+  wire|walk --latency 80 --jitter 10`; movement prediction under jitter,
+  not the wire).
+- **Tests:** `tools/scripts/net_test.sh --gadgets frag|smoke|flash|drone|
+  wire|cutter|all` (server `--net-script` sets up; clients drive
+  themselves with `--gadget-test`).
 
 ### Lag compensation
 
@@ -1008,6 +1073,29 @@ the render plugin with no backend, a 64 Hz loop), or a lean build without
 those libraries (`--no-default-features --features dedicated`). Config
 file: `--config` (RON). Logs to stdout; SIGTERM exits cleanly.
 
+**Lean assets.** Without a render world Bevy keeps every decoded image in
+RAM. A headless server reads `assets/` through `LeanAssetReader`
+(`net/dedicated.rs`): files under `textures/` and the images inside
+`.glb` models become a 1x1 stand-in, everything else (kit and prop
+meshes: collision; character skeletons and animations; tuning) loads
+normally. Soft surfaces build no render meshes without a render app
+(like the map's static batching). Memory (RSS, idle): dev build,
+section A 755 -> 277 MB, full map 1136 -> 522 MB; release lean build
+(the VPS bundle) 213 MB on section A, 435-490 MB on the full map
+(`tools/scripts/server_memory.sh`).
+
+**Keys.** `netcode_key(secret)`: no secret, the development key; a
+secret (server config `key`, `--key`, `HARROW_KEY`) becomes the netcode
+private key through BLAKE3 key derivation. Clients make their own connect
+tokens, so it is a shared secret: only clients with it can connect.
+
+**Packaging.** `tools/scripts/package_server.sh` builds the lean server
+in an Ubuntu 22.04 container (glibc 2.35, so it runs on Ubuntu 22.04+ and
+Debian 12+), and packs it with the server's assets (no textures), the
+example config, a systemd unit and an install script
+(`deploy/`). `deploy_server.sh user@host` installs it over SSH.
+`build.rs` takes `HARROW_BUILD_COMMIT` when there's no git repository.
+
 ## Fortress kit (M2)
 
 Generated by `tools/blender/kit/pieces.py`; rebuild with
@@ -1023,29 +1111,337 @@ Generated by `tools/blender/kit/pieces.py`; rebuild with
 - Sandbags and railings: cover only for now.
 - Stairs: 16 steps, 1.5 m wide; the stairwell above needs 1.2 m of headroom
   at its start, so the floor opening is 6 m long for a 4.8 m flight.
+- Map pieces (full map, `tools/blender/kit/map_pieces.py`): curtain walls
+  1/2/4 m and posts (3 m thick, paved walk at 6.4 m, crenellated parapet),
+  wide arcade arch, free-standing pier, 4 m paving, exterior stairs with a
+  sloping side wall plus base, pier and landings, open door leaf, window
+  shutters, ceiling beam, table, bench, shelf, bunk bed, barrel, weapon
+  rack, hearth, well, market stall, cart, rubble, rocks, dunes, rug, tomb,
+  generator, radio set, gravel track, and a 1 cm cap slab for roof
+  corners left open for the wall-walk. All hard (indestructible).
 
 ## Map: Harrow Keep
 
 Original, fictional sun-bleached desert fortress: thick plaster-and-stone
 walls, courtyards, narrow stairwells, rooftop access, hatches, a basement.
 The reference season shipped its own desert-fortress map; Harrow Keep's
-layout must not be modelled on it.
+layout must not be modelled on it (and isn't: a walled compound of separate
+buildings around three yards, with a tall keep on the north wall and all
+four site pairs stacked in it, basement to third floor).
 
-**Section A (M2):** the first playable piece, in `src/map/keep.rs`.
-- A two-storey building (12 x 8 m) on the north side of a walled courtyard
-  (16 x 12 m) with an arched gate to the south.
-- Ground floor: a west hall with an arched door to the courtyard and stairs
-  up along the west wall; a stone wall to the east rooms; a plaster wall
-  between the courtyard-side room and a storeroom. Both outer doors of the
-  east rooms are barricaded.
-- Upper floor: two rooms split by a plaster wall; a railed stairwell; a
-  wooden floor with a hatch over the storeroom.
-- Roof with battlements (no access yet).
-- Lighting: one hanging lantern per room (warm, shadowed spot light) and
-  capped eye adaptation (the view brightens by up to 2 stops in dark
-  interiors; outdoors is untouched). Both tunable under `lighting`.
-- Not yet: rooftop access, basement, a proper sky (a physically based
-  atmosphere was tried and looked grey; needs a lighting pass).
+`--map keep` (the default). Code: `src/map/harrow_keep/` (one file per
+part), sites and spawns in `src/round/sites.rs`. World: x east, z south
+(north is -Z on these plans), 1 m grid, storeys 3.2 m.
+
+### Overview
+
+- **Compound:** curtain walls on x = +-40, z = +-30 (3 m thick, wall-walk
+  at 6.4 m with crenellated parapets): 77 x 57 m inside the walls, about
+  84 x 66 m with the corner towers. The desert outside is part of the map
+  (attacker spawns 40 m out).
+- **The keep** (32 x 22 m, x -16..16, z -30..-8): basement (-3.2), ground,
+  second floor (3.2), and a third-floor block (6.4, 16 x 12 m) standing on a
+  roof terrace that wraps it on three sides. Its north face is part of the
+  outer wall. All four site pairs are in the keep.
+- **Gatehouse** (south wall): vaulted gate passage between two guard rooms,
+  gate room above, roof on the wall-walk.
+- **Barracks** (west wall) and **granary** (east wall): two storeys each;
+  their roofs carry the wall-walk.
+- **Old hall** (south-west, one tall storey with an arcade) and **stables**
+  (arcaded lean-to on the south wall).
+- **Four corner towers** (8 x 8 m, three levels + roof lookout) link the
+  wall-walks.
+- **Yards:** inner walls with arches split the compound into the main yard
+  (centre), the well court (west) and the east yard. Paving in front of the
+  keep, along the gate road and round the well; the rest is packed sand.
+
+```text
+Compound: 1 char = 1 m east-west, 1 line = 2 m north-south; north up.
+# walls  =| curtain wall + wall-walk  ! inner wall (gaps = arches)
+^ stairs up to the walls / terrace  v cellar steps  O well
+
+                                              CELLAR STEPS
+  #########                                      v                            #########
+  #NW     #=================########+++++++++++++++++########=================# NE    #
+  #       # ^^^^^^^^^^^^^^  #       +               +       #   ^^^^^^^^^^^^^^#       #
+  #########    NORTH        #KEEP   + 3F            +       #                 #########
+    |          COURT        #       +               +       #                       |
+    |                       #       +               +       #^                      |
+    #############           #       +++++++++++++++++       #^          #############
+    #           #           #                               #^          #           #
+    #           #           #                               #^          #           #
+    #           #     O     #                               #^          #           #
+    #           #           #terrace above                  #^          #           #
+    #           #WELL       #################################^          #           #
+    #BARRACKS   #COURT      !                               !           #GRANARY    #
+    #           #           !                               !           #           #
+    #           #           !                               !           #           #
+    #           #           !                               !  EAST     #           #
+    #           #                                           !  YARD     #           #
+    #############                                           !           #############
+    |                       !                                                       |
+    |                       !         MAIN YARD                                     |
+    |                       !                               !                       |
+    |                       !                               !                       |
+    |         #################                             !                       |
+    |  BACK   #               #                             !                       |
+    |  LANE   #  OLD HALL     #                             !                       |
+    |         #               #                             !                       |
+    |         #               #                             !                       |
+    |         #################                             ###################     |
+  #########                                                 #   STABLES       #########
+  #SW     #     SOUTH LANE            #############         ################### SE    #
+  #       #            ^^^^^^^^^^^^^^ #  GATE     #                           #       #
+  #########===========================#           #===========================#########
+                                      #############
+```
+
+### Callouts
+
+Short names for comms (keep rooms: B = basement, G = ground, 2 = second, 3 = third floor).
+
+| Area | Callouts |
+|---|---|
+| Keep B | CELLAR STEPS, OIL CELLAR, CELLS, CISTERN (site 1A), UNDERCROFT, POWDER STORE (site 1B), PUMP ROOM, CRYPT |
+| Keep G | POSTERN, ARMOURY (site 2B), LARDER, WEST GALLERY, GREAT HALL (site 2A), GUARDROOM, ENTRANCE, KITCHEN, SCULLERY |
+| Keep 2 | CHART ALCOVE, MAP ROOM (site 3A), RECORDS (site 3B), LONG GALLERY, INFIRMARY, CHAPEL, MESS |
+| Keep 3 / roof | SIGNAL ROOM (site 4A), STUDY (site 4B), LANDING, WEST / EAST / SOUTH TERRACE |
+| Keep stairs | KEEP STAIR (centre, B to 3), WEST STAIR and EAST STAIR (B to 2), TERRACE STAIRS (outside, yard to 2 to terrace) |
+| Yards | MAIN YARD, WELL COURT, NORTH COURT, EAST YARD, BACK LANE, SOUTH LANE, STALLS, WELL |
+| Gatehouse | GATE (passage), WEST / EAST GUARD, GATE ROOM (murder hole), GATE ROOF |
+| Barracks | BUNKROOM, WASHROOM, DRILL HALL, DORMITORY, STORES, BARRACKS ROOF |
+| Granary | GRANARY, MILL ROOM, SACK STORE, LOFT, OFFICE, GRANARY ROOF |
+| South | OLD HALL, SHRINE, STABLES |
+| Walls | NW / NE / SW / SE TOWER, NORTH / WEST / EAST / SOUTH WALL, RAMPART STAIRS (main yard, well court, east yard) |
+| Outside | NORTH RUIN, WEST RUIN, EAST RUIN, GATE ROAD and OLD GATE (attacker spawns), the north/south dunes and boulders |
+
+### The keep, floor by floor
+
+Plans render the wall runs from `src/map/harrow_keep/keep.rs` (2 chars =
+1 m east-west, 1 line = 1 m north-south; local x 0..32 = world x -16..16,
+local z 0..22 = world z -30..-8). `#` stone (hard), `:` plaster (soft,
+breachable), `=` window, `.` doorway, gap in a wall = arch, `+` post.
+Stair cores are 4 x 8 m switchbacks: two 2 m lanes, a stone spine between
+them, landings at both ends.
+
+**Basement (-3.2).** Under the whole keep; walls below ground are stone.
+Entries: KEEP STAIR, WEST STAIR, EAST STAIR, CELLAR STEPS (from the desert
+north of the keep straight into the cistern), and hatches from the larder
+(over the cistern), kitchen (over the powder store) and great hall (over the
+undercroft). Soft: cistern / powder store (with a door), oil cellar /
+cells, crypt / powder store.
+
+```text
+                                       CELLAR
+                                       STEPS
+
+
++###+#######+###+###+#######+#######+###+...+###+#######+#######+
+#               :           #       .                           #
+#               +           #       +                           +
+#               :           #       #                           #
++ OIL CELLAR    + CELLS     +STAIR  +                           #
+#               :           #       #       CISTERN (1A)        #
+#               +           #       #                           +
+#               :           #       #                           #
++###+...+#######+###+...+###+...+###+                           #
+#                                   .                           #
+#                                   +:::+:::+...+:::+:::+...+###+
+#         UNDERCROFT                #                   #       #
++                                   +                   +PUMP   #
+#                                   .                   .       #
++###+...+#######+...+#######+...+###+                   +###+...+
+#       #                           :                   #       #
++       #                           +   POWDER          #       #
+#       #                           .   STORE (1B)      #       #
+#W.STR  +       CRYPT               +                   +E.STR  +
+#       #                           :                   #       #
++       #                           +                   #       #
+#       #                           :                   #       #
++#######+#######+#######+#######+###+###+#######+#######+#######+
+```
+
+**Ground (0).** Entries from outside: ENTRANCE (main arch, south), SW door
+(into the west stair), WEST door (west gallery), EAST door (larder),
+POSTERN (north). Soft: postern / armoury (no door: breach it), armoury,
+larder and scullery sides of the great hall, guardroom and scullery sides
+of the entrance. Wooden floor with a hatch in the larder; hatches in the
+kitchen and great hall.
+
+```text
++###+===+...+###+###+===+###+#######+###+###+###+===+###+===+###+
+#               :           #       #                           #
++               +           #       #                           +
+=               :ARMOURY    #       #                           .
++ POSTERN       + (2B)      +STAIR  +     LARDER                +
+#               :           #       #                           #
++               +           #       #                           +
+#               :           #       #                           =
++###+       +###+:::+...+:::+###+...+:::+...+:::+###+...+#######+
+#               #                               #               #
++               +                               +               +
+. WEST                  GREAT HALL (2A)         . KITCHEN       #
++ GALLERY                                       +               #
+=                                               #               #
++#######+       +                               +       +#######+
+#       #       #                               #       #       #
+#       #       +#######+###+       +###+...+:::+...+###+       #
+#       #       .       :               :               #       #
++W.STR  +       +       +               +               #E.STR  +
+#       #       #GUARD  .   ENTRANCE    . SCULLERY      #       #
+#       +       #       +               +               +       #
+#       .       #       :               :               .       #
++###+...+###+===+###+===+###+       +###+===+###+===+###+===+###+
+```
+
+**Second floor (3.2).** No doors from outside except the east one from the
+terrace stairs' landing (into the east stair). Map room and records sit
+either side of the keep stair's north landing (doors from it); both open
+south to the long gallery through plaster walls with doors. The floor over
+the great hall and the armoury is timber, with hatches down into both.
+
+```text
++###+===+###+===+###+===+###+#######+###+===+###+===+###+===+###+
+#           :               .       .                           #
++CHART      +               +       +                           +
+=           :               #       #                           =
++           +               +STAIR  +                           +
+# MAP ROOM (3A)             #       #   RECORDS (3B)            #
++                           #       #                           +
+=                           #       #                           =
++###+...+###+:::+...+:::+###+#######+###+:::+...+:::+###+...+###+
+#                                                               #
++                                                               +
+=         LONG GALLERY                                          #
++                                                               #
+#                                                               #
++...+###+###+...+:::+:::+###+       +###+###+:::+...+:::+###+...+
+#       #               :                   #           #       +
+#       #               +                   +           #       .
+#       #               .                   .           #       +
++W.STR  + INFIRMARY     +    CHAPEL         + MESS      +E.STR  +
+#       #               :                   #           #       #
+#       #               +                   +           #       #
+#       #               :                   #           #       #
++###+===+###+===+###+===+###+===+===+###+###+===+###+===+###+###+
+```
+
+**Third floor and terrace (6.4).** The block holds the signal room and the
+study, with the keep stair's top landing between them (plaster to both).
+Each site has a door and a breachable plaster section onto its terrace and
+windows north and south. The terrace is the 2F roof: battlements, open at
+both north corners (wall-walks come in) and on the east side (terrace
+stairs arrive). Hatches: in both site rooms (down to the map room and
+records) and on the terrace over the map room, records and chapel. The
+block's roof (9.6) has battlements but no access.
+
+```text
+                +###+===+###+#######+###+===+###+
+                #           #       #           #
+                +           #       #           +
+                #           #STAIR  #           #
+                +           +       +           +
+                =SIGNAL     #       #STUDY      =
+  WEST          +ROOM (4A)  +       +(4B)       + EAST
+  TERRACE       :           .       .           : TERRACE
+                +           +       +           +
+                .           :       :           .
+                +           +LANDING+           +
+                #           :       :           #
+                +###+===+###+#+...+#+###+===+###+
+
+
+
+
+                      SOUTH TERRACE
+```
+
+### Site pairs and spawns
+
+One pair per round (`round.site_pairs`: Cycle, Random or Fixed(n);
+`--sites N` for testing). Attackers start from one of the pair's spawn
+areas (`round.attacker_spawns`; `--attack-from N`). Spawn areas are ruins
+about 40 m outside the walls, U-shaped 3 m stone walls that block every
+line of sight from the walls, towers and keep windows.
+
+| Pair | Site A | Site B | Defenders spawn | Attacker spawns (in order) |
+|---|---|---|---|---|
+| 1 BASEMENT | CISTERN (14 x 10) | POWDER STORE (10 x 12) | UNDERCROFT | NORTH RUIN, WEST RUIN, EAST RUIN, GATE ROAD |
+| 2 GROUND | GREAT HALL (16 x 8) | ARMOURY (6 x 8) | LARDER | GATE ROAD, WEST, EAST, NORTH |
+| 3 UPPER | MAP ROOM (14 x 8) | RECORDS (14 x 8) | LONG GALLERY | WEST, EAST, GATE ROAD, NORTH |
+| 4 TOP | SIGNAL ROOM (6 x 12) | STUDY (6 x 12) | LANDING (3F) | EAST, GATE ROAD, WEST, NORTH |
+
+Defender CCTV (16 cameras, `insert_cctv_layout` in
+`src/map/harrow_keep/mod.rs`): three per site pair (each site plus the
+undercroft, entrance, long gallery or landing) and four outside (main
+yard and well court and east yard from the keep's facades, the gate
+passage).
+
+Ways in, by side (windows are sightlines only until a vault exists):
+- **North:** POSTERN (G, next to the armoury: breach the soft wall),
+  CELLAR STEPS (B, into the cistern), NW and NE tower doors up to the
+  north wall-walk and onto the terrace.
+- **West:** barracks postern (washroom), NW and SW towers, the well court
+  to the keep's west door and west stair; the barracks roof hatch.
+- **East:** granary postern (sack store), NE and SE towers, the east yard
+  to the keep's east door, the terrace stairs (2F door, terrace).
+- **South:** the gate passage, the main yard, the keep's main arch and SW
+  door; the gatehouse and the rampart stair up to the south wall-walk.
+
+Vertical play: hatches above every site (from the floor above), breach
+holes in the timber floors over the great hall and armoury, the cellar
+steps and three stairways into the basement, the terrace above the second
+floor, and the wall-walks at terrace height linking the towers, barracks
+and granary roofs, gatehouse roof and keep terrace.
+
+Sightlines and chokepoints: the gate road and main yard are long and open
+(cover: market stalls, carts, crates, sandbags); the wall-walks overlook
+every yard; the inner-wall arches, the gate passage and the keep's main
+arch are the chokepoints into the keep; inside, the long gallery (2F) and
+undercroft (B) are long east-west lanes linking the stairs.
+
+### How it is built
+
+- `builder.rs`: wall runs from a spec string (`"s2 W s2 d p2 pd ..."`:
+  stone, windows with shutters, doors with leaves, arches, plaster), floors
+  (tile picker for stone/wood/hatch/opening), paving, parapets with
+  merlons, curtain runs, stair cores (flights, spine, railings, floor
+  openings with the headroom rule), stairs-like pieces placed uphill,
+  lamps. Junction posts and caps are shared by world position.
+- `keep.rs`, `compound.rs` (curtain, towers, gatehouse, rampart stairs),
+  `wings.rs` (barracks, granary, old hall, stables, inner walls, yards),
+  `exterior.rs` (spawn ruins, tracks, dunes, rocks), `dressing.rs`
+  (scanned props).
+- The desert floor leaves holes over the basement and the cellar steps
+  (`DesertHoles`); nothing below ground shows from outside.
+- Static batching (`src/map/batch.rs`): after load, all hard kit meshes are
+  merged per material and 16 m cell (about 6000 meshes into 295) and the
+  originals are despawned; soft pieces stay separate for destruction.
+  `--no-batch` disables it; a headless server skips it.
+- 51 lanterns, 15 of them shadow-casting (larger rooms and sites), and
+  those only cast while a camera is within `lighting.lamp_shadow_distance`
+  (16 m) and not on a floor above them; the others are dimmer and
+  shorter-ranged (`lighting.unshadowed_lamp_scale`).
+- Every staircase has a ramp collider; spawn points get temporary floors
+  until the map has loaded.
+
+**Checked (2026-11-14):** all 30 flights walked up by script (keep, towers,
+gatehouse, barracks, granary, terrace, rampart and cellar steps); six
+attacker routes walked segment by segment from the spawn ruins to both
+sites of every pair, plus the whole wall-walk ring (towers, barracks roof,
+gatehouse roof); round tests plant and win on three different pairs and
+the pairs rotate per round; stand-in attackers on every spawn are hidden
+from the walls, towers and keep windows. Performance (debug build,
+`--no-vsync`, round running, default window, RTX 4070 Ti Super, other
+builds running): median 190 to 390 fps over eight views (outside the gate,
+yard, tower roof across the compound, terrace, great hall, map room,
+basement, signal room).
+
+**Section A (M2)**, `--map section_a`, `src/map/keep.rs`: the first
+playable piece. A two-storey building (12 x 8 m) on the north side of a
+walled courtyard (16 x 12 m) with an arched gate to the south; stairs up
+the west hall; a wooden floor with a hatch over the storeroom; one site
+pair (storeroom / upper east room), attackers outside the courtyard gate.
 
 ## Open questions
 
