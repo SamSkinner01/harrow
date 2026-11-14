@@ -25,6 +25,7 @@ use std::f32::consts::{PI, TAU};
 use avian3d::prelude::*;
 use bevy::{
     asset::RenderAssetUsages,
+    math::Affine3A,
     camera::visibility::RenderLayers,
     gltf::{GltfAssetLabel, GltfMaterialName},
     light::NotShadowCaster,
@@ -38,7 +39,7 @@ use super::{
     materials::WeaponMaterials, view::ease,
 };
 use crate::{
-    config::Tuning,
+    config::{Tuning, WeaponDef},
     physics::GameLayer,
     player::{CharacterState, Footstep, LocalPlayer, PlayerInput, Stance},
 };
@@ -74,14 +75,62 @@ struct WeaponModel {
     info: Option<ModelInfo>,
 }
 
-/// Read from the model's named nodes once it has loaded.
+/// Read from the model's named nodes once it has loaded. Positions are in
+/// model space (before the tuning's scale and rotation).
 #[derive(Clone, Copy)]
 struct ModelInfo {
-    sight: Vec3,
-    muzzle: Vec3,
-    magazine: Option<(Entity, Transform)>,
-    slide: Option<(Entity, Transform)>,
+    sight: Option<Vec3>,
+    muzzle: Option<Vec3>,
+    magazine: Option<AnimatedPart>,
+    slide: Option<AnimatedPart>,
+    /// Muzzle flash, a child of the rig (so the model's scale doesn't
+    /// affect it).
     flash: Entity,
+}
+
+/// A node the viewmodel moves (magazine, slide).
+#[derive(Clone, Copy)]
+struct AnimatedPart {
+    entity: Entity,
+    home: Transform,
+    /// Turns a model-space offset into the node's parent space (the node
+    /// may be nested under rotated or scaled nodes).
+    to_local: Mat3,
+}
+
+/// Where a weapon's model sits in the rig: its tuning scale and rotation.
+fn model_transform(def: &WeaponDef) -> Transform {
+    let m = &def.model;
+    let (yaw, pitch, roll) = m.rotation;
+    Transform {
+        translation: Vec3::ZERO,
+        rotation: Quat::from_euler(
+            EulerRot::YXZ,
+            yaw.to_radians(),
+            pitch.to_radians(),
+            roll.to_radians(),
+        ),
+        scale: Vec3::splat(m.scale.max(1e-4)),
+    }
+}
+
+/// A rig-space offset (metres, in the weapon's frame: -Z towards the
+/// muzzle) as an offset in a part's local space.
+fn part_offset(part: &AnimatedPart, model: &Transform, rig_offset: Vec3) -> Vec3 {
+    let model_space = model.rotation.inverse() * rig_offset / model.scale.x;
+    part.to_local * model_space
+}
+
+/// Sight point and muzzle of a model in rig space: from the tuning if set,
+/// else from the model's nodes.
+fn sight_and_muzzle(def: &WeaponDef, info: Option<&ModelInfo>) -> (Vec3, Vec3) {
+    let model = model_transform(def);
+    let pick = |tuned: Option<(f32, f32, f32)>, node: Option<Vec3>, fallback: Vec3| {
+        tuned.map(Vec3::from).or(node).unwrap_or(fallback)
+    };
+    let sight = pick(def.model.sight, info.and_then(|i| i.sight), Vec3::new(0.0, 0.1, 0.0));
+    let muzzle = pick(def.model.muzzle, info.and_then(|i| i.muzzle), Vec3::new(0.0, 0.05, -0.6));
+    (model.transform_point(sight), model.transform_point(muzzle))
 }
 
 #[derive(Component)]
@@ -206,12 +255,12 @@ fn spawn_viewmodel(mut commands: Commands, assets: Res<AssetServer>, tuning: Res
         .id();
     for slot in Slot::ALL {
         let def = slot.def(&tuning);
-        let path = format!("models/weapons/{}.glb", def.model);
+        let path = def.model.path.clone();
         commands.spawn((
             Name::new(format!("Weapon model {}", def.name)),
             WeaponModel { slot, info: None },
             WorldAssetRoot(assets.load(GltfAssetLabel::Scene(0).from_asset(path))),
-            Transform::default(),
+            model_transform(def),
             Visibility::Hidden,
             layer.clone(),
             ChildOf(rig),
@@ -252,53 +301,90 @@ fn spawn_viewmodel(mut commands: Commands, assets: Res<AssetServer>, tuning: Res
 #[allow(clippy::too_many_arguments)]
 fn prepare_weapon_model(
     ready: On<WorldInstanceReady>,
-    mut models: Query<&mut WeaponModel>,
+    mut models: Query<(&mut WeaponModel, &ChildOf)>,
     children: Query<&Children>,
+    parents: Query<&ChildOf>,
     names: Query<&Name>,
     transforms: Query<&Transform>,
     material_names: Query<&GltfMaterialName>,
     library: Res<WeaponMaterials>,
     flash: Res<FlashAssets>,
+    tuning: Res<Tuning>,
     mut commands: Commands,
 ) {
-    let Ok(mut model) = models.get_mut(ready.entity) else {
+    let Ok((mut model, rig)) = models.get_mut(ready.entity) else {
         return;
     };
-    let layer = RenderLayers::layer(VIEWMODEL_LAYER);
-    let mut sight = Vec3::new(0.0, 0.1, 0.0);
-    let mut muzzle = Vec3::new(0.0, 0.05, -0.5);
-    let mut magazine = None;
-    let mut slide = None;
-    for entity in children.iter_descendants(ready.entity) {
-        commands.entity(entity).insert((layer.clone(), NotShadowCaster));
-        if let Ok(material) = material_names.get(entity) {
-            match library.get(&material.0) {
-                Some(handle) => {
-                    commands.entity(entity).insert(MeshMaterial3d(handle));
-                }
-                None => warn!("weapon material {:?} is not in the weapon material set", material.0),
+    let rig = rig.parent();
+    let root = ready.entity;
+    let def = model.slot.def(&tuning).clone();
+    let m = &def.model;
+    // Transform of `entity` relative to the model root (nodes may be nested).
+    let model_space = |entity: Entity| {
+        let mut affine = Affine3A::IDENTITY;
+        let mut current = entity;
+        while current != root {
+            let local = transforms.get(current).copied().unwrap_or_default();
+            affine = local.compute_affine() * affine;
+            match parents.get(current) {
+                Ok(parent) => current = parent.parent(),
+                Err(_) => break,
             }
         }
-        let (Ok(name), Ok(transform)) = (names.get(entity), transforms.get(entity)) else {
-            continue;
+        affine
+    };
+    let part = |entity: Entity| {
+        let parent = parents.get(entity).map(|p| p.parent()).unwrap_or(root);
+        let to_parent = if parent == root {
+            Affine3A::IDENTITY
+        } else {
+            model_space(parent)
         };
-        match name.as_str() {
-            "SIGHT" => sight = transform.translation,
-            "MUZZLE" => muzzle = transform.translation,
-            "MAGAZINE" => magazine = Some((entity, *transform)),
-            "SLIDE" => slide = Some((entity, *transform)),
-            _ => {}
+        AnimatedPart {
+            entity,
+            home: transforms.get(entity).copied().unwrap_or_default(),
+            to_local: Mat3::from(to_parent.matrix3).inverse(),
+        }
+    };
+
+    let layer = RenderLayers::layer(VIEWMODEL_LAYER);
+    let (mut sight, mut muzzle, mut magazine, mut slide) = (None, None, None, None);
+    for entity in children.iter_descendants(root) {
+        commands.entity(entity).insert((layer.clone(), NotShadowCaster));
+        // Our blockouts name materials from the weapon set; a model with
+        // its own (textured) materials keeps them.
+        if let Ok(material) = material_names.get(entity)
+            && let Some(handle) = library.get(&material.0)
+        {
+            commands.entity(entity).insert(MeshMaterial3d(handle));
+        }
+        let Ok(name) = names.get(entity) else { continue };
+        let name = name.as_str();
+        if name == m.sight_node {
+            sight = Some(model_space(entity).translation.into());
+        } else if name == m.muzzle_node {
+            muzzle = Some(model_space(entity).translation.into());
+        } else if m.magazine_node.as_deref() == Some(name) {
+            magazine = Some(part(entity));
+        } else if m.slide_node.as_deref() == Some(name) {
+            slide = Some(part(entity));
         }
     }
+    if sight.is_none() && m.sight.is_none() {
+        warn!("{}: no `{}` node and no `sight` in the tuning; ADS will be off", m.path, m.sight_node);
+    }
+    if muzzle.is_none() && m.muzzle.is_none() {
+        warn!("{}: no `{}` node and no `muzzle` in the tuning", m.path, m.muzzle_node);
+    }
     // Muzzle flash: a camera-facing star plus three crossed flame quads
-    // along the barrel.
+    // along the barrel. On the rig, placed at the muzzle every frame.
     let flash_root = commands
         .spawn((
-            Name::new("Muzzle flash"),
-            Transform::from_translation(muzzle),
+            Name::new(format!("Muzzle flash {}", def.name)),
+            Transform::default(),
             Visibility::Hidden,
             layer.clone(),
-            ChildOf(ready.entity),
+            ChildOf(rig),
         ))
         .id();
     let quad = |transform: Transform| {
@@ -312,16 +398,16 @@ fn prepare_weapon_model(
         )
     };
     commands.spawn(quad(
-        Transform::from_xyz(0.0, 0.0, -0.02).with_scale(Vec3::splat(0.09)),
+        Transform::from_xyz(0.0, 0.0, -0.02).with_scale(Vec3::splat(0.17)),
     ));
     for i in 0..3 {
         let around = Quat::from_rotation_z(i as f32 * PI / 3.0);
         // Rectangle faces +Z; turn it to lie along the barrel (-Z).
         let along = around * Quat::from_rotation_y(PI / 2.0);
         commands.spawn(quad(
-            Transform::from_xyz(0.0, 0.0, -0.07)
+            Transform::from_xyz(0.0, 0.0, -0.12)
                 .with_rotation(along)
-                .with_scale(Vec3::new(0.14, 0.05, 1.0)),
+                .with_scale(Vec3::new(0.26, 0.09, 1.0)),
         ));
     }
     model.info = Some(ModelInfo {
@@ -331,9 +417,9 @@ fn prepare_weapon_model(
         slide,
         flash: flash_root,
     });
-    debug!(
-        "weapon model {:?} ready: sight {sight}, muzzle {muzzle}, magazine {}, slide {}",
-        model.slot,
+    info!(
+        "weapon model {} ready: sight {sight:?}, muzzle {muzzle:?}, magazine node {}, slide node {}",
+        m.path,
         magazine.is_some(),
         slide.is_some()
     );
@@ -384,10 +470,18 @@ fn pose_viewmodel(
         &mut Transform,
         (With<ViewmodelRig>, Without<LocalPlayer>, Without<ViewmodelCamera>),
     >,
-    mut models: Query<(&WeaponModel, &mut Visibility)>,
+    mut models: Query<
+        (&WeaponModel, &mut Visibility, &mut Transform),
+        (Without<LocalPlayer>, Without<ViewmodelCamera>, Without<ViewmodelRig>),
+    >,
     mut parts: Query<
         &mut Transform,
-        (Without<LocalPlayer>, Without<ViewmodelCamera>, Without<ViewmodelRig>),
+        (
+            Without<LocalPlayer>,
+            Without<ViewmodelCamera>,
+            Without<ViewmodelRig>,
+            Without<WeaponModel>,
+        ),
     >,
     mut anim: ResMut<ViewmodelAnim>,
     mut shots: MessageReader<ShotFired>,
@@ -467,13 +561,11 @@ fn pose_viewmodel(
     let sprint = ease(anim.sprint);
 
     // --- Pose ---------------------------------------------------------------------
-    let models_info: Vec<(Slot, Option<ModelInfo>)> =
-        models.iter().map(|(m, _)| (m.slot, m.info)).collect();
-    let info = models_info
+    let info = models
         .iter()
-        .find(|(s, _)| *s == slot)
-        .and_then(|(_, i)| *i);
-    let sight = info.map_or(Vec3::new(0.0, 0.1, 0.0), |i| i.sight);
+        .find(|(m, ..)| m.slot == slot)
+        .and_then(|(m, ..)| m.info);
+    let (sight, _) = sight_and_muzzle(def, info.as_ref());
     let pose = &def.pose;
     let hip = Vec3::new(pose.hip.0, pose.hip.1, -pose.hip.2);
     let ads = Vec3::new(-sight.x, -sight.y, -pose.ads_distance - sight.z);
@@ -510,8 +602,9 @@ fn pose_viewmodel(
             let t = (elapsed / duration.max(1e-3)).clamp(0.0, 1.0);
             // Cant the weapon and bring it in.
             let tilt = bump(t, 0.0, 1.0).powf(0.6);
-            position += Vec3::new(-0.03, -0.03, 0.03) * tilt;
-            rotation *= Quat::from_euler(EulerRot::YXZ, 0.15 * tilt, 0.12 * tilt, 0.55 * tilt);
+            // Lift it into view, muzzle up, rolled so the magazine well shows.
+            position += Vec3::new(-0.08, 0.1, 0.06) * tilt;
+            rotation *= Quat::from_euler(EulerRot::YXZ, 0.35 * tilt, 0.25 * tilt, -0.5 * tilt);
             // Old magazine out (and gone), new one in.
             magazine_drop = if t < 0.55 {
                 ramp(t, 0.12, 0.32)
@@ -541,7 +634,7 @@ fn pose_viewmodel(
     rig.rotation = rotation;
 
     // --- Models: show the active one, animate its parts ----------------------------
-    for (model, mut visibility) in &mut models {
+    for (model, mut visibility, mut transform) in &mut models {
         let wanted = if model.slot == slot {
             Visibility::Inherited
         } else {
@@ -550,22 +643,33 @@ fn pose_viewmodel(
         if *visibility != wanted {
             *visibility = wanted;
         }
-    }
-    if let Some(info) = info {
-        if let Some((entity, home)) = info.magazine
-            && let Ok(mut transform) = parts.get_mut(entity)
-        {
-            transform.translation = home.translation - Vec3::Y * 0.35 * magazine_drop;
-            transform.scale = if magazine_drop > 0.95 { Vec3::ZERO } else { Vec3::ONE };
+        // Scale and rotation from the tuning (applies on save).
+        let placed = model_transform(model.slot.def(&tuning));
+        if *transform != placed {
+            *transform = placed;
         }
-        if let Some((entity, home)) = info.slide
-            && let Ok(mut transform) = parts.get_mut(entity)
+    }
+    let model = model_transform(def);
+    if let Some(info) = info {
+        if let Some(part) = info.magazine
+            && let Ok(mut transform) = parts.get_mut(part.entity)
+        {
+            let drop = part_offset(&part, &model, Vec3::NEG_Y * 0.35 * magazine_drop);
+            transform.translation = part.home.translation + drop;
+            transform.scale = if magazine_drop > 0.95 {
+                Vec3::ZERO
+            } else {
+                part.home.scale
+            };
+        }
+        if let Some(part) = info.slide
+            && let Ok(mut transform) = parts.get_mut(part.entity)
         {
             // Locked back on an empty magazine until the reload racks it.
             let locked = state.ammo().magazine == 0
                 && !matches!(state.action, WeaponAction::Reloading { elapsed, duration, .. } if elapsed / duration > 0.88);
             let back = if locked { 1.0 } else { anim.slide_kick.max(slide_back) };
-            transform.translation = home.translation + Vec3::Z * 0.022 * back;
+            transform.translation = part.home.translation + part_offset(&part, &model, Vec3::Z * 0.022 * back);
         }
     }
 }
@@ -601,7 +705,9 @@ fn update_muzzle_flash(
             *visibility = wanted;
         }
         if on {
-            transform.translation = info.muzzle;
+            // The flash hangs off the rig; the weapon points down -Z there.
+            let (_, muzzle) = sight_and_muzzle(model.slot.def(&tuning), Some(&info));
+            transform.translation = muzzle;
             transform.rotation = Quat::from_rotation_z(anim.flash_roll);
             transform.scale = Vec3::splat(anim.flash_scale);
             light_at = Some(global.translation());

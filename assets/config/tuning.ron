@@ -129,8 +129,29 @@
         // Primary: TAMARISK assault rifle.
         primary: (
             name: "TAMARISK",
-            // Model file in assets/models/weapons/.
-            model: "tamarisk",
+            // The 3D model in your hands. To use a different model, change
+            // these (no code needed); `pose` below places it on screen.
+            model: (
+                // glTF file under assets/. Path changes need a restart;
+                // the rest applies on save.
+                path: "models/weapons/tamarisk.glb",
+                // Uniform scale (0.01 for a model made in centimetres).
+                scale: 1.0,
+                // Turns the model so the barrel points away from you and the
+                // top is up: (yaw, pitch, roll), degrees.
+                rotation: (0.0, 0.0, 0.0),
+                // Point on the sight line (lined up with your eye when aiming)
+                // and the barrel tip, in the model's own units, e.g.
+                // Some((0.0, 0.12, 0.0)). None = take them from the nodes
+                // named sight_node / muzzle_node in the model.
+                sight: None,
+                muzzle: None,
+                sight_node: "SIGHT",
+                muzzle_node: "MUZZLE",
+                // Parts animated by reloads / shots: Some("node name") or None.
+                magazine_node: Some("MAGAZINE"),
+                slide_node: None,
+            ),
             // Damage per bullet before the body-region multiplier.
             damage: 42.0,
             // Damage drops linearly from full at falloff_start metres to
@@ -203,9 +224,11 @@
             ),
             // Where the weapon sits on screen, metres from the eye.
             pose: (
-                // Grip position at the hip: (right, up, forward).
+                // Where the model origin (the grip, on our models) sits at the
+                // hip: (right, up, forward). Aiming lines the sight point up
+                // with the eye instead.
                 hip: (0.15, -0.2, 0.42),
-                // Eye to rear sight when aiming.
+                // Eye to the sight point when aiming.
                 ads_distance: 0.2,
                 // Visual kick per shot: backwards (metres) and upwards (degrees).
                 kick_back: 0.025,
@@ -215,7 +238,17 @@
         // Sidearm: ACACIA pistol.
         sidearm: (
             name: "ACACIA",
-            model: "acacia",
+            model: (
+                path: "models/weapons/acacia.glb",
+                scale: 1.0,
+                rotation: (0.0, 0.0, 0.0),
+                sight: None,
+                muzzle: None,
+                sight_node: "SIGHT",
+                muzzle_node: "MUZZLE",
+                magazine_node: Some("MAGAZINE"),
+                slide_node: Some("SLIDE"),
+            ),
             damage: 48.0,
             falloff_start: 12.0,
             falloff_end: 25.0,

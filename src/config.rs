@@ -96,8 +96,7 @@ pub struct PenetrationTuning {
 #[serde(deny_unknown_fields)]
 pub struct WeaponDef {
     pub name: String,
-    /// `assets/models/weapons/<model>.glb`
-    pub model: String,
+    pub model: WeaponModelTuning,
     pub damage: f32,
     pub falloff_start: f32,
     pub falloff_end: f32,
@@ -148,11 +147,34 @@ pub struct SpreadTuning {
     pub first_shot_reset: f32,
 }
 
+/// The 3D model in your hands. Everything the viewmodel needs to know about
+/// a model is here, so a different `.glb` can be dropped in without code.
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct WeaponModelTuning {
+    /// glTF file under `assets/`.
+    pub path: String,
+    /// Uniform scale (e.g. 0.01 for a model made in centimetres).
+    pub scale: f32,
+    /// Turn the model so it points down -Z with +Y up: (yaw, pitch, roll),
+    /// degrees.
+    pub rotation: (f32, f32, f32),
+    /// Sight line point (ADS eye alignment) and barrel tip, in model units.
+    /// `None` = read them from the nodes named below.
+    pub sight: Option<(f32, f32, f32)>,
+    pub muzzle: Option<(f32, f32, f32)>,
+    pub sight_node: String,
+    pub muzzle_node: String,
+    /// Nodes animated by reloads and shots (optional).
+    pub magazine_node: Option<String>,
+    pub slide_node: Option<String>,
+}
+
 /// Where the weapon sits in front of the camera, metres.
 #[derive(Deserialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct ViewmodelPose {
-    /// Grip position at the hip: (right, up, forward).
+    /// Model origin at the hip: (right, up, forward).
     pub hip: (f32, f32, f32),
     /// Eye to sight distance when aiming.
     pub ads_distance: f32,

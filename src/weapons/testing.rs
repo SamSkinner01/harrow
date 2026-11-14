@@ -40,6 +40,14 @@ impl Plugin for WeaponTestPlugin {
             app.insert_resource(forced)
                 .add_systems(FixedPreUpdate, apply_forced_weapon_input);
         }
+        if let Some(path) = arg_value("--screenshot-on-hit") {
+            app.insert_resource(AutomatedRun)
+                .insert_resource(ShotOnHit {
+                    path: path.into(),
+                    frames_after: None,
+                })
+                .add_systems(Update, screenshot_on_hit);
+        }
         if std::env::args().any(|a| a == "--weapon-test") {
             app.insert_resource(AutomatedRun)
                 .insert_resource(WeaponTest::new(scenarios()))
@@ -119,6 +127,47 @@ fn apply_forced_weapon_input(
             input.reload_requests = input.reload_requests.wrapping_add(1);
             info!("--reload-at: reload pressed at tick {}", forced.tick);
         }
+    }
+}
+
+/// `--screenshot-on-hit <path>`: screenshot a few frames after the local
+/// player's first bullet hit (to see the hit marker and dummy feedback),
+/// then quit.
+#[derive(Resource)]
+struct ShotOnHit {
+    path: std::path::PathBuf,
+    frames_after: Option<u32>,
+}
+
+fn screenshot_on_hit(
+    mut shot: ResMut<ShotOnHit>,
+    mut hits: MessageReader<BulletHit>,
+    player: Option<Single<Entity, With<LocalPlayer>>>,
+    mut commands: Commands,
+) {
+    use bevy::render::view::screenshot::{Screenshot, save_to_disk};
+    let Some(me) = player.map(|p| *p) else { return };
+    if shot.frames_after.is_none()
+        && let Some(hit) = hits.read().find(|h| h.shooter == me)
+    {
+        info!(
+            "--screenshot-on-hit: {:?} hit for {:.1} (lethal {})",
+            hit.zone, hit.damage, hit.lethal
+        );
+        shot.frames_after = Some(0);
+    }
+    let Some(frames) = shot.frames_after.map(|f| f + 1) else { return };
+    shot.frames_after = Some(frames);
+    if frames == 4 {
+        info!("--screenshot-on-hit -> {}", shot.path.display());
+        commands
+            .spawn(Screenshot::primary_window())
+            .observe(save_to_disk(shot.path.clone()));
+    }
+    // Quit a second later: quitting while the GPU driver is still compiling
+    // the new effect shaders can crash on some drivers.
+    if frames == 90 {
+        commands.write_message(AppExit::Success);
     }
 }
 

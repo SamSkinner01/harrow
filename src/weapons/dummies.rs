@@ -288,7 +288,7 @@ fn animate_dummies(
                 // Alpha 0: emissive not scaled by camera exposure, so it reads
                 // the same in sun and shade.
                 let f = look.flash;
-                material.emissive = LinearRgba::new(0.9 * f, 0.05 * f, 0.02 * f, 0.0);
+                material.emissive = LinearRgba::new(0.55 * f, 0.03 * f, 0.01 * f, 0.0);
             }
         }
     }
