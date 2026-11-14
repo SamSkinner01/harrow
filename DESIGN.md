@@ -828,8 +828,11 @@ The server runs every gadget's simulation, as in solo; clients show it.
   simulates the character, from the replicated wire placements and the
   server's wire tuning (sent in `Welcome`); movement multiplies it in and
   allows no sprint below 1. It is replicated with `.predict()`, so a
-  rollback restores it. Walking through wire at 80 ms RTT gives no
-  rollbacks.
+  rollback restores it. Walking through wire adds no rollbacks: none at
+  all on a clean link; with 80 ms RTT and 10 ms jitter a full-speed walk
+  rolls back a few times with or without wire (`net_test.sh --gadgets
+  wire|walk --latency 80 --jitter 10`; movement prediction under jitter,
+  not the wire).
 - **Tests:** `tools/scripts/net_test.sh --gadgets frag|smoke|flash|drone|
   wire|cutter|all` (server `--net-script` sets up; clients drive
   themselves with `--gadget-test`).

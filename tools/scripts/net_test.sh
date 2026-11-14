@@ -39,6 +39,7 @@
 #           with no extra rollbacks (net-trace rollback counter).
 #   cutter  Bravo reinforces a wall, Alpha clamps a ring cutter on it and
 #           cuts through: the hole is the same on all three instances.
+#   walk    the wire scenario's walk without wire (rollback baseline).
 #   cctv    Bravo watches the courtyard camera, Alpha shoots it out: Bravo's
 #           feed moves to the next camera.
 #   all     every scenario above, one after the other.
@@ -143,6 +144,12 @@ if [[ -n $GADGETS ]]; then
             BRAVO="7 look 0 0; 8 hold4 1.8; 11 log; 15 aimat 8.5 0.5 8; 17.6 shot $S-bravo.png; 20 log; 21 quit"
             ALPHA="7 look 180 0; 16 log; 17 move 0 1; 17.4 log; 17.8 log; 18.2 log; 18.4 shot $S-alpha.png; 18.6 log; 19 log; 19.4 log; 20.5 move 0 0; 21 log; 22 quit"
             ;;
+        walk)
+            # The wire scenario's walk without the wire: rollback baseline.
+            SERVER="6 equip Bravo mortise wire; 6 equip Alpha lark; 6 tp Bravo 8.5 0 9; 6 tp Alpha 8.5 0 4; 18 tp Bravo 11 0 3.5; 21.6 log"
+            BRAVO="7 look 0 0; 21 quit"
+            ALPHA="7 look 180 0; 16 log; 17 move 0 1; 17.8 log; 18.6 log; 19.4 log; 20.5 move 0 0; 21 log; 22 quit"
+            ;;
         cutter)
             SERVER="6 equip Bravo mortise; 6 equip Alpha auger; 6 tp Bravo 7 0 -5.6; 6 tp Alpha 7 0 -2.4; 12 reinforce Bravo; 13 log; 21 log; 30 log"
             BRAVO="6 look 180 0; 9.5 log; 19 log; 20 shot $S-bravo-blade.png; 27 log; 27.5 shot $S-bravo.png; 29 quit"
@@ -188,9 +195,9 @@ if [[ -n $GADGETS ]]; then
             | grep -oE "rollbacks [0-9]+ \([0-9]+ ticks\)( \| others' private state [0-9]+)?" \
             | sed 's/^/last trace: /' || true
     done
-    if [[ $GADGETS == wire ]]; then
+    if [[ $GADGETS == wire || $GADGETS == walk ]]; then
         echo
-        echo "== wire: Alpha's rollbacks, once a second (walking through the wire at t=17..20.5) =="
+        echo "== $GADGETS: Alpha's rollbacks, once a second (walking north at t=17..20.5) =="
         strip "$S-alpha.log" | grep "net-trace: InGame" | grep -oE "rollbacks [0-9]+ \([0-9]+ ticks\)" | uniq -c
     fi
     echo
