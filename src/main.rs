@@ -34,6 +34,11 @@ use net::dedicated::{ServerConfig, ServerConfigPlugin};
 use session::{Launch, NetMode};
 
 fn main() -> AppExit {
+    if std::env::args().any(|a| a == "--version") {
+        // Players and server must run the same build (checked on connect).
+        println!("harrow {}", net::BUILD_ID);
+        return AppExit::Success;
+    }
     let mut launch = Launch::from_args();
     let mut app = App::new();
 

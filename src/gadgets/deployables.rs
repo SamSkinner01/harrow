@@ -13,9 +13,10 @@
 //!   attacker is within `radius` it beeps (everyone nearby hears it) and
 //!   reveals them to defenders every `ping_interval`. Can be shot.
 //!
-//! Movement doesn't read [`GadgetSpeedScale`] yet; until it does, a bridge
-//! here scales the move input just before the fixed tick (see the
-//! `GadgetSpeedScale` docs for the one-line hook).
+//! Movement reads [`GadgetSpeedScale`] (`player/movement.rs`). It is set
+//! after every tick by `slow_in_wire` on every machine that simulates the
+//! character (the server for everyone, a client for its own predicted
+//! character), so clients predict the slow-down instead of being corrected.
 
 use avian3d::prelude::*;
 use bevy::{ecs::system::SystemParam, mesh::TorusMeshBuilder, prelude::*};
@@ -41,46 +42,41 @@ impl Plugin for DeployablesPlugin {
         app.add_systems(
             FixedUpdate,
             (
-                (wire_effects, cut_wire_with_melee, damage_covers, alarms_detect)
+                (wire_noise, cut_wire_with_melee, damage_covers, alarms_detect)
                     .in_set(GadgetStage::Effects),
             ),
         )
-        .add_systems(
-            RunFixedMainLoop,
-            // After every input writer (keyboard, test scripts, viewers).
-            slow_bridge
-                .in_set(RunFixedMainLoopSystems::BeforeFixedMainLoop)
-                .after(super::remote_view::FreezeViewers),
-        )
+        // Not part of `GadgetSystems`: clients run it for their predicted
+        // character (the network orders it before prediction history).
+        .add_systems(FixedPostUpdate, slow_in_wire.in_set(GadgetSpeedSystems))
         .add_systems(Update, dress_deployables);
     }
 }
 
 /// Movement speed multiplier from gadgets (razor wire); 1.0 = normal.
-/// Simulation state, set every tick. It multiplies with weapons'
-/// `MoveSpeedScale` (aiming), which weapons rewrite every tick.
-///
-/// Hook for movement (one line in `move_characters`, next to the weapons
-/// scale): `* gadget_scale.map_or(1.0, |s| s.0)` with
-/// `Option<&GadgetSpeedScale>` in the query, and no sprinting while it is
-/// below 1. Until then `slow_bridge` scales the move input instead, which
-/// has the same effect and doesn't depend on system order.
-#[derive(Component, Clone, Copy, Debug, PartialEq)]
+/// Simulation state, set after every tick by `slow_in_wire` and read by
+/// movement the next tick (it multiplies with weapons' `MoveSpeedScale`;
+/// no sprinting while it is below 1). Replicated and predicted.
+#[derive(Component, Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct GadgetSpeedScale(pub f32);
 
-#[derive(Component, Clone, Debug)]
+/// Where [`GadgetSpeedScale`] is updated (`FixedPostUpdate`).
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct GadgetSpeedSystems;
+
+#[derive(Component, Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct RazorWire {
     /// Half size: x along the roll, y up, z across.
     pub half: Vec3,
 }
 
-#[derive(Component, Clone, Debug)]
+#[derive(Component, Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct BallisticCover {
     /// Blast damage left before it breaks.
     pub health: f32,
 }
 
-#[derive(Component, Clone, Debug, Default)]
+#[derive(Component, Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct ProximityAlarm {
     /// Seconds until it may beep again.
     pub cooldown: f32,
@@ -201,34 +197,16 @@ pub fn spawn_deployable(
                 ))
                 .id()
         }
-        SecondaryGadget::BallisticCover => {
-            let c = &g.cover;
-            let (half_w, h) = (c.width / 2.0, c.height);
-            let wing = half_w * 0.36;
-            let centre_half = half_w - wing;
-            let wing_angle = 0.45_f32;
-            let wing_pos = |s: f32| {
-                Vec3::new(s * (centre_half + wing * wing_angle.cos() / 2.0), h / 2.0, wing * wing_angle.sin() / 2.0)
-            };
-            let parts = vec![
-                (Vec3::new(0.0, h / 2.0, 0.0), Quat::IDENTITY, Collider::cuboid(centre_half * 2.0, h, 0.03)),
-                (wing_pos(1.0), Quat::from_rotation_y(-wing_angle), Collider::cuboid(wing, h, 0.03)),
-                (wing_pos(-1.0), Quat::from_rotation_y(wing_angle), Collider::cuboid(wing, h, 0.03)),
-            ];
-            commands
-                .spawn((
-                    Name::new("Ballistic cover"),
-                    BallisticCover { health: c.health },
-                    owner_info,
-                    RoundScoped,
-                    at,
-                    Visibility::default(),
-                    RigidBody::Static,
-                    Collider::compound(parts),
-                    SurfaceKind::Hard,
-                ))
-                .id()
-        }
+        SecondaryGadget::BallisticCover => commands
+            .spawn((
+                BallisticCover { health: g.cover.health },
+                owner_info,
+                RoundScoped,
+                at,
+                Visibility::default(),
+                cover_body(tuning),
+            ))
+            .id(),
         _ => commands
             .spawn((
                 Name::new("Proximity alarm"),
@@ -248,36 +226,72 @@ pub fn spawn_deployable(
     }
 }
 
+/// Ballistic cover as world geometry: its name (destruction keys surfaces
+/// by name and place), a static body and the shield's collider. Clients
+/// add the same to replicated covers (`net/gadget_sync.rs`), so their
+/// predicted movement collides with it and bullet impacts find it.
+pub(crate) fn cover_body(tuning: &Tuning) -> impl Bundle {
+    let c = &tuning.round.gadgets.cover;
+    let (half_w, h) = (c.width / 2.0, c.height);
+    let wing = half_w * 0.36;
+    let centre_half = half_w - wing;
+    let wing_angle = 0.45_f32;
+    let wing_pos = |s: f32| {
+        Vec3::new(s * (centre_half + wing * wing_angle.cos() / 2.0), h / 2.0, wing * wing_angle.sin() / 2.0)
+    };
+    let parts = vec![
+        (Vec3::new(0.0, h / 2.0, 0.0), Quat::IDENTITY, Collider::cuboid(centre_half * 2.0, h, 0.03)),
+        (wing_pos(1.0), Quat::from_rotation_y(-wing_angle), Collider::cuboid(wing, h, 0.03)),
+        (wing_pos(-1.0), Quat::from_rotation_y(wing_angle), Collider::cuboid(wing, h, 0.03)),
+    ];
+    (
+        Name::new("Ballistic cover"),
+        RigidBody::Static,
+        Collider::compound(parts),
+        SurfaceKind::Hard,
+    )
+}
+
 /// Inside a wire roll's box (character feet / body).
 fn in_wire(wire: &RazorWire, at: &GlobalTransform, point: Vec3, margin: f32) -> bool {
     let local = at.affine().inverse().transform_point3(point) - Vec3::Y * wire.half.y;
     local.x.abs() <= wire.half.x + margin && local.z.abs() <= wire.half.z + margin && local.y.abs() <= wire.half.y + 0.6
 }
 
-/// Slow everyone standing in wire; footsteps in it are loud.
+/// After every tick: everyone standing in wire is slowed next tick. Runs
+/// wherever the character is simulated (server; a client for its own
+/// predicted character, also during rollback replays), from replicated
+/// wire placements, so prediction agrees with the server. Uses `Transform`
+/// (not `GlobalTransform`, which lags a frame for a wire placed this tick).
 #[allow(clippy::type_complexity)]
-fn wire_effects(
+fn slow_in_wire(
+    tuning: Res<Tuning>,
+    wires: Query<(&RazorWire, &Transform), Without<Dead>>,
+    mut people: Query<(&Transform, &mut GadgetSpeedScale), (With<Player>, With<PlayerInput>, Without<RazorWire>)>,
+) {
+    let slow = tuning.round.gadgets.razor_wire.slow;
+    let radius = tuning.body.radius;
+    for (feet, mut scale) in &mut people {
+        let inside = wires
+            .iter()
+            .any(|(w, at)| in_wire(w, &GlobalTransform::from(*at), feet.translation, radius));
+        let wanted = if inside { slow } else { 1.0 };
+        if scale.0 != wanted {
+            scale.0 = wanted;
+        }
+    }
+}
+
+/// Footsteps in wire are loud.
+fn wire_noise(
     tuning: Res<Tuning>,
     wires: Query<(&RazorWire, &GlobalTransform), Without<Dead>>,
-    mut people: Query<(Entity, &Transform, Option<&mut GadgetSpeedScale>), With<Player>>,
     mut footsteps: MessageReader<Footstep>,
     mut noise: MessageWriter<Noise>,
     mut events: MessageWriter<GadgetEvent>,
-    mut commands: Commands,
 ) {
     let t = &tuning.round.gadgets.razor_wire;
     let radius = tuning.body.radius;
-    for (entity, feet, scale) in &mut people {
-        let inside = wires.iter().any(|(w, at)| in_wire(w, at, feet.translation, radius));
-        let wanted = if inside { t.slow } else { 1.0 };
-        match scale {
-            Some(mut s) if s.0 != wanted => s.0 = wanted,
-            Some(_) => {}
-            None => {
-                commands.entity(entity).insert(GadgetSpeedScale(wanted));
-            }
-        }
-    }
     for step in footsteps.read() {
         if let Some((_, at)) = wires.iter().find(|(w, at)| in_wire(w, at, step.position, radius)) {
             noise.write(Noise {
@@ -414,44 +428,6 @@ fn alarms_detect(
         });
         events.write(GadgetEvent::AlarmTriggered { alarm: entity, position: p });
     }
-}
-
-/// Bridge until movement reads [`GadgetSpeedScale`]: scale the move input
-/// just before the fixed tick. Remembers what it wrote so it never scales
-/// the same input twice.
-fn slow_bridge(mut people: Query<(&GadgetSpeedScale, &mut PlayerInput, Option<&mut SlowedInput>, Entity)>, mut commands: Commands) {
-    for (scale, mut input, slowed, entity) in &mut people {
-        let base = match &slowed {
-            Some(s) if input.move_axis == s.written => s.base,
-            _ => input.move_axis,
-        };
-        if scale.0 >= 1.0 {
-            if slowed.is_some() {
-                input.move_axis = base;
-                commands.entity(entity).remove::<SlowedInput>();
-            }
-            continue;
-        }
-        let written = base * scale.0;
-        input.move_axis = written;
-        input.sprint = false;
-        match slowed {
-            Some(mut s) => {
-                s.base = base;
-                s.written = written;
-            }
-            None => {
-                commands.entity(entity).insert(SlowedInput { base, written });
-            }
-        }
-    }
-}
-
-/// What `slow_bridge` last wrote, and the input it scaled.
-#[derive(Component)]
-struct SlowedInput {
-    base: Vec2,
-    written: Vec2,
 }
 
 // ---- Models -----------------------------------------------------------------

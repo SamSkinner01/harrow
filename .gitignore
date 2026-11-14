@@ -19,3 +19,6 @@ Thumbs.db
 
 # Agent worktrees
 /.claude/worktrees/
+
+# Server bundles (tools/scripts/package_server.sh)
+/dist/

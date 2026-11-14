@@ -25,9 +25,9 @@
 //! - [`ObjectiveInteraction`]: the player is planting/disabling; F belongs
 //!   to the round module (e.g. don't start reinforcing).
 //!
-//! The objective data is keyed to Harrow Keep (`sites.rs`). On other maps
-//! (`--map greybox`), or with `--no-round` (free play for testing other
-//! features), the round loop stays [`RoundPhase::Inactive`].
+//! The objective data (site pairs, spawns) is per map (`sites.rs`). On maps
+//! without sites (`--map greybox`), or with `--no-round` (free play for
+//! testing other features), the round loop stays [`RoundPhase::Inactive`].
 
 pub mod defuser;
 mod flow;
@@ -432,7 +432,7 @@ pub struct ObjectiveInteraction {
 /// Command-line options for the round loop. See README "Developer flags".
 #[derive(Resource, Debug, Clone)]
 pub struct RoundSettings {
-    /// Round loop runs (Harrow Keep only, and not with `--no-round`).
+    /// Round loop runs (maps with bomb sites, and not with `--no-round`).
     pub enabled: bool,
     /// `--round-test`: short timers and a short match.
     pub test: bool,
@@ -476,8 +476,7 @@ impl RoundSettings {
         let start_side = team
             .or_else(|| operator.map(|op| op.info().side))
             .unwrap_or(Team::Attackers);
-        let map = value("--map");
-        let enabled = matches!(map.as_deref(), None | Some("keep")) && !has("--no-round");
+        let enabled = crate::map::MapChoice::from_args().has_objectives() && !has("--no-round");
         Self {
             enabled,
             test: has("--round-test"),

@@ -32,7 +32,7 @@ impl Plugin for FlowPlugin {
         app.add_systems(
             FixedUpdate,
             (
-                (tick_round, assign_sides)
+                (tick_round, assign_sides, super::sites::choose_site_pair)
                     .chain()
                     .in_set(RoundSystems::Flow),
                 reset_characters.in_set(RoundSystems::Reactions),
@@ -249,13 +249,22 @@ fn update_movement_locks(
     round: Res<Round>,
     tuning: Res<Tuning>,
     players: Query<
-        (Entity, &Team, Has<ObjectiveInteraction>, Has<Dead>, Has<MovementLock>),
+        (
+            Entity,
+            &Team,
+            Has<ObjectiveInteraction>,
+            Has<Dead>,
+            Has<MovementLock>,
+            Has<crate::gadgets::RemoteView>,
+        ),
         With<Player>,
     >,
     mut commands: Commands,
 ) {
-    for (entity, team, interacting, dead, locked) in &players {
+    for (entity, team, interacting, dead, locked, viewing) in &players {
+        // Looking through a drone or camera leaves the body standing.
         let should = interacting
+            || viewing
             || dead
             || match round.phase {
                 RoundPhase::OperatorSelect | RoundPhase::MatchEnd => true,

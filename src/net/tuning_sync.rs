@@ -29,6 +29,13 @@ pub struct PredictionTuning {
     pub body: BodyTuning,
     pub lean: LeanTuning,
     pub footsteps: FootstepTuning,
+    /// Razor wire's speed factor (`round.gadgets.razor_wire.slow`): the
+    /// client predicts the slow-down.
+    pub wire_slow: f32,
+    /// Ballistic cover's size (`round.gadgets.cover`): clients collide
+    /// with its shape.
+    pub cover_width: f32,
+    pub cover_height: f32,
 }
 
 impl From<&Tuning> for PredictionTuning {
@@ -38,6 +45,9 @@ impl From<&Tuning> for PredictionTuning {
             body: tuning.body.clone(),
             lean: tuning.lean.clone(),
             footsteps: tuning.footsteps.clone(),
+            wire_slow: tuning.round.gadgets.razor_wire.slow,
+            cover_width: tuning.round.gadgets.cover.width,
+            cover_height: tuning.round.gadgets.cover.height,
         }
     }
 }
@@ -58,6 +68,9 @@ fn apply_server_tuning(server: Option<Res<ServerTuning>>, mut tuning: ResMut<Tun
     t.body = server.0.body.clone();
     t.lean = server.0.lean.clone();
     t.footsteps = server.0.footsteps.clone();
+    t.round.gadgets.razor_wire.slow = server.0.wire_slow;
+    t.round.gadgets.cover.width = server.0.cover_width;
+    t.round.gadgets.cover.height = server.0.cover_height;
     if server.is_changed() {
         info!("net: using the server's movement tuning");
     }

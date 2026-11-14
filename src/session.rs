@@ -144,6 +144,10 @@ pub struct Launch {
     pub config: Option<std::path::PathBuf>,
     /// `--name`: player name shown to others.
     pub name: Option<String>,
+    /// Shared secret for the connection (`--key`, or the `HARROW_KEY`
+    /// environment variable): a server with a key only lets in clients
+    /// that use the same one. `None`: the development key.
+    pub key: Option<String>,
     /// `--net-latency/--net-jitter/--net-loss`: simulated bad network on
     /// everything this instance receives.
     pub conditioner: Option<ConditionerSettings>,
@@ -171,7 +175,9 @@ impl Launch {
 
     pub fn parse(args: Vec<String>) -> Self {
         let mut launch = Launch {
-            skip_menu: args.iter().any(|a| a.starts_with("--")),
+            // Any flag goes straight in, except the key (menu players
+            // can set it too).
+            skip_menu: args.iter().any(|a| a.starts_with("--") && a != "--key"),
             ..default()
         };
         let value = |flag: &str| {
@@ -211,6 +217,9 @@ impl Launch {
         launch.force_menu = has("--menu") && !launch.dedicated;
         launch.config = value("--config").map(Into::into);
         launch.name = value("--name");
+        launch.key = value("--key")
+            .or_else(|| std::env::var("HARROW_KEY").ok())
+            .filter(|k| !k.trim().is_empty());
         launch.shoot_test = has("--net-shoot-test");
         launch.net_trace = has("--net-trace");
         let number = |flag: &str| value(flag).and_then(|v| v.parse::<f32>().ok());

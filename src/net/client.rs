@@ -29,7 +29,7 @@ use lightyear::{
 };
 
 use super::{
-    BUILD_ID, DEV_PRIVATE_KEY, NetAim, NetPlayer, PROTOCOL_ID, SimPosition,
+    BUILD_ID, NetAim, NetPlayer, PROTOCOL_ID, SimPosition, netcode_key,
     input::NetInput,
     protocol::{ControlChannel, Hello, Refused, Welcome},
     tuning_sync::ServerTuning,
@@ -114,7 +114,7 @@ fn start_client(
     let auth = Authentication::Manual {
         server_addr: server,
         client_id,
-        private_key: DEV_PRIVATE_KEY,
+        private_key: netcode_key(launch.key.as_deref()),
         protocol_id: PROTOCOL_ID,
     };
     let netcode = match NetcodeClient::new(
@@ -234,7 +234,8 @@ fn connect_timeout(
         if time.elapsed_secs() - client.started > 12.0 {
             notice.0 = Some(format!(
                 "Server not responding ({}). Check the address and port, that the server \
-                 is running, and its firewall (UDP).",
+                 is running, its firewall (UDP), and if it has a key, that you use the same \
+                 one (--key or HARROW_KEY).",
                 client.server
             ));
             next.set(AppState::MainMenu);

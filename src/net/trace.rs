@@ -26,7 +26,15 @@ impl Plugin for NetTracePlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<Counts>().add_systems(
             Update,
-            (count, trace.run_if(on_timer(Duration::from_secs(1)))).chain(),
+            (
+                count,
+                trace.run_if(on_timer(Duration::from_secs(1))),
+                // Mesh data is only in the main world without a renderer.
+                footprint
+                    .run_if(|mode: Res<NetMode>| matches!(*mode, NetMode::Dedicated { .. }))
+                    .run_if(on_timer(Duration::from_secs(10))),
+            )
+                .chain(),
         );
     }
 }
@@ -51,6 +59,42 @@ fn count(
     counts.cells += changes.read().map(|c| c.removed.len() as u32).sum::<u32>();
 }
 
+/// Every 10 s on a dedicated server: what the world holds (memory checks).
+fn footprint(
+    entities: Query<()>,
+    meshes: Res<Assets<Mesh>>,
+    images: Res<Assets<Image>>,
+    server: Res<AssetServer>,
+) {
+    let mut big: Vec<(usize, String)> = images
+        .iter()
+        .map(|(id, i)| {
+            let path = server.get_path(id).map_or_else(|| format!("{id:?}"), |p| p.to_string());
+            (i.data.as_ref().map_or(0, Vec::len), format!("{path} {}x{}", i.width(), i.height()))
+        })
+        .collect();
+    big.sort_by(|a, b| b.0.cmp(&a.0));
+    for (bytes, what) in big.iter().take(6) {
+        debug!("net-trace: image {} KB {what}", bytes / 1024);
+    }
+    let mesh_bytes: usize = meshes
+        .iter()
+        .map(|(_, m)| {
+            m.attributes().map(|(_, v)| v.get_bytes().len()).sum::<usize>()
+                + m.indices().map_or(0, |i| i.len() * 4)
+        })
+        .sum();
+    let image_bytes: usize = images.iter().map(|(_, i)| i.data.as_ref().map_or(0, Vec::len)).sum();
+    info!(
+        "net-trace: footprint: {} entities, {} meshes ({} MB), {} images ({} MB)",
+        entities.iter().count(),
+        meshes.len(),
+        mesh_bytes / (1 << 20),
+        images.len(),
+        image_bytes / (1 << 20)
+    );
+}
+
 #[allow(clippy::type_complexity)]
 fn trace(
     state: Res<State<AppState>>,
@@ -58,6 +102,9 @@ fn trace(
     round: Res<Round>,
     local: Query<(&Transform, Option<&Team>, Option<&Health>), With<LocalPlayer>>,
     others: Query<(&Transform, &NetPlayer, Option<&Team>, Has<Dead>), Without<LocalPlayer>>,
+    // Per-player state is only ever sent to its own player (`PrivateTo`):
+    // on a client this must stay 0.
+    private: Query<(), (With<NetPlayer>, Without<LocalPlayer>, With<crate::gadgets::SecondaryStock>)>,
     metrics: Option<Res<PredictionMetrics>>,
     server: Option<Res<super::client::ServerInfo>>,
     counts: Res<Counts>,
@@ -97,7 +144,7 @@ fn trace(
         .map(|s| format!(" on \"{}\" ({})", s.name, s.address))
         .unwrap_or_default();
     info!(
-        "net-trace: {:?} {:?}{} | round {} {:?} {:.1}s score {}-{} | {} | others [{}] | shots {} hits {} cells {}{}",
+        "net-trace: {:?} {:?}{} | round {} {:?} {:.1}s score {}-{} | {} | others [{}] | shots {} hits {} cells {}{}{}",
         state.get(),
         *mode,
         joined,
@@ -111,6 +158,11 @@ fn trace(
         counts.shots,
         counts.hits,
         counts.cells,
-        rollbacks
+        rollbacks,
+        if matches!(*mode, NetMode::Client { .. }) {
+            format!(" | others' private state {}", private.iter().count())
+        } else {
+            String::new()
+        }
     );
 }
