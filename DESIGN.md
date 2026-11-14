@@ -105,6 +105,114 @@ per 1 x 3 m wall), so bullets, melee and explosives can open holes anywhere.
 The Blender kit provides the intact pieces (marked soft), materials and debris;
 pre-fractured meshes are used for props and barricades only.
 
+## M4 implementation notes (destruction as built)
+
+Code in `src/destruction/`; every number is in the `destruction` section of
+`assets/config/tuning.ron`. The rules above are unchanged; this is how they
+are implemented.
+
+**Cells.** Each soft kit piece (plaster walls 1 m / 2 m / door / window,
+wooden floor tiles, the hatch tile and cover, door and window barricades) is
+replaced at load by a grid of 10 cm cells. Grid lines also fall exactly on
+openings, studs and the frame, so cells near those are narrower. A 2 m wall
+is about 450 cells, a floor tile about 400. A cell has layers: *skin*
+(plaster or boards), *core* (timber studs, joists, battens), *frame* (never
+breaks), and on reinforced surfaces *plate* and *brace*. The mesh is the
+cells merged into rectangles (with hole edges and wall thickness, the kit's
+metre UVs and library materials); the collider is a compound of boxes over
+the same rectangles. Only a surface that changed is rebuilt: its collider on
+the same fixed tick (holes are walkable and shootable from the next tick),
+its mesh once per frame.
+
+**Layout.**
+- Walls: 5 cm frame strips at the posts, a 6 cm bottom lip (low enough to
+  walk over without a vault) and a top plate never break. Studs (6 cm) stand
+  beside openings and are spaced so no bay is wider than 0.7 m, so a 2 m wall
+  has one in the middle. (The brief said about 0.5 m; 0.7 m leaves 0.67 m
+  bays, so a melee crouch hole fits between studs, since a person needs
+  0.6 m.) Door and window walls can't be reinforced; map code can mark others
+  with `NotReinforceable`.
+- Floors: 4 cm joists at the tile edges and at most 0.5 m apart, so bullets
+  and pellets make sightlines but never a drop-through hole. Around the
+  hatch, a 10 cm timber ring and the two trimmer joists are frame, so a
+  blast never leaves the hatch floating.
+- Hatch cover: boards with a cross of battens under them.
+- Barricades: the kit's plank layout, planks breaking in 0.3 m pieces, two
+  battens behind.
+
+**Impacts.** Every change comes from a `SurfaceImpact` (or a hard breach or
+reinforcement), and the result is deterministic: the only randomness is a
+hash of the piece's placement, its impact count and the cell.
+
+| Impact | Wall | Floor | Hatch cover | Barricade |
+|---|---|---|---|---|
+| Bullet | the cell hit, plus a 25% chance for each neighbour; studs and frame unaffected; a hit on a hole's edge chips it | same | same | same (planks) |
+| Pellet | 7 cm disc per pellet (pellets overlap into one big hole) | same | same | same |
+| Melee | hits within 0.5 m of each other grow one hole (radius 0.14 / 0.20 / 0.26 / 0.32 m); from the 3rd hit it also opens a 0.75 x 1.3 m crouch hole down to the lip; studs stay | nothing | 3rd hit from above breaks it | 1st hit knocks out a 0.5 m chunk, 2nd clears it |
+| Explosion (radius r) | disc of radius sqrt(r² - d²), d = blast distance from the wall, studs included; if it reaches within 0.5 m of the lip, the wall below the centre is blown out to the lip (walk-through) | disc (drop-through) | breaks | clears |
+| Hard breach | cuts skin, studs, frame and plate in a disc | same | same | same |
+
+Reinforced surfaces ignore everything except hard breaches. A barricade
+falls apart once less than 30% of its planks are left.
+
+**Explosions** (the `Explosion` message, also meant for M6's grenades and
+impact charges) open every soft surface within the breach radius (a charge
+stuck to a surface opens only that surface) and hurt people within the
+damage radius: full damage within 25% of it, then falling off with the
+square of the distance. Line of sight is checked to each hit zone: stone or a
+reinforced wall in between blocks it; each soft wall halves it. The most
+exposed zone counts.
+
+**Melee (V).** A 12 cm sphere swept 1.7 m from the eyes (enough to reach a
+hatch at your feet), 0.8 s cooldown, 35 damage to people through their hit
+zones. Swinging into an existing hole still catches its edges, so it keeps
+growing. Feedback is a short camera jab.
+
+**Reinforcing (hold F, defenders).** 5 s looking at a reinforceable wall or
+hatch within 1.6 m; moving, looking away, letting go or the round loop
+closing the gate cancels it. 2 per defender. The plate goes on the
+defender's side and covers existing holes; the piece becomes
+`SurfaceKind::Hard`, so bullets stop.
+
+**Barricading (hold F, defenders).** 2 s looking through an empty doorway or
+window (stone or plaster) within 2 m. Unlimited; replaces a broken one.
+
+**Breach charge (key 4).** Hold 1 s while looking at a soft wall, a floor or
+hatch (from above) or a barricade within 2 m; press 4 again to detonate. One
+out at a time, 3 per attacker. On walls it always sits 1.15 m up so the
+0.9 m-radius hole is walk-through. 120 damage point blank, 3 m damage
+radius. It falls off if its surface breaks.
+
+**Hard breach** (the `HardBreach` message) is the API for M6's Ring Cutter
+(radius about 0.5 m) and Backplate Charge (fist-sized).
+
+**Round loop.** Reinforcing and barricading are allowed in prep, action and
+planted (and in free play); breach charges whenever attackers may use
+gadgets (not during prep). Every new round restores the map: walls, floors
+and hatches intact and unreinforced, the map's barricades back up,
+defenders' barricades and placed charges gone, 2 reinforcements per
+defender, and 3 breach charges for anyone whose secondary gadget is the
+soft-breach charge (in free play, every attacker). While a defender is
+planting or disabling the defuser, F belongs to the round loop.
+Destruction is heard by gadgets and bots as `Noise`: explosions 6,
+breaking a hatch or barricade 1.5, melee hits 1, finishing a reinforcement
+0.8 (footstep scale).
+
+**Debris** is cosmetic: chunks in the surface's material (each casts one ray
+per frame while moving; no colliders) and camera-facing dust puffs, capped at
+250 chunks and 60 puffs, oldest first.
+
+**Performance** (dev build): rebuilding one surface takes about 0.05 ms for
+the mesh (worst seen 0.14 ms) and 0.03 ms for the collider. With roughly 400
+impacts spread over every soft surface in the keep, the frame rate stayed at
+about 350 fps uncapped (330-370 before). Watch: very ragged surfaces mean
+more collider boxes (still well under 100 per surface), and moving debris
+costs one ray each per frame (capped).
+
+**Not done yet:** sounds; holes are blocky 10 cm steps (a decal or edge
+jitter could soften them); crates aren't destructible; no vault action, so
+melee holes are crouch holes.
+
 ## Operator structure (approved 2026-11-13)
 
 - Armour/speed split: 1/3, 2/2 or 3/1.

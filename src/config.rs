@@ -44,7 +44,6 @@ pub struct Tuning {
     // Placeholder sections, filled in by M3 / M4 / M6.
     #[allow(dead_code)]
     pub weapons: WeaponTuning,
-    #[allow(dead_code)]
     pub destruction: DestructionTuning,
     pub round: RoundTuning,
 }
@@ -54,10 +53,118 @@ pub struct Tuning {
 #[serde(deny_unknown_fields)]
 pub struct WeaponTuning {}
 
-/// Destruction (M4). Owned by `src/destruction`.
+/// Destruction (M4). Owned by `src/destruction`. Explanations of every
+/// value are in the tuning file.
 #[derive(Deserialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
-pub struct DestructionTuning {}
+pub struct DestructionTuning {
+    pub cell_size: f32,
+    pub walls: WallTuning,
+    pub floors: FloorTuning,
+    pub bullet_extra_chance: f32,
+    pub pellet_radius: f32,
+    pub hole_jitter: f32,
+    pub melee: MeleeTuning,
+    pub explosion: ExplosionTuning,
+    pub hatch_melee_hits: u32,
+    pub barricade: BarricadeTuning,
+    pub reinforce: ReinforceTuning,
+    pub breach_charge: BreachChargeTuning,
+    pub debris: DebrisTuning,
+    pub noise: DestructionNoiseTuning,
+}
+
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct WallTuning {
+    pub frame: f32,
+    pub lip: f32,
+    pub top_plate: f32,
+    pub stud_width: f32,
+    pub stud_max_bay: f32,
+}
+
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct FloorTuning {
+    pub joist_width: f32,
+    pub joist_max_bay: f32,
+}
+
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct MeleeTuning {
+    pub range: f32,
+    pub sweep_radius: f32,
+    pub edge_radius: f32,
+    pub cooldown: f32,
+    pub damage: f32,
+    pub hole_radii: Vec<f32>,
+    pub merge_distance: f32,
+    pub crouch_hole_hits: u32,
+    pub crouch_hole_width: f32,
+    pub crouch_hole_height: f32,
+}
+
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct ExplosionTuning {
+    pub blowout_reach: f32,
+    pub blowout_width: f32,
+    pub full_damage_fraction: f32,
+    pub soft_cover_factor: f32,
+}
+
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct BarricadeTuning {
+    pub segment: f32,
+    pub melee_hits: u32,
+    pub melee_radius: f32,
+    pub clear_below: f32,
+    pub build_time: f32,
+    pub reach: f32,
+}
+
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct ReinforceTuning {
+    pub time: f32,
+    pub reach: f32,
+    pub per_defender: u32,
+    pub plate_thickness: f32,
+    pub brace_thickness: f32,
+}
+
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct BreachChargeTuning {
+    pub count: u32,
+    pub place_time: f32,
+    pub reach: f32,
+    pub wall_height: f32,
+    pub breach_radius: f32,
+    pub damage_radius: f32,
+    pub max_damage: f32,
+}
+
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct DestructionNoiseTuning {
+    pub explosion: f32,
+    pub breaking: f32,
+    pub melee: f32,
+    pub reinforce: f32,
+}
+
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct DebrisTuning {
+    pub max_chunks: usize,
+    pub max_dust: usize,
+    pub chunks_per_impact: usize,
+    pub lifetime: f32,
+}
 
 /// Round loop, operators and gadgets (M6). Owned by `src/round` and
 /// `src/gadgets`. Every value is explained in the tuning file.
