@@ -48,16 +48,184 @@ pub struct Tuning {
     pub surfaces: HashMap<String, SurfaceTuning>,
     pub footsteps: FootstepTuning,
     // Placeholder sections, filled in by M3 / M4 / M6.
-    #[allow(dead_code)]
     pub weapons: WeaponTuning,
     pub destruction: DestructionTuning,
     pub round: RoundTuning,
 }
 
-/// Weapons (M3). Owned by `src/weapons`.
+/// Weapons (M3). Owned by `src/weapons`; the tuning file documents each value.
 #[derive(Deserialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
-pub struct WeaponTuning {}
+pub struct WeaponTuning {
+    /// Aim-down-sights button behaviour.
+    pub ads_mode: ButtonMode,
+    /// Seconds after a sprint ends before you can fire or aim.
+    pub sprint_recovery: f32,
+    /// Seconds to lower the current weapon when switching.
+    pub holster_time: f32,
+    /// Pulling the trigger on an empty magazine starts a reload.
+    pub auto_reload: bool,
+    pub noise: WeaponNoiseTuning,
+    pub damage: ZoneDamageTuning,
+    pub penetration: PenetrationTuning,
+    pub primary: WeaponDef,
+    pub sidearm: WeaponDef,
+    pub view: WeaponViewTuning,
+    pub effects: WeaponEffectsTuning,
+    pub dummies: DummyTuning,
+}
+
+/// Damage multipliers by body region.
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct ZoneDamageTuning {
+    pub headshot_kills: bool,
+    pub head: f32,
+    pub torso: f32,
+    pub legs: f32,
+}
+
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct PenetrationTuning {
+    /// Fraction of damage kept after each soft surface.
+    pub soft_damage_kept: f32,
+    /// Soft surfaces a bullet passes through before stopping.
+    pub max_soft_layers: u32,
+    /// Bullet range, metres.
+    pub range: f32,
+}
+
+/// One weapon.
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct WeaponDef {
+    pub name: String,
+    pub model: WeaponModelTuning,
+    pub damage: f32,
+    pub falloff_start: f32,
+    pub falloff_end: f32,
+    pub falloff_min: f32,
+    pub rpm: f32,
+    pub full_auto: bool,
+    pub magazine: u32,
+    /// A tactical reload keeps one round in the chamber (magazine + 1).
+    pub chamber: bool,
+    pub reserve: u32,
+    pub reload_tactical: f32,
+    pub reload_empty: f32,
+    pub draw_time: f32,
+    pub ads_time: f32,
+    pub ads_zoom: f32,
+    pub ads_move_speed: f32,
+    pub recoil: RecoilTuning,
+    pub spread: SpreadTuning,
+    pub pose: ViewmodelPose,
+}
+
+/// Degrees of view kick per shot, (right, up).
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct RecoilTuning {
+    pub pattern: Vec<(f32, f32)>,
+    pub repeat_last: usize,
+    pub ads_scale: f32,
+    pub recovery_delay: f32,
+    pub recovery_speed: f32,
+}
+
+/// Bullet spread, degrees (cone radius).
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct SpreadTuning {
+    pub hip: f32,
+    pub ads: f32,
+    pub moving_hip: f32,
+    pub moving_ads: f32,
+    pub crouch_scale: f32,
+    pub prone_scale: f32,
+    pub per_shot: f32,
+    pub max_bloom: f32,
+    pub ads_bloom_scale: f32,
+    pub bloom_recovery: f32,
+    pub first_shot_scale: f32,
+    pub first_shot_reset: f32,
+}
+
+/// The 3D model in your hands. Everything the viewmodel needs to know about
+/// a model is here, so a different `.glb` can be dropped in without code.
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct WeaponModelTuning {
+    /// glTF file under `assets/`.
+    pub path: String,
+    /// Uniform scale (e.g. 0.01 for a model made in centimetres).
+    pub scale: f32,
+    /// Turn the model so it points down -Z with +Y up: (yaw, pitch, roll),
+    /// degrees.
+    pub rotation: (f32, f32, f32),
+    /// Sight line point (ADS eye alignment) and barrel tip, in model units.
+    /// `None` = read them from the nodes named below.
+    pub sight: Option<(f32, f32, f32)>,
+    pub muzzle: Option<(f32, f32, f32)>,
+    pub sight_node: String,
+    pub muzzle_node: String,
+    /// Nodes animated by reloads and shots (optional).
+    pub magazine_node: Option<String>,
+    pub slide_node: Option<String>,
+}
+
+/// Where the weapon sits in front of the camera, metres.
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct ViewmodelPose {
+    /// Model origin at the hip: (right, up, forward).
+    pub hip: (f32, f32, f32),
+    /// Eye to sight distance when aiming.
+    pub ads_distance: f32,
+    pub kick_back: f32,
+    /// Degrees.
+    pub kick_up: f32,
+}
+
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct WeaponViewTuning {
+    /// Weapon camera vertical field of view, degrees.
+    pub fov: f32,
+    pub sway: f32,
+    pub sway_max: f32,
+    pub bob_height: f32,
+    pub bob_side: f32,
+    pub ads_steadiness: f32,
+}
+
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct WeaponEffectsTuning {
+    pub muzzle_flash_time: f32,
+    /// Lumens.
+    pub muzzle_light: f32,
+    pub impact_time: f32,
+    pub max_impacts: usize,
+    pub hit_marker_time: f32,
+    pub volume: f32,
+}
+
+/// Loudness of weapon sounds to gameplay (`combat::Noise`), footstep scale.
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct WeaponNoiseTuning {
+    pub gunshot: f32,
+    pub reload: f32,
+}
+
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct DummyTuning {
+    pub health: f32,
+    pub respawn_time: f32,
+}
 
 /// Destruction (M4). Owned by `src/destruction`. Explanations of every
 /// value are in the tuning file.

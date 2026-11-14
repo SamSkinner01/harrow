@@ -32,7 +32,7 @@ impl Plugin for HitboxPlugin {
 }
 
 /// Body region a hit zone belongs to; decides damage in M3.
-#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum HitZone {
     Head,
     Torso,

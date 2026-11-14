@@ -8,7 +8,7 @@ use avian3d::prelude::*;
 use bevy::prelude::*;
 
 use super::{CharacterState, Footstep, Lean, Player, PlayerInput, Stance};
-use crate::{config::Tuning, net::Replay, physics::GameLayer, round::MovementLock};
+use crate::{config::Tuning, net::Replay, physics::GameLayer, round::MovementLock, weapons::MoveSpeedScale};
 
 pub struct MovementPlugin;
 
@@ -38,6 +38,7 @@ pub(super) fn move_characters(
             &mut Transform,
             &mut LinearVelocity,
             Has<MovementLock>,
+            Option<&MoveSpeedScale>,
         ),
         With<Player>,
     >,
@@ -52,7 +53,7 @@ pub(super) fn move_characters(
     let max_slope = m.max_slope.to_radians();
     let spatial = &move_and_slide.spatial_query;
 
-    for (entity, input, mut state, mut transform, mut velocity, locked) in &mut characters {
+    for (entity, input, mut state, mut transform, mut velocity, locked, speed_scale) in &mut characters {
         state.prev_height = state.height;
         state.prev_lean = state.lean;
         // Locked (planting, dead, choosing an operator...): look and stance
@@ -127,7 +128,7 @@ pub(super) fn move_characters(
             m.sprint_speed
         } else {
             speed_for_height(state.height, &tuning)
-        };
+        } * speed_scale.map_or(1.0, |s| s.0); // e.g. slower while aiming (weapons)
         let wish = facing * Vec3::new(move_axis.x, 0.0, -move_axis.y);
         let target = wish * speed;
         let horizontal = Vec3::new(velocity.x, 0.0, velocity.z);

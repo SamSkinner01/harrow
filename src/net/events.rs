@@ -16,6 +16,7 @@ use crate::{
     gadgets::{GadgetEvent, Reveal},
     round::RoundEvent,
     session::{is_client, is_server},
+    weapons::{BulletHit, ShotFired, WeaponEvent},
 };
 
 pub(super) struct EventsPlugin;
@@ -24,9 +25,21 @@ impl Plugin for EventsPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
             PostUpdate,
-            forward_events.run_if(is_server).before(MessageSystems::Send),
+            (forward_events, forward::<ShotFired>, forward::<WeaponEvent>, forward::<BulletHit>)
+                .run_if(is_server)
+                .before(MessageSystems::Send),
         )
-            .add_systems(PreUpdate, receive_events.run_if(is_client).after(MessageSystems::Receive));
+        .add_systems(
+            PreUpdate,
+            (
+                receive_events,
+                receive::<ShotFired>,
+                receive::<WeaponEvent>,
+                receive::<BulletHit>,
+            )
+                .run_if(is_client)
+                .after(MessageSystems::Receive),
+        );
     }
 }
 
@@ -65,6 +78,26 @@ fn forward_events(
         for reveal in intel.iter().filter(|r| Some(&r.for_team) == team) {
             reveal_sender.send::<EventChannel>(reveal.clone());
         }
+    }
+}
+
+/// Forward every `M` to all clients.
+fn forward<M: bevy::prelude::Message + Clone>(mut messages: MessageReader<M>, mut links: Query<&mut MessageSender<M>, ReadyLink>) {
+    let all: Vec<M> = messages.read().cloned().collect();
+    if all.is_empty() {
+        return;
+    }
+    for mut sender in &mut links {
+        for message in &all {
+            sender.send::<EventChannel>(message.clone());
+        }
+    }
+}
+
+/// Write every received `M` locally.
+fn receive<M: bevy::prelude::Message>(mut links: Query<&mut MessageReceiver<M>, With<NetClient>>, mut writer: MessageWriter<M>) {
+    for mut receiver in &mut links {
+        writer.write_batch(receiver.receive());
     }
 }
 
@@ -132,6 +165,25 @@ impl MapEntities for GadgetEvent {
             GadgetEvent::Destroyed { entity, .. } => map(entity, mapper),
             GadgetEvent::DartStuck { .. } | GadgetEvent::DartLost | GadgetEvent::DartExpired { .. } => {}
         }
+    }
+}
+
+impl MapEntities for ShotFired {
+    fn map_entities<E: EntityMapper>(&mut self, mapper: &mut E) {
+        map(&mut self.shooter, mapper);
+    }
+}
+
+impl MapEntities for WeaponEvent {
+    fn map_entities<E: EntityMapper>(&mut self, mapper: &mut E) {
+        map(&mut self.shooter, mapper);
+    }
+}
+
+impl MapEntities for BulletHit {
+    fn map_entities<E: EntityMapper>(&mut self, mapper: &mut E) {
+        map(&mut self.shooter, mapper);
+        map(&mut self.target, mapper);
     }
 }
 

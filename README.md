@@ -61,6 +61,10 @@ Bevy's API changes between releases, so everything is pinned with `=` in
 | C | Crouch (toggle) |
 | Z | Prone (toggle) |
 | Q / E | Lean left / right (toggle) |
+| Left mouse | Fire (hold for full auto) |
+| Right mouse | Aim down sights (hold; toggle option in the tuning file) |
+| R | Reload |
+| 1 / 2, mouse wheel | Primary (TAMARISK rifle) / sidearm (ACACIA pistol) |
 | V | Melee (breaks soft walls, hatches from above, barricades) |
 | F (hold) | Plant the defuser in a site (attackers) / disable it (defenders). Defenders elsewhere: reinforce the wall or hatch you look at (5 s), or barricade an empty doorway/window (2 s) |
 | 3 | Unique gadget (operator ability) |
@@ -74,12 +78,13 @@ Bevy's API changes between releases, so everything is pinned with `=` in
 | F5 | Third-person debug view |
 | F12 | Save screenshot to `screenshots/` |
 
-Hold vs. toggle for sprint, crouch and lean is set in the tuning file.
+Hold vs. toggle for sprint, crouch, lean and aiming is set in the tuning file.
 
 ## Tuning
 
-Movement, look, lighting and per-surface look (texture scale and tint) live in
-`assets/config/tuning.ron`. Edit and save while the game is running and the
+Movement, look, lighting, per-surface look (texture scale and tint) and
+weapons (damage, recoil, spread, reloads, the weapon models and where they sit
+on screen) live in `assets/config/tuning.ron`. Edit and save while the game is running and the
 changes apply immediately. A mistake in the file is logged and ignored.
 
 ## Asset pipeline
@@ -98,6 +103,18 @@ python3 tools/scripts/fetch_character_textures.py  # re-download CC0 cloth/leath
 
 On Windows use `tools/scripts/build_kit.ps1`. Kit conventions are documented
 at the top of `tools/blender/kit/pieces.py`; the piece list is in DESIGN.md.
+
+```sh
+tools/scripts/build_weapons.sh                     # Blender -> assets/models/weapons/*.glb
+tools/scripts/build_weapons.sh --only tamarisk     # rebuild one weapon
+tools/scripts/build_weapons.sh --preview sheet.png # render the weapons to an image
+```
+
+(`build_weapons.ps1` on Windows.) Weapon conventions (axes, origin at the
+grip, `SIGHT`/`MUZZLE` empties, `MAGAZINE`/`SLIDE` nodes) are at the top of
+`tools/blender/weapons/models.py`. To use a different weapon model, change
+its `model` block in the tuning file (path, scale, rotation, sight and muzzle
+points or node names, magazine/slide node names) and its `pose`; no code.
 
 Characters: one config per operator in `tools/blender/characters/operators/`
 (body, face, skin, gear; commented). `--setup` changes only your Blender user
@@ -121,14 +138,23 @@ cargo run -- --round-test                        # short round timers and a shor
 cargo run -- --round-script "action@0.5: hold; planted@1: shot out.png; planted@2: quit"
                                                # scripted automated run; commands in src/round/script.rs
 cargo run -- --show-all-intel                    # show both teams' gadget reveals (testing)
+cargo run -- --dummies                         # training dummies in the keep (courtyard, behind plaster, behind stone)
+cargo run -- --weapon-test                     # scripted weapon checks; logs PASS/FAIL, exit code 1 on failure
+cargo run -- --weapon sidearm --ads            # hold a weapon / aim down sights
+cargo run -- --hold-fire                       # hold the trigger
+cargo run -- --fire-at 90 --reload-at 120      # pull the trigger / press reload at a fixed tick (64 per second)
+cargo run -- --screenshot-on-hit out.png --dummies --fire-at 90  # screenshot just after your first hit, then quit
+cargo run -- --dump-weapon-sounds sounds/      # also write the synthesised weapon sounds as .wav files
+cargo run -- --no-viewmodel                    # don't draw the weapon in your hands (look/performance comparisons)
 cargo run -- --lineup                          # the four operators in the courtyard, cycling animations
 cargo run -- --lineup-state crouch_walk        # ... all holding one state (names in src/characters/lineup.rs)
 cargo run -- --lineup-crowd --no-vsync         # 12 operators, for checking what a full match costs
 ```
 
 Used for automated checks: e.g. spawn at the stairs, auto-move forward, and
-screenshot/log where the player ends up. Automated runs don't grab the mouse
-and don't play player sounds.
+screenshot/log where the player ends up. Automated runs (`--screenshot`,
+`--weapon-test`, `--screenshot-on-hit`) don't grab the mouse and don't play
+player or weapon sounds.
 
 The round loop (Harrow Keep only) starts with operator selection. In
 `--screenshot` runs everyone is auto-picked; `--round-script` runs pick

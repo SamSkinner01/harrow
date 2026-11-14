@@ -40,6 +40,7 @@ use crate::{
     player::{Lean, LocalPlayer, PlayerInput, Stance},
     round::RoundIntent,
     session::is_authority,
+    weapons::WeaponInput,
 };
 
 /// Everything a player wants this tick.
@@ -52,8 +53,11 @@ pub struct NetInput {
     pub gadget: GadgetButtons,
     /// M4 destruction: V, F, 4 (held state).
     pub destruction: DestructionIntent,
-    // M3: `pub weapon: WeaponIntent,` plus a `sync_intent` line in
-    // `NetInputPlugin::build` (held state: the sim detects presses).
+    /// M3 weapons: trigger, aim, reload, slot (held state and press
+    /// counters; the weapon simulation detects presses itself).
+    pub weapon: WeaponInput,
+    // A new feature's intent: add a field here and one `sync_intent` line
+    // in `NetInputPlugin::build`.
 }
 
 impl MapEntities for NetInput {
@@ -153,7 +157,7 @@ impl Plugin for NetInputPlugin {
         );
         // Held-state intents: one line each.
         sync_intent::<DestructionIntent>(app, |input| &mut input.destruction);
-        // M3: sync_intent::<WeaponIntent>(app, |input| &mut input.weapon);
+        sync_intent::<WeaponInput>(app, |input| &mut input.weapon);
     }
 }
 

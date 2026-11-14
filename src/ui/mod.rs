@@ -2,12 +2,14 @@
 
 use bevy::prelude::*;
 
+use crate::{player::LocalPlayer, weapons::AimView};
+
 pub struct UiPlugin;
 
 impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, (spawn_crosshair, spawn_help))
-            .add_systems(Update, toggle_help);
+            .add_systems(Update, (toggle_help, hide_crosshair_when_aiming));
     }
 }
 
@@ -15,6 +17,7 @@ fn spawn_crosshair(mut commands: Commands) {
     // Full-screen container that centres the dot.
     commands.spawn((
         Name::new("Crosshair"),
+        Crosshair,
         Node {
             width: percent(100.0),
             height: percent(100.0),
@@ -46,12 +49,32 @@ fn spawn_crosshair(mut commands: Commands) {
 }
 
 #[derive(Component)]
+struct Crosshair;
+
+/// The sight replaces the centre dot when aiming down sights.
+fn hide_crosshair_when_aiming(
+    aim: Option<Single<&AimView, With<LocalPlayer>>>,
+    mut crosshair: Single<&mut Visibility, With<Crosshair>>,
+) {
+    let aiming = aim.is_some_and(|a| a.aim > 0.5);
+    let wanted = if aiming { Visibility::Hidden } else { Visibility::Inherited };
+    if **crosshair != wanted {
+        **crosshair = wanted;
+    }
+}
+
+#[derive(Component)]
 struct HelpPanel;
 
 const HELP: &str = "\
 WASD  move        Shift  sprint
 C  crouch         Z  prone
 Q / E  lean       Esc  free mouse
+LMB  fire         RMB  aim
+R  reload         1 / 2  weapons
+V  melee          F  interact (hold)
+3  gadget         4  secondary gadget
+5  defuser
 F1  this help     F3  FPS
 F4  hit zones     F5  third person
 F12  screenshot";

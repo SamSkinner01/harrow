@@ -58,6 +58,7 @@ use crate::{
     physics::TICK_HZ,
     round::RoundSystems,
     session::{AppState, Launch, simulating},
+    weapons::WeaponSystems,
 };
 
 /// Netcode protocol id. Bump the last number when the wire format changes
@@ -124,6 +125,7 @@ impl Plugin for NetPlugin {
                 GadgetSystems.run_if(simulating),
                 DestructionSystems::Actions.run_if(simulating),
                 DestructionSystems::Explosions.run_if(simulating),
+                WeaponSystems::Simulate.run_if(simulating),
             ),
         )
         .configure_sets(FixedPostUpdate, CombatSystems.run_if(simulating))

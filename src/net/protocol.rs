@@ -32,6 +32,7 @@ use crate::{
     combat::{Dead, Health, Team},
     gadgets::{GadgetEvent, GadgetOwner, Reveal, SeismicStake, SensorDart, UniqueGadget},
     player::{CharacterState, Player},
+    weapons::{BulletHit, MoveSpeedScale, ShotFired, WeaponEvent, WeaponState},
     round::{
         MovementLock, ObjectiveInteraction, Round, RoundEvent, Squad,
         defuser::{DefuserCarrier, DefuserDevice, DroppedDefuser},
@@ -84,6 +85,15 @@ impl Plugin for ProtocolPlugin {
         app.register_message::<Reveal>()
             .add_map_entities()
             .add_direction(NetworkDirection::ServerToClient);
+        app.register_message::<ShotFired>()
+            .add_map_entities()
+            .add_direction(NetworkDirection::ServerToClient);
+        app.register_message::<WeaponEvent>()
+            .add_map_entities()
+            .add_direction(NetworkDirection::ServerToClient);
+        app.register_message::<BulletHit>()
+            .add_map_entities()
+            .add_direction(NetworkDirection::ServerToClient);
 
         // --- Characters -----------------------------------------------------
         app.component::<Player>().replicate();
@@ -117,7 +127,11 @@ impl Plugin for ProtocolPlugin {
         app.component::<UniqueGadget>().replicate();
         app.component::<DefuserCarrier>().replicate();
         app.component::<ObjectiveInteraction>().replicate();
-        // M3: weapon state the HUD shows (ammo, equipped weapon) goes here.
+        // Weapons (M3): the server simulates them; clients show the
+        // replicated state (HUD, view) and the forwarded shot events.
+        app.component::<WeaponState>().replicate();
+        // Movement reads it, so the owner's prediction needs it.
+        app.component::<MoveSpeedScale>().replicate();
 
         // --- Match state ----------------------------------------------------
         app.component::<RoundSync>().replicate();

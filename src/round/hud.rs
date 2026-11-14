@@ -660,7 +660,8 @@ fn update_select_panel(
 fn update_world_labels(
     round: Res<Round>,
     layout: Res<KeepLayout>,
-    camera: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
+    // The player's world camera (the weapon viewmodel has its own camera).
+    camera: Query<(&Camera, &GlobalTransform), With<crate::player::PlayerCamera>>,
     local: Query<(&Transform, &Team), With<LocalPlayer>>,
     devices: Query<(&GlobalTransform, &DefuserDevice)>,
     dropped: Query<&GlobalTransform, With<DroppedDefuser>>,
