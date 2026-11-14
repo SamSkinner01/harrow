@@ -1,9 +1,11 @@
 //! Navigation grid, generated from the level's colliders once the map has
 //! loaded, and patched locally when destruction changes the level.
 //!
-//! **Grid.** Columns every `nav.cell` metres (0.4 by default) over the map's
-//! bounds (every finite world collider plus the spawns, with a margin).
-//! Each column holds up to [`LAYERS`] nodes, one per walkable floor level,
+//! **Grid.** Columns every `nav.cell` metres (0.4 by default) over the area
+//! of play (the map's site pairs and spawn areas, or every finite world
+//! collider on a map without objectives, with a margin), built once the map
+//! reports its kit loaded (`map::KitLoaded`).
+//! Each column holds up to [`LAYERS`] (6) nodes, one per walkable floor level,
 //! found by sweeping a small sphere straight down through the level (it
 //! steps through floors, so every storey, stair ramp and roof is found; a
 //! sphere rather than a ray so bullet holes don't punch gaps in floors).
@@ -51,7 +53,7 @@ use crate::{
 };
 
 /// Most floor levels in one column.
-pub const LAYERS: usize = 4;
+pub const LAYERS: usize = 6;
 /// Index of a node: `column * LAYERS + layer`.
 pub type NodeId = u32;
 
@@ -605,7 +607,9 @@ impl Sampler<'_, '_, '_> {
                 // sphere's height.
                 None => (Vec3::Y, hit.point1.y),
             };
-            if n.y >= self.cos_slope && hit.normal1.y >= 0.2 {
+            // Two colliders flush with each other are one floor.
+            let duplicate = found.last().is_some_and(|f: &Sample| (f.y - floor).abs() < 0.3);
+            if n.y >= self.cos_slope && hit.normal1.y >= 0.2 && !duplicate {
                 let (flags, blocker) = self.clearance(Vec3::new(x, floor, z));
                 if flags != 0 {
                     let sloped = n.y < 0.995;
@@ -994,12 +998,14 @@ fn build_nav(
     settings: Res<AiSettings>,
     tuning: Res<Tuning>,
     layout: Option<Res<KeepLayout>>,
+    objectives: Option<Res<crate::round::sites::MapObjectives>>,
     spatial: SpatialQuery,
     colliders: Query<&'static ColliderOf>,
     surfaces: Query<(Entity, &'static SoftSurface, &'static GlobalTransform, &'static Name)>,
     bounds: Query<(&ColliderAabb, Option<&CollisionLayers>, Has<Sensor>)>,
     pending_pieces: Query<(), (With<WorldAssetRoot>, With<RigidBody>, Without<WorldInstance>)>,
     pending_colliders: Query<(), Or<(With<ColliderConstructor>, With<ColliderConstructorHierarchy>)>>,
+    kit_loaded: Option<Res<crate::map::KitLoaded>>,
     time: Res<Time<Real>>,
 ) {
     if !settings.nav_wanted() || builder.stage == Stage::Done {
@@ -1014,7 +1020,11 @@ fn build_nav(
                     !sensor && layers.is_none_or(|l| l.memberships.has_all(GameLayer::World))
                 })
                 .count();
-            let settled = pending_pieces.is_empty()
+            // The map says when its kit pieces are in (maps without kit
+            // pieces never do: give those a while to settle instead).
+            let map_in = kit_loaded.is_some() || time.elapsed_secs() > 20.0;
+            let settled = map_in
+                && pending_pieces.is_empty()
                 && pending_colliders.is_empty()
                 && world_colliders > 1
                 && world_colliders == builder.last_colliders;
@@ -1023,25 +1033,53 @@ fn build_nav(
             if builder.stable_frames < 20 || time.elapsed_secs() < 1.0 {
                 return;
             }
-            // Bounds: every finite world collider, plus spawns and sites.
+            // Bounds: where play happens. With objectives (every site pair
+            // and spawn area of the map), their extent; scenery further out
+            // (distant ruins, terrain) doesn't need a grid. Without, every
+            // finite world collider.
             let mut lo = Vec3::splat(f32::MAX);
             let mut hi = Vec3::splat(f32::MIN);
-            for (aabb, layers, sensor) in &bounds {
-                if sensor || !layers.is_none_or(|l| l.memberships.has_all(GameLayer::World)) {
-                    continue;
+            let mut grow = |p: Vec3| {
+                lo = lo.min(p);
+                hi = hi.max(p);
+            };
+            if let Some(objectives) = &objectives {
+                for pair in &objectives.pairs {
+                    for site in &pair.sites {
+                        grow(site.min);
+                        grow(site.max);
+                    }
+                    for spawn in &pair.defender_spawns {
+                        grow(spawn.position);
+                    }
                 }
-                let size = aabb.max - aabb.min;
-                if !size.is_finite() || size.x > 1000.0 || size.z > 1000.0 || size.y > 1000.0 {
-                    continue;
+                for area in &objectives.areas {
+                    for spawn in &area.spawns {
+                        grow(spawn.position);
+                    }
                 }
-                lo = lo.min(aabb.min);
-                hi = hi.max(aabb.max);
+            } else {
+                for (aabb, layers, sensor) in &bounds {
+                    if sensor || !layers.is_none_or(|l| l.memberships.has_all(GameLayer::World)) {
+                        continue;
+                    }
+                    let size = aabb.max - aabb.min;
+                    if !size.is_finite() || size.x > 1000.0 || size.z > 1000.0 || size.y > 1000.0 {
+                        continue;
+                    }
+                    grow(aabb.min);
+                    grow(aabb.max);
+                }
+                if let Some(layout) = &layout {
+                    for spawn in layout.attacker_spawns.iter().chain(&layout.defender_spawns) {
+                        grow(spawn.position);
+                    }
+                }
             }
-            if let Some(layout) = &layout {
-                for spawn in layout.attacker_spawns.iter().chain(&layout.defender_spawns) {
-                    lo = lo.min(spawn.position);
-                    hi = hi.max(spawn.position);
-                }
+            // Room above and below for every storey's floors and roofs.
+            if lo.is_finite() && hi.is_finite() {
+                lo.y -= 4.0;
+                hi.y += 8.0;
             }
             if !lo.is_finite() || !hi.is_finite() {
                 return;

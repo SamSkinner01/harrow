@@ -693,11 +693,13 @@ between rounds. Bots don't count towards the server's player limit.
 Generated from the level's colliders once the map has loaded (no
 hand-placed data), so a new map just works:
 
-- **Grid:** columns every 0.4 m over the bounds of every finite world
-  collider plus the spawns, 6 m margin. A sphere (r 0.1 m, so bullet holes
-  don't punch gaps) is swept down each column through every collider;
-  each upward-facing surface no steeper than `movement.max_slope` is a
-  candidate floor (up to 4 levels per column: ground, upper floor, roof).
+- **Grid:** columns every 0.4 m over the area of play (every site pair
+  and spawn area of the map, 6 m margin; on a map without objectives,
+  every finite world collider). Built once the map reports its kit pieces
+  loaded (`map::KitLoaded`). A sphere (r 0.1 m, so bullet holes don't
+  punch gaps) is swept down each column through every collider; each
+  upward-facing surface no steeper than `movement.max_slope` is a
+  candidate floor (up to 6 levels per column: basement to roof).
   The floor's height and slope at the column centre come from a ray (the
   sphere's contact normal is skewed at edges).
 - **Clearance:** an upright capsule (r 0.22, a bit under the 0.3 m body so
@@ -720,8 +722,10 @@ hand-placed data), so a new map just works:
   resets mark their area dirty; it is re-sampled and re-linked a little at
   a time (1.5 ms a frame) after colliders are rebuilt. Paths that cross a
   changed area are re-planned.
-- **Cost:** the keep's grid (73 x 107 columns, ~8,700 nodes) builds in
-  ~150 ms spread over frames.
+- **Cost:** section A's grid (73 x 107 columns, ~8,300 nodes) builds in
+  ~150 ms; the full Harrow Keep (439 x 391 columns over the keep and its
+  four spawn ruins, ~187,000 nodes on five levels) in ~4.5 s, spread over
+  frames (6 ms each) while the round loop waits for it.
 - **Paths:** A* (metres walked, crouch-only x1.8, barricade +6 m, drop
   +1.5 m, breach +14 m, plus per-caller penalties), at most 2 searches per
   tick across all bots, then string-pulled along walk links but never
