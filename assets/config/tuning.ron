@@ -1,0 +1,33 @@
+// HARROW tuning values.
+//
+// Edit while the game is running: changes apply as soon as you save.
+// If the file has a mistake, the game logs an error and keeps the old values.
+// Units: metres, seconds, degrees.
+(
+    look: (
+        // Degrees of turn per mouse count. Lower = slower.
+        sensitivity: 0.05,
+        invert_y: false,
+        // Vertical field of view, degrees.
+        fov: 72.0,
+    ),
+    movement: (
+        walk_speed: 3.4,
+        sprint_speed: 5.6,
+        // How quickly you reach target speed (m/s gained per second).
+        acceleration: 30.0,
+        // How quickly you stop when you let go of the keys.
+        deceleration: 40.0,
+        gravity: 20.0,
+        // Steepest walkable slope or stair ramp, degrees.
+        max_slope: 45.0,
+        // Keeps you glued to ramps and stairs when walking down them.
+        ground_snap: 0.3,
+    ),
+    body: (
+        radius: 0.3,
+        stand_height: 1.8,
+        // Eye position below the top of the body.
+        eye_from_top: 0.18,
+    ),
+)

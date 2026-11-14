@@ -9,9 +9,13 @@ publish = false
 # and Avian / bevy_enhanced_input / Lightyear must match the Bevy version.
 # See README.md ("Pinned versions") before changing any of these.
 [dependencies]
-bevy = { version = "=0.20.1", features = ["bevy_dev_tools", "render_dev_tools"] }
+# file_watcher: hot-reload assets (tuning file) on save. wav: placeholder sounds.
+bevy = { version = "=0.20.1", features = ["bevy_dev_tools", "render_dev_tools", "file_watcher", "wav"] }
 avian3d = "=0.8.0"
 bevy_enhanced_input = "=0.27.2"
+# Tuning file format. Same ron version Bevy already uses.
+ron = "=0.12.3"
+serde = { version = "1", features = ["derive"] }
 
 # Faster iteration: lightly optimise our code, fully optimise dependencies.
 [profile.dev]

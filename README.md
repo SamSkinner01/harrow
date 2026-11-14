@@ -52,21 +52,33 @@ Bevy's API changes between releases, so everything is pinned with `=` in
 
 ## Controls
 
-No gameplay controls yet (M1 adds the first-person controller).
-
 | Key | Action |
 |---|---|
+| Mouse | Look |
+| W A S D | Move |
+| Left Shift (hold) | Sprint (forward only) |
+| Esc / left click | Release / capture the mouse |
 | F3 | Toggle FPS overlay |
 | F12 | Save screenshot to `screenshots/` |
+
+## Tuning
+
+Movement, look and body values live in `assets/config/tuning.ron`. Edit and
+save while the game is running and the changes apply immediately. A mistake in
+the file is logged and ignored.
 
 ## Developer flags
 
 ```sh
 cargo run -- --screenshot out.png              # screenshot after 120 frames, then quit
 cargo run -- --screenshot out.png --screenshot-frames 300
+cargo run -- --spawn 11,0,4,0,-10              # spawn at x,y,z facing yaw,pitch (degrees)
+cargo run -- --auto-move 0,1,sprint            # hold strafe,forward[,sprint]
+cargo run -- --trace-player                    # log feet position 4x per second
 ```
 
-Used for automated visual checks of a scene.
+Used for automated checks: e.g. spawn at the stairs, auto-move forward, and
+screenshot/log where the player ends up. Automated runs don't grab the mouse.
 
 ## Layout
 
