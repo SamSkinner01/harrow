@@ -82,13 +82,6 @@ impl CellGrid {
         )
     }
 
-    pub fn size(&self) -> Vec2 {
-        Vec2::new(
-            self.us[self.nu()] - self.us[0],
-            self.vs[self.nv()] - self.vs[0],
-        )
-    }
-
     pub fn min(&self) -> Vec2 {
         Vec2::new(self.us[0], self.vs[0])
     }

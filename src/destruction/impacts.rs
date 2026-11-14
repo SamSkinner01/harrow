@@ -369,6 +369,7 @@ fn apply_hard_breaches(
             warn!("hard breach on {root:?}, which is not a soft or reinforced surface");
             continue;
         };
+        debug!("hard breach on {root:?} by {:?}", breach.source);
         let local = transform.affine().inverse().transform_point3(breach.centre);
         let (uv, _) = surface.spec.plane.from_local(local);
         let mut c = Cutter {
@@ -497,10 +498,11 @@ fn explode(
                     continue;
                 }
                 let x = distance / blast.damage_radius;
+                // Full damage close in, then dropping off steeply.
                 let falloff = if x <= t.full_damage_fraction {
                     1.0
                 } else {
-                    1.0 - (x - t.full_damage_fraction) / (1.0 - t.full_damage_fraction)
+                    (1.0 - (x - t.full_damage_fraction) / (1.0 - t.full_damage_fraction)).powi(2)
                 };
                 let mut amount = blast.max_damage * falloff;
                 if let Ok(dir) = Dir3::new(offset) {

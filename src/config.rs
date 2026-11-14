@@ -132,7 +132,6 @@ pub struct ReinforceTuning {
     pub time: f32,
     pub reach: f32,
     pub per_defender: u32,
-    pub move_tolerance: f32,
     pub plate_thickness: f32,
     pub brace_thickness: f32,
 }

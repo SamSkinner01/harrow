@@ -139,8 +139,8 @@
         // How ragged hole edges are, metres (+/- on every hole radius).
         hole_jitter: 0.03,
         melee: (
-            // Reach from the eyes, metres.
-            range: 1.5,
+            // Reach from the eyes, metres (enough to hit a hatch at your feet).
+            range: 1.7,
             // Thickness of the swing (a sphere this radius), metres.
             sweep_radius: 0.12,
             // Swinging through an existing hole still catches its edges
@@ -170,8 +170,9 @@
             // Width of that blown-out part, as a fraction of the blast hole.
             blowout_width: 0.9,
             // Inside this fraction of the damage radius people take full
-            // damage; it falls to zero at the edge.
-            full_damage_fraction: 0.3,
+            // damage; further out it drops off steeply (squared) to zero at
+            // the edge.
+            full_damage_fraction: 0.25,
             // Damage multiplier for each soft wall/floor between the blast and
             // a person. Stone and reinforced walls block it completely.
             soft_cover_factor: 0.5,
@@ -194,14 +195,13 @@
             reach: 2.0,
         ),
         reinforce: (
-            // Seconds a defender holds F to reinforce a wall or hatch.
+            // Seconds a defender holds F to reinforce a wall or hatch. Moving
+            // or looking away cancels it.
             time: 5.0,
             // How close (from the eyes) you must be, metres.
             reach: 1.6,
             // Reinforcements each defender carries per round.
             per_defender: 2,
-            // Moving further than this (metres) while reinforcing cancels it.
-            move_tolerance: 0.25,
             // Metal plate and brace thickness, metres (looks only).
             plate_thickness: 0.02,
             brace_thickness: 0.03,
@@ -214,12 +214,14 @@
             // How close (from the eyes) you must be, metres.
             reach: 1.6,
             // On walls the charge sits at this height above the floor, so the
-            // blast always opens a walk-through hole.
-            wall_height: 1.0,
+            // blast always opens a walk-through hole (top = height + radius;
+            // a standing person needs about 1.9 m).
+            wall_height: 1.15,
             // Radius of the hole it blows in a soft wall or floor, metres.
-            breach_radius: 0.85,
-            // People within this distance get hurt, metres.
-            damage_radius: 3.5,
+            breach_radius: 0.9,
+            // People within this distance get hurt, metres (about half damage
+            // at 1.5 m, a scratch at 2.5 m).
+            damage_radius: 3.0,
             // Damage at point blank (100 = a full-health person).
             max_damage: 120.0,
         ),

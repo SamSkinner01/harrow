@@ -37,7 +37,8 @@ use bevy::{
 
 use super::{
     Activity, BreachCharges, DestructionIntent, DestructionSystems, Explosion, HardBreach,
-    ReinforceRequest, Reinforcements, eye_and_aim, impacts::surface_root,
+    MeleeSwing, ReinforceCancelled, ReinforceRequest, ReinforceStarted, Reinforced,
+    Reinforcements, SurfaceBroken, SurfaceChanged, eye_and_aim, impacts::surface_root,
     surface::SoftSurface,
 };
 use crate::{
@@ -58,6 +59,7 @@ impl Plugin for DestructionDebugPlugin {
             .insert_resource(AutomatedRun)
             .init_resource::<Held>()
             .add_systems(FixedPreUpdate, (run_script, apply_held).chain())
+            .add_systems(Update, log_events)
             .add_systems(
                 FixedUpdate,
                 fire_queued_shots.in_set(DestructionSystems::Actions),
@@ -270,10 +272,10 @@ fn run_script(
             Command::Log => {
                 for (e, name, s, kind) in &surfaces {
                     info!(
-                        "  surface {e:?} {name} {:?} {kind:?}: {:.0}% intact, reinforced {}, broken {}, revision {}",
+                        "  surface {e:?} {name} {:?} {kind:?}: {:.0}% intact, reinforced {:?}, broken {}, revision {}",
                         s.role(),
                         s.intact_fraction() * 100.0,
-                        s.is_reinforced(),
+                        s.reinforced.map(|r| r.by),
                         s.broken,
                         s.revision
                     );
@@ -387,6 +389,43 @@ fn fire_queued_shots(
                 break;
             }
         }
+    }
+}
+
+/// Logs destruction events during scripted runs.
+#[allow(clippy::too_many_arguments)]
+fn log_events(
+    mut changed: MessageReader<SurfaceChanged>,
+    mut broken: MessageReader<SurfaceBroken>,
+    mut started: MessageReader<ReinforceStarted>,
+    mut cancelled: MessageReader<ReinforceCancelled>,
+    mut reinforced: MessageReader<Reinforced>,
+    mut swings: MessageReader<MeleeSwing>,
+    time: Res<Time>,
+) {
+    let now = time.elapsed_secs();
+    for c in changed.read() {
+        info!(
+            "t={now:.2} event: {:?} lost {} cells (violent {})",
+            c.surface,
+            c.removed.len(),
+            c.violent
+        );
+    }
+    for b in broken.read() {
+        info!("t={now:.2} event: {:?} {:?} broke", b.surface, b.role);
+    }
+    for s in started.read() {
+        info!("t={now:.2} event: {:?} started reinforcing {:?}", s.player, s.surface);
+    }
+    for c in cancelled.read() {
+        info!("t={now:.2} event: {:?} stopped reinforcing {:?}", c.player, c.surface);
+    }
+    for r in reinforced.read() {
+        info!("t={now:.2} event: {:?} reinforced by {:?}", r.surface, r.by);
+    }
+    for s in swings.read() {
+        info!("t={now:.2} event: {:?} swung melee (hit {})", s.attacker, s.hit);
     }
 }
 

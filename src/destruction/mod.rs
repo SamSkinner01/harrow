@@ -10,7 +10,7 @@
 //!   cells with timber studs/joists inside. The mesh (`build.rs`) and a
 //!   compound box collider are rebuilt from the cells, for that one surface,
 //!   only when it changes.
-//! - **Impacts** (`impacts.rs`, fixed tick): every [`SurfaceImpact`] (bullets
+//! - **Impacts** (`impacts.rs`, fixed tick): every [`SurfaceImpact`](crate::combat::SurfaceImpact) (bullets
 //!   and pellets from weapons, melee and explosions from here) knocks out
 //!   cells. The result depends only on the impacts, so it's deterministic.
 //!   [`Explosion`] opens surfaces in range and hurts people; [`HardBreach`]
@@ -39,10 +39,12 @@ mod surface;
 use bevy::prelude::*;
 
 pub use breach::BreachCharge;
-pub use surface::{SoftSurface, SurfaceRole};
+// Public API for weapons (M3), the round loop and gadgets (M6), bots (M7).
+#[allow(unused_imports)]
+pub use surface::{SoftSurface, SurfaceMaterial, SurfaceRole};
 
 use crate::{
-    combat::{SurfaceImpact, Team},
+    combat::Team,
     config::Tuning,
     player::{CharacterState, PlayerInput},
 };
@@ -87,7 +89,7 @@ impl Plugin for DestructionPlugin {
 }
 
 /// Order of the destruction systems in `FixedUpdate`. Weapons should write
-/// their [`SurfaceImpact`]s before `ApplyImpacts` so holes open on the same
+/// their [`SurfaceImpact`](crate::combat::SurfaceImpact)s before `ApplyImpacts` so holes open on the same
 /// tick (otherwise they open one tick later).
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub enum DestructionSystems {
@@ -152,8 +154,9 @@ pub enum Activity {
     Idle,
     /// Holding F on a wall or hatch; `progress` 0..1.
     Reinforcing { surface: Entity, progress: f32 },
-    /// Holding F at a doorway or window; `progress` 0..1.
-    Barricading { progress: f32 },
+    /// Holding F at a doorway or window (`slot` is the wall piece);
+    /// `progress` 0..1.
+    Barricading { slot: Entity, progress: f32 },
     /// Holding 4 on a surface; `progress` 0..1.
     PlacingCharge { surface: Entity, progress: f32 },
 }
@@ -230,7 +233,7 @@ pub struct SurfaceChanged {
     pub removed: Vec<Vec3>,
     /// World-space size of a typical removed cell (debris size).
     pub cell_size: f32,
-    pub material: surface::SurfaceMaterial,
+    pub material: SurfaceMaterial,
     /// Where the impact (or blast centre) was.
     pub origin: Vec3,
     /// Direction the impact travelled (debris flies this way); zero for
