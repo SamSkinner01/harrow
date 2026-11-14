@@ -66,7 +66,7 @@ fn barracks(b: &mut Builder) {
     b.prop("weapon_rack", 9.5, g, 12.3, 180.0);
     b.prop("crate_large", 6.0, g, 22.6, 0.0);
     b.prop("crate_small", 10.6, g, 22.9, 20.0);
-    b.prop("sandbags_2m", 8.0, g, 17.5, 90.0);
+    b.prop("sandbags_2m", 7.0, g, 16.2, 0.0);
     // Dormitory and stores.
     for x in [1.0, 4.0, 8.0, 11.0] {
         b.prop("bunk_bed", x, u, 3.0, 0.0);
