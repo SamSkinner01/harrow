@@ -39,6 +39,7 @@ use super::{
     Activity, BreachCharges, DestructionIntent, DestructionSystems, Explosion, HardBreach,
     MeleeSwing, ReinforceCancelled, ReinforceRequest, ReinforceStarted, Reinforced,
     Reinforcements, SurfaceBroken, SurfaceChanged, eye_and_aim, impacts::surface_root,
+    spawn::RebuildStats,
     surface::SoftSurface,
 };
 use crate::{
@@ -178,6 +179,7 @@ fn run_script(
     colliders: Query<&ColliderOf>,
     tuning: Res<Tuning>,
     diagnostics: Res<DiagnosticsStore>,
+    stats: Res<RebuildStats>,
     mut explosions: MessageWriter<Explosion>,
     mut breaches: MessageWriter<HardBreach>,
     mut reinforce: MessageWriter<ReinforceRequest>,
@@ -287,6 +289,18 @@ fn run_script(
                     "  player feet {:.2} health {:?}",
                     transform.translation,
                     health.map(|h| h.current)
+                );
+                let avg = |total: std::time::Duration, n: u32| {
+                    total.as_secs_f64() * 1000.0 / n.max(1) as f64
+                };
+                info!(
+                    "  rebuilds: {} meshes (avg {:.3} ms, max {:.3} ms), {} colliders (avg {:.3} ms, max {:.3} ms)",
+                    stats.meshes,
+                    avg(stats.mesh_time, stats.meshes),
+                    stats.slowest_mesh.as_secs_f64() * 1000.0,
+                    stats.colliders,
+                    avg(stats.collider_time, stats.colliders),
+                    stats.slowest_collider.as_secs_f64() * 1000.0,
                 );
                 if let Some(fps) = diagnostics
                     .get(&FrameTimeDiagnosticsPlugin::FPS)

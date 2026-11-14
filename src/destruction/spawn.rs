@@ -31,6 +31,7 @@ pub struct SurfaceSpawnPlugin;
 impl Plugin for SurfaceSpawnPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<SurfaceMaterials>()
+            .init_resource::<RebuildStats>()
             .add_observer(convert_piece)
             .add_systems(
                 FixedUpdate,
@@ -56,6 +57,17 @@ impl SurfaceMaterials {
             .or_else(|| self.fallback.get(&material))
             .cloned()
     }
+}
+
+/// How much rebuilding has cost (for performance checks).
+#[derive(Resource, Default, Debug)]
+pub struct RebuildStats {
+    pub meshes: u32,
+    pub mesh_time: std::time::Duration,
+    pub slowest_mesh: std::time::Duration,
+    pub colliders: u32,
+    pub collider_time: std::time::Duration,
+    pub slowest_collider: std::time::Duration,
 }
 
 /// Children of a converted surface.
@@ -217,6 +229,7 @@ fn assign_materials(
 fn rebuild_colliders(
     mut surfaces: Query<(&SoftSurface, &mut SurfaceParts), Changed<SoftSurface>>,
     tuning: Res<Tuning>,
+    mut stats: ResMut<RebuildStats>,
     mut commands: Commands,
 ) {
     for (surface, mut parts) in &mut surfaces {
@@ -224,6 +237,7 @@ fn rebuild_colliders(
             continue;
         }
         parts.collider_revision = surface.revision;
+        let start = std::time::Instant::now();
         let shapes = collider_shapes(surface, &tuning.destruction);
         if shapes.is_empty() {
             commands.entity(parts.collider).remove::<Collider>();
@@ -232,6 +246,10 @@ fn rebuild_colliders(
                 .entity(parts.collider)
                 .insert(Collider::compound(shapes));
         }
+        let spent = start.elapsed();
+        stats.colliders += 1;
+        stats.collider_time += spent;
+        stats.slowest_collider = stats.slowest_collider.max(spent);
     }
 }
 
@@ -241,12 +259,14 @@ fn rebuild_meshes(
     mut visibility: Query<&mut Visibility>,
     mut meshes: ResMut<Assets<Mesh>>,
     tuning: Res<Tuning>,
+    mut stats: ResMut<RebuildStats>,
 ) {
     for (surface, mut parts) in &mut surfaces {
         if parts.mesh_revision == surface.revision {
             continue;
         }
         parts.mesh_revision = surface.revision;
+        let start = std::time::Instant::now();
         let buffers = build_meshes(surface, &tuning.destruction);
         for ((entity, handle), data) in parts.meshes.iter().zip(buffers) {
             let visible = !data.is_empty();
@@ -255,5 +275,9 @@ fn rebuild_meshes(
             }
             let _ = meshes.insert(handle, data.into_mesh());
         }
+        let spent = start.elapsed();
+        stats.meshes += 1;
+        stats.mesh_time += spent;
+        stats.slowest_mesh = stats.slowest_mesh.max(spent);
     }
 }

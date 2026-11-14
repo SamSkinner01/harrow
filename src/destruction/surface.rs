@@ -19,6 +19,8 @@ const POST_HALF: f32 = 0.25;
 const SLAB: f32 = 0.2;
 const HATCH_OPEN: (f32, f32) = (0.55, 1.45);
 const HATCH_FRAME: f32 = 0.04;
+/// Timber ring around the hatch opening that only a hard breach removes.
+const HATCH_RING: f32 = 0.1;
 const HATCH_COVER_DEPTH: f32 = 0.06;
 const PLANK: f32 = 0.18;
 const PLANK_GAP: f32 = 0.08;
@@ -409,21 +411,31 @@ fn floor(hatch: bool, t: &DestructionTuning) -> (SurfaceSpec, CellGrid) {
     let mut joists = stud_centres(jw, 2.0 - jw, &forced, jw, f.joist_max_bay);
     joists.extend([jw / 2.0, 2.0 - jw / 2.0]);
 
+    // Around a hatch, a timber ring and the two trimmer joists beside it
+    // are frame: blasts can't leave the hatch hanging in mid-air.
+    let ring = HATCH_RING;
+    let trimmers = [a - jw / 2.0, b + jw / 2.0];
     let mut u_lines: Vec<f32> = joists.iter().flat_map(|j| [j - jw / 2.0, j + jw / 2.0]).collect();
     let mut v_lines = vec![];
     if hatch {
-        u_lines.extend([a, b]);
-        v_lines.extend([a, b]);
+        u_lines.extend([a - ring, a, b, b + ring]);
+        v_lines.extend([a - ring, a, b, b + ring]);
     }
     let us = edges(0.0, 2.0, t.cell_size, &u_lines);
     let vs = edges(0.0, 2.0, t.cell_size, &v_lines);
+    let inside = |c: Vec2, lo: f32, hi: f32| c.x > lo && c.x < hi && c.y > lo && c.y < hi;
     let grid = CellGrid::new(us, vs, |c, _, _| {
-        if hatch && c.x > a && c.x < b && c.y > a && c.y < b {
+        if hatch && inside(c, a, b) {
             return 0;
         }
         let mut flags = SKIN;
         if joists.iter().any(|j| (c.x - j).abs() < jw / 2.0) {
             flags |= CORE;
+        }
+        if hatch
+            && (inside(c, a - ring, b + ring) || trimmers.iter().any(|j| (c.x - j).abs() < jw / 2.0))
+        {
+            flags |= CORE | FRAME;
         }
         flags
     });
