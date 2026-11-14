@@ -60,7 +60,8 @@ pub(crate) use stakes::{attach_stake_model, spawn_stake};
 // Gadget state for bots (M7), networking (M8) and audio: not all used in
 // this crate yet.
 pub use backplate::BackplateCharge;
-pub use cctv::CctvLayout;
+#[allow(unused_imports)]
+pub use cctv::{CctvLayout, CctvSpot};
 #[allow(unused_imports)]
 pub use cutter::CutterState;
 pub use cutter::{CutterBlade, FallingPlug, RingCutter};

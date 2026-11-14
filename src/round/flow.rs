@@ -32,7 +32,7 @@ impl Plugin for FlowPlugin {
         app.add_systems(
             FixedUpdate,
             (
-                (tick_round, assign_sides)
+                (tick_round, assign_sides, super::sites::choose_site_pair)
                     .chain()
                     .in_set(RoundSystems::Flow),
                 reset_characters.in_set(RoundSystems::Reactions),

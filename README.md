@@ -8,7 +8,8 @@ external asset is logged in [ASSETS.md](ASSETS.md).
 
 ```sh
 cargo run                      # main menu: solo, host, join (dev build; first build takes a few minutes)
-cargo run -- --solo            # straight into solo on Harrow Keep
+cargo run -- --solo            # straight into solo on Harrow Keep, the full map
+cargo run -- --map section_a   # the first small section of the keep (M2)
 cargo run -- --map greybox     # the grey-box movement test area
 cargo run --release            # optimised build, use this for judging performance
 ```
@@ -266,6 +267,9 @@ cargo run -- --show-all-intel                    # show both teams' gadget revea
 cargo run -- --secondary frag                    # your secondary gadget: breach, frag, flash, smoke, wire, cover, impact, alarm
 cargo run -- --no-round --operator auger --gadget-test "1 tp 7 0 -2.6 0 0; 1.5 hold3 2; 4 tap3; 15 shot cut.png; 15.5 quit"
                                                # scripted gadget checks; commands in src/gadgets/test_script.rs
+cargo run -- --sites 2                           # always use site pair 2 (Harrow Keep has 4; see DESIGN.md)
+cargo run -- --attack-from 3                     # attackers start from the pair's 3rd spawn area
+cargo run -- --no-batch                          # don't merge static map meshes (performance comparison)
 cargo run -- --dummies                         # training dummies in the keep (courtyard, behind plaster, behind stone)
 cargo run -- --weapon-test                     # scripted weapon checks; logs PASS/FAIL, exit code 1 on failure
 cargo run -- --weapon sidearm --ads            # hold a weapon / aim down sights
@@ -284,7 +288,13 @@ screenshot/log where the player ends up. Automated runs (`--screenshot`,
 `--weapon-test`, `--screenshot-on-hit`) don't grab the mouse and don't play
 player or weapon sounds.
 
-The round loop (Harrow Keep only) starts with operator selection. In
+Maps: `--map keep` (default) is the full Harrow Keep; `--map section_a` the
+small M2 section; `--map greybox` the movement test area (no round loop).
+Test flags whose positions were written for section A (`--weapon-test`,
+`--dummies`, `--lineup*`, `--m4`, `--gadget-test`, `--screenshot-on-hit`)
+load section A unless `--map` is given.
+
+The round loop (maps with bomb sites) starts with operator selection. In
 `--screenshot` runs everyone is auto-picked; `--round-script` runs pick
 with `pick N` or let the timer run out, can spawn stand-in characters
 (`walker`), plant (`plant A`), place gadgets (`dart`, `stake`), shoot,
