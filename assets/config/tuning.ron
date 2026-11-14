@@ -83,6 +83,9 @@
         // pass each) light through walls, so they are dimmer and reach less
         // far: intensity and range are multiplied by this.
         unshadowed_lamp_scale: 0.7,
+        // Shadow-casting lanterns only cast shadows when the camera is within
+        // this many metres (each shadow map costs a render pass).
+        lamp_shadow_distance: 16.0,
     ),
     // Per-surface look. scale = metres one texture repeat covers.
     // tint multiplies the texture colour (1.0 = unchanged; above 1 brightens).

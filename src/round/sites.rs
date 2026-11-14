@@ -195,7 +195,8 @@ impl MapObjectives {
             },
             SpawnArea {
                 name: "GATE ROAD",
-                spawns: spawns(0.0, NORTH, &[(-4.5, 71.0), (4.5, 71.0), (-7.0, 71.0), (7.0, 71.0), (-6.0, 73.5)]),
+                // Out of the sight lines through the ruin's arch (|x| > 6).
+                spawns: spawns(0.0, NORTH, &[(-6.5, 70.5), (6.5, 70.5), (-8.5, 70.5), (8.5, 70.5), (-7.5, 72.5)]),
             },
         ];
         let (n, w, e, s) = (0, 1, 2, 3);
@@ -429,18 +430,25 @@ struct SafetyFloor;
 /// their colliders) have loaded, so players placed on an upper floor or in
 /// the basement would fall through it. A small collider under every spawn
 /// point holds them until the map is in.
-fn spawn_safety_floors(mut commands: Commands, objectives: Res<MapObjectives>) {
+fn spawn_safety_floors(
+    mut commands: Commands,
+    objectives: Res<MapObjectives>,
+    start: Option<Res<crate::player::SpawnPoint>>,
+) {
     let points = objectives
         .pairs
         .iter()
         .flat_map(|p| &p.defender_spawns)
-        .chain(objectives.areas.iter().flat_map(|a| &a.spawns));
-    for spawn in points {
+        .chain(objectives.areas.iter().flat_map(|a| &a.spawns))
+        .map(|s| s.position)
+        // Also the free-play / `--spawn` start.
+        .chain(start.map(|s| s.position));
+    for at in points {
         commands.spawn((
             SafetyFloor,
             avian3d::prelude::RigidBody::Static,
             avian3d::prelude::Collider::cuboid(1.0, 0.1, 1.0),
-            Transform::from_translation(spawn.position - Vec3::Y * 0.05),
+            Transform::from_translation(at - Vec3::Y * 0.05),
         ));
     }
 }

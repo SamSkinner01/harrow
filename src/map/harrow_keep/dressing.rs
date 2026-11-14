@@ -143,7 +143,7 @@ fn desert(b: &mut Builder) {
     // Attacker spawns: camp clutter.
     b.model("stone_fire_pit", 84.0, GROUND, 0.0, 0.0, 1.0);
     b.model("old_military_crate", 6.0, GROUND, -72.5, 10.0, 1.0);
-    b.model("metal_jerrycan_green", -8.5, GROUND, 72.5, 30.0, 1.0);
+    b.model("metal_jerrycan_green", -9.2, GROUND, 74.2, 30.0, 1.0);
     b.model("metal_jerrycan_green", -81.0, GROUND, -6.0, 100.0, 1.0);
     b.model("wooden_military_crate", -82.0, GROUND, 3.0, 90.0, 1.0);
 }

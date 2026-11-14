@@ -3,8 +3,10 @@
 //! Spot lights pointing down (rather than point lights) give one shadow map
 //! each, so a lamp lights its own room without bleeding through walls.
 //! Shadow maps cost a render pass each, so on the full map only lamps in
-//! the larger rooms cast shadows; the rest are dimmer and shorter-ranged so
-//! their light hardly reaches through walls (`lighting` tuning section).
+//! the larger rooms cast shadows, and only while a camera is within
+//! `lighting.lamp_shadow_distance` of them (a lamp far away is seen, if at
+//! all, through a window). The rest are dimmer and shorter-ranged so their
+//! light hardly reaches through walls (`lighting` tuning section).
 //! Intensities are game values, not real-world ones: with the camera exposed
 //! for desert sun, a real 100 W bulb would be invisible.
 //!
@@ -19,10 +21,9 @@ pub struct LampsPlugin;
 
 impl Plugin for LampsPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<LampAssets>().add_systems(
-            PreUpdate,
-            apply_lamp_tuning.run_if(resource_changed::<Tuning>),
-        );
+        app.init_resource::<LampAssets>()
+            .add_systems(PreUpdate, apply_lamp_tuning.run_if(resource_changed::<Tuning>))
+            .add_systems(PostUpdate, gate_lamp_shadows);
     }
 }
 
@@ -125,5 +126,37 @@ fn lamp_light(tuning: &Tuning, shadows: bool) -> SpotLight {
 fn apply_lamp_tuning(tuning: Res<Tuning>, mut lamps: Query<(&mut SpotLight, &Lamp)>) {
     for (mut light, lamp) in &mut lamps {
         *light = lamp_light(&tuning, lamp.shadows);
+    }
+}
+
+/// Shadow maps only for shadow-casting lamps near an active 3D camera
+/// (with a metre of hysteresis so a lamp at the edge doesn't flicker), and
+/// not for lamps on floors below the camera: they point down, so their
+/// light can't leak up into the camera's room.
+fn gate_lamp_shadows(
+    tuning: Res<Tuning>,
+    cameras: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
+    mut lamps: Query<(&Lamp, &GlobalTransform, &mut SpotLight)>,
+) {
+    let eyes: Vec<Vec3> = cameras
+        .iter()
+        .filter(|(camera, _)| camera.is_active)
+        .map(|(_, at)| at.translation())
+        .collect();
+    let near = tuning.lighting.lamp_shadow_distance;
+    for (lamp, at, mut light) in &mut lamps {
+        if !lamp.shadows {
+            continue;
+        }
+        let lamp = at.translation();
+        let distance = eyes
+            .iter()
+            .filter(|eye| lamp.y > eye.y - 2.0)
+            .map(|eye| eye.distance(lamp))
+            .fold(f32::INFINITY, f32::min);
+        let on = if light.shadow_maps_enabled { distance < near + 1.0 } else { distance < near };
+        if light.shadow_maps_enabled != on {
+            light.shadow_maps_enabled = on;
+        }
     }
 }

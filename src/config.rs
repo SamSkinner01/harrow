@@ -491,6 +491,9 @@ pub struct LightingTuning {
     /// Lanterns without shadows (small rooms on the full map): intensity
     /// and range multiplier, so less light leaks through walls.
     pub unshadowed_lamp_scale: f32,
+    /// Shadow-casting lanterns only render shadows within this many metres
+    /// of the camera (each shadow map costs a render pass).
+    pub lamp_shadow_distance: f32,
 }
 
 #[derive(Deserialize, Clone, Debug)]
