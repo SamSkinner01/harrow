@@ -539,3 +539,118 @@ fn explode(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::destruction::surface::{layout_for, tests::tuning};
+
+    fn wall() -> SoftSurface {
+        let (spec, grid) = layout_for("soft_wall_2m", &tuning()).unwrap();
+        SoftSurface::new(spec, grid, 42)
+    }
+
+    fn hit(surface: &mut SoftSurface, kind: ImpactKind, at: Vec3) -> Outcome {
+        let outcome = cut(surface, kind, at, false, &tuning());
+        surface.impacts += 1;
+        outcome
+    }
+
+    fn cell(surface: &SoftSurface, u: f32, v: f32) -> u8 {
+        let (cu, cv) = surface.grid.cell_at(Vec2::new(u, v));
+        surface.grid.cells[surface.grid.index(cu, cv)]
+    }
+
+    #[test]
+    fn same_impacts_give_the_same_holes() {
+        let (mut a, mut b) = (wall(), wall());
+        let shots = [
+            (ImpactKind::Bullet, Vec3::new(0.6, 1.2, 0.07)),
+            (ImpactKind::Bullet, Vec3::new(0.62, 1.25, 0.07)),
+            (ImpactKind::Pellet, Vec3::new(1.3, 2.0, -0.07)),
+            (ImpactKind::Melee, Vec3::new(0.6, 1.5, 0.07)),
+            (ImpactKind::Explosion { radius: 0.5 }, Vec3::new(1.4, 0.6, 0.1)),
+        ];
+        for (kind, at) in shots {
+            hit(&mut a, kind, at);
+            hit(&mut b, kind, at);
+        }
+        assert_eq!(a.grid.cells, b.grid.cells);
+        assert!(a.intact_fraction() < 1.0);
+    }
+
+    #[test]
+    fn bullets_leave_studs_and_frame() {
+        let mut s = wall();
+        // On the middle stud: the plaster goes, the stud stays.
+        hit(&mut s, ImpactKind::Bullet, Vec3::new(1.0, 1.5, 0.07));
+        assert_eq!(cell(&s, 1.0, 1.5) & (SKIN | CORE), CORE);
+        // On the lip: nothing happens.
+        let before = cell(&s, 0.8, 0.03);
+        hit(&mut s, ImpactKind::Bullet, Vec3::new(0.8, 0.03, 0.07));
+        assert_eq!(cell(&s, 0.8, 0.03), before);
+    }
+
+    #[test]
+    fn melee_makes_a_crouch_hole_on_the_third_hit() {
+        let mut s = wall();
+        let spot = Vec3::new(0.64, 1.3, 0.07);
+        hit(&mut s, ImpactKind::Melee, spot);
+        assert_ne!(cell(&s, 0.64, 0.4) & SKIN, 0, "one hit doesn't reach the floor");
+        hit(&mut s, ImpactKind::Melee, spot);
+        hit(&mut s, ImpactKind::Melee, spot);
+        for v in [0.2, 0.6, 1.0] {
+            assert_eq!(cell(&s, 0.64, v) & SKIN, 0, "open at {v}");
+        }
+        // The stud survives melee.
+        assert_ne!(cell(&s, 1.0, 1.0) & CORE, 0);
+    }
+
+    #[test]
+    fn low_blast_opens_a_walk_through_hole() {
+        let mut s = wall();
+        let t = tuning();
+        let r = t.breach_charge.breach_radius;
+        let h = t.breach_charge.wall_height;
+        hit(&mut s, ImpactKind::Explosion { radius: r }, Vec3::new(1.0, h, 0.1));
+        // Clear from just above the lip to head height, studs included.
+        for v in [0.1, 0.5, 1.0, 1.5, 1.85] {
+            assert_eq!(cell(&s, 1.0, v) & (SKIN | CORE), 0, "open at {v}");
+            assert_eq!(cell(&s, 0.7, v) & (SKIN | CORE), 0, "open at {v}");
+        }
+        assert_ne!(cell(&s, 1.0, 0.03) & FRAME, 0, "lip stays");
+    }
+
+    #[test]
+    fn hatch_breaks_on_the_third_melee_from_above() {
+        let t = tuning();
+        let (spec, grid) = layout_for("hatch_cover", &t).unwrap();
+        let mut s = SoftSurface::new(spec, grid, 7);
+        let top = Vec3::new(1.0, 0.0, 1.0);
+        for i in 1..=3 {
+            let o = cut(&mut s, ImpactKind::Melee, top, true, &t);
+            s.impacts += 1;
+            assert_eq!(o.broke, i == t.hatch_melee_hits);
+        }
+        assert!(s.broken && s.grid.count(SKIN | CORE) == 0);
+        // From below, melee does nothing.
+        let (spec, grid) = layout_for("hatch_cover", &t).unwrap();
+        let mut s = SoftSurface::new(spec, grid, 7);
+        for _ in 0..5 {
+            cut(&mut s, ImpactKind::Melee, top, false, &t);
+        }
+        assert!(!s.broken);
+    }
+
+    #[test]
+    fn barricade_clears_on_the_second_melee() {
+        let t = tuning();
+        let (spec, grid) = layout_for("barricade_door", &t).unwrap();
+        let mut s = SoftSurface::new(spec, grid, 3);
+        let o = cut(&mut s, ImpactKind::Melee, Vec3::new(0.0, 1.2, 0.03), false, &t);
+        assert!(!o.broke && !o.removed.is_empty());
+        let o = cut(&mut s, ImpactKind::Melee, Vec3::new(0.0, 1.2, 0.03), false, &t);
+        assert!(o.broke && s.broken);
+        assert!(s.spec.fixtures.iter().all(|f| !f.present));
+    }
+}

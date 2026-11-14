@@ -41,7 +41,9 @@ use bevy::prelude::*;
 pub use breach::BreachCharge;
 // Public API for weapons (M3), the round loop and gadgets (M6), bots (M7).
 #[allow(unused_imports)]
-pub use surface::{SoftSurface, SurfaceMaterial, SurfaceRole};
+pub use impacts::surface_root;
+#[allow(unused_imports)]
+pub use surface::{NotReinforceable, SoftSurface, SurfaceMaterial, SurfaceMount, SurfaceRole};
 
 use crate::{
     combat::Team,

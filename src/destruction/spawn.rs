@@ -22,7 +22,7 @@ use bevy::{gltf::GltfMaterialName, prelude::*, world_serialization::WorldAssetRo
 use super::{
     DestructionSystems,
     build::{build_meshes, collider_shapes},
-    surface::{SoftSurface, SurfaceMaterial, layout_for, placement_seed},
+    surface::{NotReinforceable, SoftSurface, SurfaceMaterial, layout_for, placement_seed},
 };
 use crate::{combat::SurfaceKind, config::Tuning};
 
@@ -97,6 +97,7 @@ fn convert_piece(
     names: Query<&Name>,
     transforms: Query<&Transform>,
     converted: Query<(), With<SoftSurface>>,
+    locked: Query<(), With<NotReinforceable>>,
     children: Query<&Children>,
     gltf_materials: Query<(&GltfMaterialName, &MeshMaterial3d<StandardMaterial>)>,
     mut materials: ResMut<SurfaceMaterials>,
@@ -122,9 +123,12 @@ fn convert_piece(
     }
     let Ok(name) = names.get(root) else { return };
     let t = &tuning.destruction;
-    let Some((spec, grid)) = layout_for(name.as_str(), t) else {
+    let Some((mut spec, grid)) = layout_for(name.as_str(), t) else {
         return;
     };
+    if locked.contains(root) {
+        spec.reinforceable = false;
+    }
     let transform = transforms.get(root).copied().unwrap_or_default();
     let surface = SoftSurface::new(spec, grid, placement_seed(&transform));
 

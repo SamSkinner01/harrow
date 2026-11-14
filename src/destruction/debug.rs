@@ -173,7 +173,7 @@ fn run_script(
         (Entity, &mut Transform, &mut PlayerInput, &CharacterState, Option<&Health>),
         With<LocalPlayer>,
     >,
-    surfaces: Query<(Entity, &Name, &SoftSurface, &SurfaceKind)>,
+    surfaces: Query<(Entity, &Name, &SoftSurface, &SurfaceKind, &GlobalTransform)>,
     loadout: Query<(&Activity, &Reinforcements, &BreachCharges, &Team)>,
     spatial: SpatialQuery,
     colliders: Query<&ColliderOf>,
@@ -238,17 +238,27 @@ fn run_script(
                     attached_to: None,
                 });
             }
-            Command::HardBreach(radius) => match aim() {
-                Some((collider, point, _)) => {
-                    breaches.write(HardBreach {
-                        surface: collider,
-                        centre: point,
-                        radius,
-                        source: Some(entity),
-                    });
+            Command::HardBreach(radius) => {
+                // Like a ring cutter: find where it would clamp on, cut there.
+                let (eye, dir) = eye_and_aim(&transform, state, &input, &tuning);
+                let mount = aim().and_then(|(collider, _, _)| {
+                    let root = surface_root(collider, &colliders);
+                    let (_, _, surface, _, gt) = surfaces.get(root).ok()?;
+                    Some((root, surface.mount(gt, eye, *dir, 6.0)?))
+                });
+                match mount {
+                    Some((root, mount)) => {
+                        info!("  cutter mounts on {root:?} at {:.2} facing {:.2} (reinforced {})", mount.point, mount.normal, mount.reinforced);
+                        breaches.write(HardBreach {
+                            surface: root,
+                            centre: mount.point,
+                            radius,
+                            source: Some(entity),
+                        });
+                    }
+                    None => warn!("m4 script: hardbreach: not aiming at a soft or reinforced surface"),
                 }
-                None => warn!("m4 script: hardbreach: not aiming at anything"),
-            },
+            }
             Command::Reinforce => match aim() {
                 Some((collider, _, eye)) => {
                     reinforce.write(ReinforceRequest {
@@ -272,7 +282,7 @@ fn run_script(
                 ));
             }
             Command::Log => {
-                for (e, name, s, kind) in &surfaces {
+                for (e, name, s, kind, _) in &surfaces {
                     info!(
                         "  surface {e:?} {name} {:?} {kind:?}: {:.0}% intact, reinforced {:?}, broken {}, revision {}",
                         s.role(),

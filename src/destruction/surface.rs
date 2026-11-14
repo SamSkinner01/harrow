@@ -143,6 +143,22 @@ pub struct Reinforcement {
     pub by: Option<Entity>,
 }
 
+/// A spot on a surface's face where a gadget can sit (see
+/// [`SoftSurface::mount`]).
+#[derive(Clone, Copy, Debug)]
+pub struct SurfaceMount {
+    /// On the face, world space.
+    pub point: Vec3,
+    /// Out of the face, towards whoever placed it.
+    pub normal: Vec3,
+    pub reinforced: bool,
+}
+
+/// Put this on a soft kit piece's root (when spawning it) to stop
+/// defenders reinforcing it. Door and window walls are never reinforceable.
+#[derive(Component, Debug, Clone, Copy, Default)]
+pub struct NotReinforceable;
+
 /// A melee hole in progress: hits that land close together grow one hole.
 #[derive(Clone, Copy, Debug)]
 pub struct MeleeMark {
@@ -237,6 +253,25 @@ impl SoftSurface {
         let (uv, _) = plane.from_local(local);
         let (min, max) = (self.grid.min(), self.grid.max());
         (uv.cmpge(min).all() && uv.cmple(max).all()).then_some(point)
+    }
+
+    /// Where a gadget aimed from `eye` along `dir` would sit on this
+    /// surface (on the face towards `eye`), within `reach`. Holes count as
+    /// part of the surface, so this works on damaged walls too.
+    pub fn mount(&self, transform: &GlobalTransform, eye: Vec3, dir: Vec3, reach: f32) -> Option<SurfaceMount> {
+        let point = self.aim_point(transform, eye, dir, reach)?;
+        let side = self.side_of(transform, eye);
+        let normal = (transform.rotation() * self.spec.plane.normal() * side).normalize();
+        let (w0, w1) = self.spec.skin_depth;
+        let face = if side > 0.0 { w1 } else { w0 };
+        let local = transform.affine().inverse().transform_point3(point);
+        let (uv, _) = self.spec.plane.from_local(local);
+        let on_face = transform.transform_point(self.spec.plane.to_local(uv.x, uv.y, face));
+        Some(SurfaceMount {
+            point: on_face,
+            normal,
+            reinforced: self.is_reinforced(),
+        })
     }
 
     /// Which side of the surface `point` (world space) is on: +1 or -1.
@@ -544,4 +579,80 @@ fn barricade(width: f32, bottom: f32, height: f32, t: &DestructionTuning) -> (Su
 fn dedup(mut v: Vec<f32>) -> Vec<f32> {
     v.dedup_by(|a, b| (*a - *b).abs() < 1e-5);
     v
+}
+
+#[cfg(test)]
+pub(crate) mod tests {
+    use super::*;
+    use crate::config::Tuning;
+
+    pub(crate) fn tuning() -> DestructionTuning {
+        let tuning: Tuning = ron::from_str(include_str!("../../assets/config/tuning.ron")).unwrap();
+        tuning.destruction
+    }
+
+    /// Widest gap between core (or frame/opening) columns along u in row `v`.
+    fn widest_bay(grid: &CellGrid, v: usize) -> f32 {
+        let mut widest: f32 = 0.0;
+        let mut start = grid.us[0];
+        for u in 0..grid.nu() {
+            let c = grid.cells[grid.index(u, v)];
+            if c & (CORE | FRAME) != 0 || c == 0 {
+                widest = widest.max(grid.us[u] - start);
+                start = grid.us[u + 1];
+            }
+        }
+        widest.max(grid.us[grid.nu()] - start)
+    }
+
+    #[test]
+    fn plaster_wall_has_frame_lip_and_a_middle_stud() {
+        let t = tuning();
+        let (spec, grid) = layout_for("soft_wall_2m", &t).unwrap();
+        assert!(spec.reinforceable);
+        assert_eq!(grid.min(), Vec2::new(0.25, 0.0));
+        assert_eq!(grid.max(), Vec2::new(1.75, 3.0));
+        // Bottom row is the lip (frame), at the configured height.
+        assert!((grid.vs[1] - t.walls.lip).abs() < 1e-4);
+        assert!((0..grid.nu()).all(|u| grid.cells[grid.index(u, 0)] & FRAME != 0));
+        // A stud in the middle at x = 1.0, and bays under the configured max.
+        let (su, sv) = grid.cell_at(Vec2::new(1.0, 1.5));
+        assert_ne!(grid.cells[grid.index(su, sv)] & CORE, 0);
+        assert!(widest_bay(&grid, sv) <= t.walls.stud_max_bay + 1e-3);
+        // A person (0.6 m) fits between the studs.
+        assert!(widest_bay(&grid, sv) >= 0.6);
+    }
+
+    #[test]
+    fn door_wall_has_an_opening_and_cannot_be_reinforced() {
+        let t = tuning();
+        let (spec, grid) = layout_for("soft_wall_door_2m", &t).unwrap();
+        assert!(!spec.reinforceable);
+        let (u, v) = grid.cell_at(Vec2::new(1.0, 1.0));
+        assert_eq!(grid.cells[grid.index(u, v)], 0);
+        let (u, v) = grid.cell_at(Vec2::new(1.0, 2.5));
+        assert_ne!(grid.cells[grid.index(u, v)] & SKIN, 0);
+    }
+
+    #[test]
+    fn floor_joists_are_too_close_to_drop_between() {
+        let t = tuning();
+        for name in ["floor_wood_2m", "floor_hatch_2m"] {
+            let (_, grid) = layout_for(name, &t).unwrap();
+            for v in 0..grid.nv() {
+                assert!(widest_bay(&grid, v) < 0.6, "{name} row {v}: {}", widest_bay(&grid, v));
+            }
+        }
+    }
+
+    #[test]
+    fn reinforcing_covers_every_cell_with_plate() {
+        let t = tuning();
+        let (spec, grid) = layout_for("soft_wall_2m", &t).unwrap();
+        let mut surface = SoftSurface::new(spec, grid, 1);
+        surface.reinforce(-1.0, None);
+        assert!(surface.is_reinforced() && !surface.can_reinforce());
+        assert!(surface.grid.cells.iter().all(|c| c & PLATE != 0));
+        assert!(surface.grid.count(BRACE) > 0);
+    }
 }
