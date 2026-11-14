@@ -98,7 +98,141 @@
     // ---- Weapons (M3) ----
     weapons: (),
     // ---- Destruction (M4) ----
-    destruction: (),
+    // Plaster walls, wooden floors, hatches and barricades are split into
+    // small cells that bullets, melee and explosives knock out.
+    // Grid and layout values only affect walls/floors built after the change
+    // (restart to apply them to the map); everything else applies at once.
+    destruction: (
+        // Size of one wall/floor cell, metres. Smaller = finer holes, but
+        // more work per hole (0.1 = ~450 cells for a 2 m wall).
+        cell_size: 0.1,
+        walls: (
+            // Strip down each side of a plaster wall that never breaks, metres.
+            frame: 0.05,
+            // Bottom lip left after any breach. Low enough to walk over
+            // (above ~0.08 m it starts to block you).
+            lip: 0.06,
+            // Strip along the top that never breaks, metres.
+            top_plate: 0.06,
+            // Timber studs inside the wall: width, metres. Bullets and melee
+            // leave them standing; only explosives break them.
+            stud_width: 0.06,
+            // Widest gap allowed between studs, metres. A person needs about
+            // 0.6 m to squeeze through, so below that melee holes can't be
+            // crawled through.
+            stud_max_bay: 0.7,
+        ),
+        floors: (
+            // Joists under wooden floors (and battens under hatch covers):
+            // width, metres. Explosives only.
+            joist_width: 0.04,
+            // Widest gap between joists, metres. Under 0.6 m means you can
+            // shoot holes in a floor but not drop through without explosives.
+            joist_max_bay: 0.5,
+        ),
+        // A bullet knocks out the cell it hits; each neighbouring cell also
+        // goes with this chance (0..1), so holes look ragged.
+        bullet_extra_chance: 0.25,
+        // Hole radius per shotgun pellet, metres (pellets overlap into one
+        // big hole).
+        pellet_radius: 0.07,
+        // How ragged hole edges are, metres (+/- on every hole radius).
+        hole_jitter: 0.03,
+        melee: (
+            // Reach from the eyes, metres.
+            range: 1.5,
+            // Thickness of the swing (a sphere this radius), metres.
+            sweep_radius: 0.12,
+            // Swinging through an existing hole still catches its edges
+            // within this radius, so the hole keeps growing.
+            edge_radius: 0.3,
+            // Seconds between swings.
+            cooldown: 0.8,
+            // Damage to a person.
+            damage: 35.0,
+            // Hole radius after the 1st, 2nd, 3rd, 4th... hit on the same
+            // spot, metres (the last value repeats).
+            hole_radii: [0.14, 0.2, 0.26, 0.32],
+            // Hits within this distance of an earlier one grow that hole.
+            merge_distance: 0.5,
+            // From this many hits on one spot, the hole also opens down to
+            // the bottom lip: a crouch-through hole (studs still in the way).
+            crouch_hole_hits: 3,
+            // Width and height of that crouch-through hole, metres.
+            crouch_hole_width: 0.75,
+            crouch_hole_height: 1.3,
+        ),
+        explosion: (
+            // If a blast's hole on a wall reaches within this distance of the
+            // bottom lip, the wall below it is blown out down to the lip
+            // (a walk-through opening), metres.
+            blowout_reach: 0.5,
+            // Width of that blown-out part, as a fraction of the blast hole.
+            blowout_width: 0.9,
+            // Inside this fraction of the damage radius people take full
+            // damage; it falls to zero at the edge.
+            full_damage_fraction: 0.3,
+            // Damage multiplier for each soft wall/floor between the blast and
+            // a person. Stone and reinforced walls block it completely.
+            soft_cover_factor: 0.5,
+        ),
+        // Melee hits from above that break a hatch cover open.
+        hatch_melee_hits: 3,
+        barricade: (
+            // Planks break in pieces this long, metres.
+            segment: 0.3,
+            // Melee hits that clear a barricade completely.
+            melee_hits: 2,
+            // The first melee hit knocks out planks within this radius, metres.
+            melee_radius: 0.5,
+            // When less than this fraction of the planks is left, the rest
+            // falls down (0..1).
+            clear_below: 0.3,
+            // Seconds a defender holds F to put up a barricade.
+            build_time: 2.0,
+            // How close to the doorway/window you must be, metres.
+            reach: 2.0,
+        ),
+        reinforce: (
+            // Seconds a defender holds F to reinforce a wall or hatch.
+            time: 5.0,
+            // How close (from the eyes) you must be, metres.
+            reach: 1.6,
+            // Reinforcements each defender carries per round.
+            per_defender: 2,
+            // Moving further than this (metres) while reinforcing cancels it.
+            move_tolerance: 0.25,
+            // Metal plate and brace thickness, metres (looks only).
+            plate_thickness: 0.02,
+            brace_thickness: 0.03,
+        ),
+        breach_charge: (
+            // Charges each attacker with this gadget carries.
+            count: 3,
+            // Seconds to hold 4 to stick one on.
+            place_time: 1.0,
+            // How close (from the eyes) you must be, metres.
+            reach: 1.6,
+            // On walls the charge sits at this height above the floor, so the
+            // blast always opens a walk-through hole.
+            wall_height: 1.0,
+            // Radius of the hole it blows in a soft wall or floor, metres.
+            breach_radius: 0.85,
+            // People within this distance get hurt, metres.
+            damage_radius: 3.5,
+            // Damage at point blank (100 = a full-health person).
+            max_damage: 120.0,
+        ),
+        debris: (
+            // Most chunks and dust puffs on screen at once (oldest go first).
+            max_chunks: 250,
+            max_dust: 60,
+            // Most chunks one impact throws.
+            chunks_per_impact: 14,
+            // Seconds a chunk lies on the floor before fading out.
+            lifetime: 5.0,
+        ),
+    ),
     // ---- Round loop and gadgets (M6) ----
     round: (),
 )
