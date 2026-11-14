@@ -243,7 +243,7 @@ fn dress_charges(
                 materials.add(StandardMaterial {
                     base_color: Color::srgb(0.25, 0.01, 0.01),
                     // Bright enough to read in sunlight exposure.
-                    emissive: LinearRgba::rgb(4000.0, 60.0, 20.0),
+                    emissive: LinearRgba::rgb(900.0, 12.0, 4.0),
                     ..default()
                 }),
             )

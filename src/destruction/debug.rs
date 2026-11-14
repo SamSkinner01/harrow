@@ -22,6 +22,7 @@
 //! | `hardbreach [radius]` | hard breach where the player aims |
 //! | `reinforce` | instant reinforcement where the player aims |
 //! | `lamp <x> <y> <z> [lumens]` | a point light (interiors are dark) |
+//! | `dummy <x> <y> <z>` | a target with health and hit zones (logged by `log`) |
 //! | `log` | log surfaces, player and FPS |
 //! | `shot <path>` | screenshot |
 //! | `quit` | exit |
@@ -31,6 +32,7 @@
 use avian3d::prelude::*;
 use bevy::{
     diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin},
+    ecs::system::SystemParam,
     prelude::*,
     render::view::screenshot::{Screenshot, save_to_disk},
 };
@@ -46,7 +48,7 @@ use crate::{
     combat::{Health, ImpactKind, SurfaceImpact, SurfaceKind, Team},
     config::Tuning,
     physics::GameLayer,
-    player::{AutomatedRun, CharacterState, LocalPlayer, PlayerInput, Stance},
+    player::{AutomatedRun, CharacterState, HitZone, LocalPlayer, PlayerInput, Stance},
 };
 
 pub struct DestructionDebugPlugin;
@@ -83,6 +85,7 @@ enum Command {
     HardBreach(f32),
     Reinforce,
     Lamp(Vec3, f32),
+    Dummy(Vec3),
     Log,
     Shot(String),
     Quit,
@@ -136,6 +139,7 @@ impl Script {
                 },
                 "hardbreach" => Command::HardBreach(num(2, 0.5)),
                 "reinforce" => Command::Reinforce,
+                "dummy" => Command::Dummy(Vec3::new(num(2, 0.0), num(3, 0.0), num(4, 0.0))),
                 "lamp" => Command::Lamp(Vec3::new(num(2, 0.0), num(3, 0.0), num(4, 0.0)), num(5, 2.0e7)),
                 "log" => Command::Log,
                 "shot" => Command::Shot(words.get(2).copied().unwrap_or("m4.png").to_string()),
@@ -151,6 +155,20 @@ impl Script {
         Self { commands, next: 0 }
     }
 }
+
+/// Everything the script writes.
+#[derive(SystemParam)]
+struct ScriptOutput<'w, 's> {
+    explosions: MessageWriter<'w, Explosion>,
+    breaches: MessageWriter<'w, HardBreach>,
+    reinforce: MessageWriter<'w, ReinforceRequest>,
+    exit: MessageWriter<'w, AppExit>,
+    commands: Commands<'w, 's>,
+}
+
+/// A test target spawned by the script.
+#[derive(Component)]
+struct Dummy;
 
 /// Inputs the script holds down, and shots waiting to be fired.
 #[derive(Resource, Default)]
@@ -174,18 +192,22 @@ fn run_script(
         With<LocalPlayer>,
     >,
     surfaces: Query<(Entity, &Name, &SoftSurface, &SurfaceKind, &GlobalTransform)>,
+    dummies: Query<(Entity, &Health), With<Dummy>>,
     loadout: Query<(&Activity, &Reinforcements, &BreachCharges, &Team)>,
     spatial: SpatialQuery,
     colliders: Query<&ColliderOf>,
     tuning: Res<Tuning>,
     diagnostics: Res<DiagnosticsStore>,
     stats: Res<RebuildStats>,
-    mut explosions: MessageWriter<Explosion>,
-    mut breaches: MessageWriter<HardBreach>,
-    mut reinforce: MessageWriter<ReinforceRequest>,
-    mut exit: MessageWriter<AppExit>,
-    mut commands: Commands,
+    mut out: ScriptOutput,
 ) {
+    let ScriptOutput {
+        explosions,
+        breaches,
+        reinforce,
+        exit,
+        commands,
+    } = &mut out;
     let now = time.elapsed_secs();
     let Ok((entity, mut transform, mut input, state, health)) = player.single_mut() else {
         return;
@@ -281,7 +303,26 @@ fn run_script(
                     Transform::from_translation(at),
                 ));
             }
+            Command::Dummy(at) => {
+                commands
+                    .spawn((Name::new("Dummy"), Dummy, Health::new(100.0), Transform::from_translation(at)))
+                    .with_children(|parent| {
+                        for (zone, y) in [(HitZone::Head, 1.66), (HitZone::Torso, 1.17), (HitZone::Legs, 0.4)] {
+                            let (radius, length) = zone.shape();
+                            parent.spawn((
+                                zone,
+                                Collider::capsule(radius, length),
+                                Sensor,
+                                CollisionLayers::new(GameLayer::Hitbox, LayerMask::NONE),
+                                Transform::from_xyz(0.0, y, 0.0),
+                            ));
+                        }
+                    });
+            }
             Command::Log => {
+                for (dummy, health) in &dummies {
+                    info!("  dummy {dummy:?} health {:.1}", health.current);
+                }
                 for (e, name, s, kind, _) in &surfaces {
                     info!(
                         "  surface {e:?} {name} {:?} {kind:?}: {:.0}% intact, reinforced {:?}, broken {}, revision {}",

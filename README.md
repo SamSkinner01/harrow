@@ -61,6 +61,9 @@ Bevy's API changes between releases, so everything is pinned with `=` in
 | C | Crouch (toggle) |
 | Z | Prone (toggle) |
 | Q / E | Lean left / right (toggle) |
+| V | Melee (breaks soft walls, hatches from above, barricades) |
+| F (hold) | Defenders: reinforce the wall or hatch you look at (5 s), or barricade an empty doorway/window (2 s) |
+| 4 (hold, then press) | Breach charge: hold to stick it on a soft wall, floor or barricade, press again to set it off |
 | Esc / left click | Release / capture the mouse |
 | F1 | Toggle key help |
 | F3 | Toggle FPS overlay |
@@ -104,6 +107,20 @@ cargo run -- --no-vsync                        # uncapped frame rate (performanc
 Used for automated checks: e.g. spawn at the stairs, auto-move forward, and
 screenshot/log where the player ends up. Automated runs don't grab the mouse
 and don't play player sounds.
+
+Destruction test script (`src/destruction/debug.rs` lists every command):
+a timed list of `<seconds> <command>` separated by `;`.
+
+```sh
+# shoot the plaster wall, take a screenshot, quit
+cargo run -- --spawn 7,0,-2.3,0,0 --m4 "0 lamp 7.5 2.2 -2 3e7; 1 fire bullet 40 12; 3 shot out.png; 3.5 quit"
+# reinforce as a defender (hold F 5.6 s), shoot it, then hard-breach it
+cargo run -- --spawn 7,0,-2.6,0,0 --m4 "0.5 team defenders; 1 interact 5.6; 7 fire bullet 30 10; 9 hardbreach 0.5; 10 log; 10.5 quit"
+```
+
+Commands: `team`, `look`, `tp`, `move`, `stance`, `fire bullet|pellet`,
+`melee`, `interact`, `gadget`, `explode`, `hardbreach`, `reinforce`, `lamp`,
+`dummy`, `log` (surfaces, player, rebuild cost, FPS), `shot`, `quit`.
 
 ## Layout
 

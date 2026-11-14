@@ -15,6 +15,10 @@ licences. Add a row before committing the asset.
 
 Textures are fetched by `tools/scripts/fetch_textures.py`.
 
+Destruction (M4) is procedural (cell-grid meshes, debris, dust, the breach
+charge and reinforcement plates) and reuses the library materials above; it
+adds no external assets.
+
 Sounds: the footstep sound is synthesised in code (`src/player/footsteps.rs`);
 no external audio yet.
 
