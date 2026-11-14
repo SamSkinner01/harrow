@@ -727,8 +727,12 @@ hand-placed data), so a new map just works:
   four spawn ruins, ~187,000 nodes on five levels) in ~4.5 s, spread over
   frames (6 ms each) while the round loop waits for it.
 - **Paths:** A* (metres walked, crouch-only x1.8, barricade +6 m, drop
-  +1.5 m, breach +14 m, plus per-caller penalties), at most 2 searches per
-  tick across all bots, then string-pulled along walk links but never
+  +1.5 m, breach +14 m, plus per-caller penalties; the distance estimate
+  weighted x1.1: ~15% fewer nodes searched on the big map, for paths
+  that came out the same in the spawn-to-site tests). One bot's search runs at a time, spread over
+  ticks at 4,000 nodes a tick (~1 ms in a dev build), and none while an
+  area of the grid is being patched (it is unlinked until done). Paths are
+  then string-pulled along walk links but never
   across edge cells, so paths keep off walls and go through the middle of
   doorways. Local avoidance keeps bots 0.9 m apart (sidestepping to the
   right head-on) and attackers moving carefully keep stack spacing.

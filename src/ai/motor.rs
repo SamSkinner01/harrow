@@ -1,9 +1,10 @@
 //! Acting on the goal every tick: paths, steering, special moves, the view,
 //! and finally the intent components.
 //!
-//! - **Paths**: planned with A* to the goal (a couple of searches per tick
-//!   across all bots at most), re-planned when the goal moves, when the
-//!   grid changes along the path, or when stuck.
+//! - **Paths**: planned with A* to the goal (one bot's search at a time,
+//!   spread over ticks at a few thousand nodes a tick; none while the grid
+//!   is being patched), re-planned when the goal moves, when the grid
+//!   changes along the path, or when stuck.
 //! - **Following**: steer at the next waypoint; crouch where only crouching
 //!   fits; walk off ledges for drop links.
 //! - **Barricades** on the path: stop, face it and melee until it falls.
@@ -27,10 +28,10 @@ use super::{
     AiSettings, AiSystems, Bot, BotState, angle_diff, angles_to,
     brain::{GoalKind, Pace, TeamPlans},
     eye_position, look_dir,
-    nav::{LinkKind, NavGrid},
+    nav::{LinkKind, NavBuilder, NavGrid},
     path::{
         COST_BARRICADE, COST_BARRICADE_DEFENDER, COST_BREACH, COST_BREACH_PREFERRED, Path, PathOptions,
-        PathScratch, find_path,
+        PathScratch, Search,
     },
     test::AiStats,
 };
@@ -49,7 +50,7 @@ pub struct MotorPlugin;
 
 impl Plugin for MotorPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<PathScratch>().add_systems(
+        app.init_resource::<PathScratch>().init_resource::<BotSearch>().add_systems(
             FixedPreUpdate,
             (drive, turn, write_intents)
                 .chain()
@@ -132,8 +133,38 @@ pub struct LookState {
     pub error: f32,
 }
 
-/// Searches allowed per tick across all bots.
-const SEARCHES_PER_TICK: u32 = 1;
+/// The bots' path search: one bot's at a time, spread over ticks, at most
+/// [`EXPANSIONS_PER_TICK`] nodes a tick, so a long search on a big map
+/// doesn't stall a frame.
+#[derive(Resource, Default)]
+pub struct BotSearch {
+    scratch: PathScratch,
+    owner: Option<Entity>,
+    target: Vec3,
+    alt: bool,
+}
+
+/// Path search work per tick across all bots (nodes expanded).
+const EXPANSIONS_PER_TICK: u32 = 4_000;
+/// Give up on a search after this many nodes.
+const MAX_EXPANSIONS: u32 = 120_000;
+
+/// A search found nothing: try again in a while.
+fn no_path(name: &Name, state: &mut BotState, feet: Vec3, target: Vec3, grid: &NavGrid, now: f32, stats: &mut AiStats) {
+    state.nav.planned_for = Some(target);
+    state.nav.path = None;
+    state.nav.index = 0;
+    state.nav.failures += 1;
+    state.nav.next_plan = now + 1.0;
+    if state.nav.failures == 1 || state.nav.failures % 10 == 0 {
+        info!(
+            "ai: {name}: no path from {feet:.1} (node {:?}) to {target:.1} (node {:?})",
+            grid.locate(feet, 3).map(|n| grid.pos(n)),
+            grid.locate(target + Vec3::Y * 0.3, 3).map(|n| grid.pos(n))
+        );
+    }
+    stats.no_path += 1;
+}
 
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn drive(
@@ -152,7 +183,8 @@ fn drive(
     )>,
     characters: Query<(Entity, &Transform, &Team, Has<Dead>), With<Player>>,
     grid: Res<NavGrid>,
-    mut scratch: ResMut<PathScratch>,
+    builder: Res<NavBuilder>,
+    mut search: ResMut<BotSearch>,
     plans: Res<TeamPlans>,
     surfaces: Query<(&SoftSurface, &GlobalTransform)>,
     charges: Query<(&BreachCharge, &Transform), Without<Player>>,
@@ -167,7 +199,14 @@ fn drive(
         .iter()
         .map(|(e, t, team, dead)| (e, t.translation, *team, dead))
         .collect();
-    let mut searches = 0;
+    let mut budget = EXPANSIONS_PER_TICK;
+    let patching = builder.patching();
+    if let Some(owner) = search.owner
+        && !bots.contains(owner)
+    {
+        search.scratch.cancel();
+        search.owner = None;
+    }
     let filter = SpatialQueryFilter::from_mask(GameLayer::World);
 
     for (me, name, mut bot, mut state, transform, body, input, team, dead, charges_left, locked) in &mut bots {
@@ -188,6 +227,10 @@ fn drive(
         if dead || !grid.ready {
             state.nav.path = None;
             state.nav.breach = BreachStep::None;
+            if search.owner == Some(me) {
+                search.scratch.cancel();
+                search.owner = None;
+            }
             continue;
         }
         let eye = eye_position(feet, input.yaw, body.height, body.lean, &tuning);
@@ -217,8 +260,15 @@ fn drive(
                 })
             });
             let need = state.nav.path.is_none() || moved_goal || invalidated;
-            if need && now >= state.nav.next_plan && searches < SEARCHES_PER_TICK {
-                searches += 1;
+            let mine = search.owner == Some(me);
+            // A search for a goal that has moved since is no use.
+            if mine && (search.target.distance(target) > 0.6 || search.alt != goal.alt_route || !need) {
+                search.scratch.cancel();
+                search.owner = None;
+            }
+            // While the grid is being patched it is partly unlinked: wait
+            // (the old path, if any, is still followed).
+            if need && search.owner.is_none() && now >= state.nav.next_plan && budget > 0 && !patching {
                 let from = grid.locate(feet, 3);
                 let to = grid.locate(target + Vec3::Y * 0.3, 3);
                 let options = PathOptions {
@@ -228,42 +278,50 @@ fn drive(
                         && charges_left.is_some_and(|c| c.0 > 0)
                         && now > state.nav.no_breach_until)
                         .then_some(if goal.alt_route { COST_BREACH_PREFERRED } else { COST_BREACH }),
-                    max_expansions: 60_000,
+                    max_expansions: MAX_EXPANSIONS,
+                    greed: 1.1,
                 };
+                let begun = matches!((from, to), (Some(a), Some(z)) if search.scratch.begin(&grid, a, z, options));
+                if begun {
+                    search.owner = Some(me);
+                    search.target = target;
+                    search.alt = goal.alt_route;
+                } else {
+                    no_path(name, state, feet, target, &grid, now, &mut stats);
+                }
+            }
+            if search.owner == Some(me) && !patching {
                 let route = &plans.route;
                 let alt = goal.alt_route && plans.route_ready;
                 let penalty = move |n| if alt && route.contains(&n) { 2.0 } else { 0.0 };
-                let path = match (from, to) {
-                    (Some(a), Some(z)) => find_path(&grid, &mut scratch, a, z, options, &penalty),
-                    _ => None,
-                };
-                state.nav.planned_for = Some(target);
-                state.nav.planned_alt = goal.alt_route;
-                state.nav.index = 0;
-                match path {
-                    Some(p) => {
+                match search.scratch.resume(&grid, &mut budget, &penalty) {
+                    Search::Running => {}
+                    Search::Found(p) => {
+                        search.owner = None;
+                        state.nav.planned_for = Some(target);
+                        state.nav.planned_alt = goal.alt_route;
+                        // The bot may have walked on while the search ran:
+                        // skip the start node if it is behind.
+                        state.nav.index = usize::from(p.points.len() > 1 && feet.distance(p.points[0].pos) > 0.3);
                         state.nav.path = Some(p);
                         state.nav.failures = 0;
                         state.nav.next_plan = now + 0.3;
                     }
-                    None => {
-                        state.nav.path = None;
-                        state.nav.failures += 1;
-                        state.nav.next_plan = now + 1.0;
-                        if state.nav.failures == 1 || state.nav.failures % 10 == 0 {
-                            info!(
-                                "ai: {name}: no path from {feet:.1} (node {:?}) to {target:.1} (node {:?})",
-                                from.map(|n| grid.pos(n)),
-                                to.map(|n| grid.pos(n))
-                            );
-                        }
-                        stats.no_path += 1;
+                    Search::Failed => {
+                        search.owner = None;
+                        no_path(name, state, feet, target, &grid, now, &mut stats);
                     }
                 }
             }
-        } else if arrived {
-            state.nav.path = None;
-            state.nav.planned_for = None;
+        } else {
+            if search.owner == Some(me) {
+                search.scratch.cancel();
+                search.owner = None;
+            }
+            if arrived {
+                state.nav.path = None;
+                state.nav.planned_for = None;
+            }
         }
 
         // --- Follow --------------------------------------------------------------

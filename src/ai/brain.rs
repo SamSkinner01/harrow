@@ -310,7 +310,7 @@ fn plan_rounds(
             grid.locate(spawn_centre + Vec3::Y * 0.3, 4),
             grid.locate(site.inside_point(&grid, 0) + Vec3::Y * 0.3, 2),
         ) {
-            let options = PathOptions { barricades: Some(super::path::COST_BARRICADE), breach: None, max_expansions: 120_000 };
+            let options = PathOptions { barricades: Some(super::path::COST_BARRICADE), breach: None, max_expansions: 120_000, greed: 1.1 };
             if let Some(path) = find_path(&grid, &mut scratch, from, to, options, &|_| 0.0) {
                 for w in &path.points {
                     for id in grid.nodes_near(w.pos, 1.6, 1.0) {

@@ -535,11 +535,14 @@ fn nav_test(
                     barricades: Some(if attacker { 6.0 } else { 40.0 }),
                     breach: breacher.then_some(super::path::COST_BREACH_PREFERRED),
                     max_expansions: 200_000,
+                    greed: 1.0,
                 };
+                let before = scratch.expansions;
                 let path = match (a, b) {
                     (Some(a), Some(b)) => super::path::find_path(&grid, &mut scratch, a, b, options, &|_| 0.0),
                     _ => None,
                 };
+                let expanded = scratch.expansions - before;
                 match path {
                     Some(p) => {
                         let specials: Vec<String> = p
@@ -549,7 +552,7 @@ fn nav_test(
                             .map(|w| format!("{:?}{}@{:.1}", w.kind, if w.blocker.is_some() { "+barricade" } else { "" }, w.pos))
                             .collect();
                         info!(
-                            "navtest: {from_name} -> {to_name} ({}): cost {:.1}, {} waypoints {}",
+                            "navtest: {from_name} -> {to_name} ({}): cost {:.1}, {} waypoints, {expanded} nodes searched {}",
                             if breacher { "breacher" } else if attacker { "attacker" } else { "defender" },
                             p.cost,
                             p.points.len(),

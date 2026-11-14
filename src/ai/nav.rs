@@ -475,6 +475,12 @@ impl NavBuilder {
     pub fn idle(&self) -> bool {
         self.stage == Stage::Done && self.dirty.is_empty() && self.region.is_none()
     }
+
+    /// An area is being re-sampled: until it is re-linked, paths through it
+    /// can't be found.
+    pub fn patching(&self) -> bool {
+        self.region.is_some()
+    }
 }
 
 #[derive(Default, Clone, Copy, PartialEq, Eq, Debug)]

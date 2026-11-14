@@ -115,6 +115,8 @@ pub struct Tactics {
     pub roam: Vec<Vec3>,
     /// Middle of the sites (for "outside north" style callouts).
     pub centre: Vec3,
+    /// Nodes of the main walkable area (see `analyse_map`).
+    main: Vec<bool>,
 }
 
 impl Tactics {
@@ -171,11 +173,32 @@ fn analyse_map(
         let Ok(dir) = Dir3::new(d) else { return true };
         spatial.cast_ray(a, dir, d.length(), true, &filter).is_none_or(|h| h.distance >= d.length() - 0.1)
     };
-    // Only places people can walk to (not crate tops or roofs).
-    let main = grid.main_area();
+    // Only places people can walk to (not crate tops or roofs). The flood
+    // fill over the whole grid is the costliest part on a big map, so it is
+    // done for a new grid or a new round; in-round changes (a wall
+    // reinforced or broken, a hatch top cut off) only re-check the areas
+    // that changed.
+    let changed: Vec<(Vec2, Vec2)> = grid
+        .changes
+        .iter()
+        .filter(|(rev, ..)| *rev > tactics.revision)
+        .map(|(_, lo, hi)| (*lo, *hi))
+        .collect();
+    // Every change since the last analysis is still in the log.
+    let complete = grid.revision == tactics.revision || grid.changes.iter().any(|(rev, ..)| *rev == tactics.revision + 1);
+    let full = reset_due || tactics.main.len() != grid.node_capacity() || !complete;
+    let main = if full {
+        grid.main_area()
+    } else {
+        let mut main = std::mem::take(&mut tactics.main);
+        refresh_main(&grid, &mut main, &changed);
+        main
+    };
     // Places the attackers can see from their spawn are no place to wait.
     let spawn_eyes: Vec<Vec3> = layout.attacker_spawns.iter().map(|s| s.position + Vec3::Y * eye).collect();
     let seen_from_spawn = |p: Vec3| spawn_eyes.iter().any(|&s| clear(p + Vec3::Y * eye, s));
+    // Per node (the same spots come up for every entrance).
+    let mut seen: std::collections::HashMap<NodeId, bool> = Default::default();
     let mut sites = Vec::new();
     for site in &layout.sites {
         let min = site.min;
@@ -245,7 +268,7 @@ fn analyse_map(
                 if !(2.5..=10.0).contains(&d) || (p.y - e.inside.y).abs() > 1.0 && e.kind != LinkKind::Drop {
                     continue;
                 }
-                if !clear(p + Vec3::Y * eye, watch) || seen_from_spawn(p) {
+                if !clear(p + Vec3::Y * eye, watch) || *seen.entry(id).or_insert_with(|| seen_from_spawn(p)) {
                     continue;
                 }
                 let cover = grid.node(id).flags & EDGE != 0;
@@ -391,10 +414,12 @@ fn analyse_map(
         });
     }
 
-    // Roam spots: indoor nodes away from the sites, every few metres.
-    let mut roam = Vec::new();
+    // Roam spots: indoor nodes away from the sites, every few metres (kept
+    // for the round, like the main area).
     let centre: Vec3 = layout.sites.iter().map(|s| s.centre()).sum::<Vec3>() / layout.sites.len().max(1) as f32;
-    for id in grid.nodes_near(centre, 40.0, 12.0) {
+    let mut roam = if full { Vec::new() } else { std::mem::take(&mut tactics.roam) };
+    let candidates = if full { grid.nodes_near(centre, 40.0, 12.0) } else { Vec::new() };
+    for id in candidates {
         let p = grid.pos(id);
         let column = ((Vec2::new(p.x, p.z) - grid.origin) / grid.cell).round().as_ivec2();
         if column.x % 6 != 0 || column.y % 6 != 0 || !grid.node(id).standable() || !main[id as usize] {
@@ -426,7 +451,77 @@ fn analyse_map(
         sites,
         roam,
         centre,
+        main,
     };
+}
+
+/// Re-check main-area membership of the nodes in `areas` (changed parts of
+/// the grid): flood out from each over walk links until reaching a main
+/// node outside them (still main) or running out (cut off).
+fn refresh_main(grid: &NavGrid, main: &mut [bool], areas: &[(Vec2, Vec2)]) {
+    let pad = 0.5;
+    let inside = |p: Vec3| {
+        areas
+            .iter()
+            .any(|(lo, hi)| p.x >= lo.x - pad && p.x <= hi.x + pad && p.z >= lo.y - pad && p.z <= hi.y + pad)
+    };
+    let mut settled: std::collections::HashSet<NodeId> = Default::default();
+    let mut seen: std::collections::HashSet<NodeId> = Default::default();
+    let mut stack = Vec::new();
+    let mut visited = Vec::new();
+    for (lo, hi) in areas {
+        let mid = (*lo + *hi) / 2.0;
+        let centre = Vec3::new(mid.x, 0.0, mid.y);
+        let radius = (*hi - *lo).length() / 2.0 + pad + grid.cell;
+        for start in grid.nodes_near(centre, radius, f32::MAX) {
+            if settled.contains(&start) || !inside(grid.pos(start)) {
+                continue;
+            }
+            seen.clear();
+            visited.clear();
+            stack.clear();
+            seen.insert(start);
+            stack.push(start);
+            let mut connected = false;
+            while let Some(n) = stack.pop() {
+                visited.push(n);
+                // A big area is the main one in all but name.
+                if visited.len() > 4000 {
+                    connected = true;
+                    break;
+                }
+                for d in 0..8 {
+                    let Some(next) = grid.walk_link(n, d) else { continue };
+                    if !seen.insert(next) {
+                        continue;
+                    }
+                    if main[next as usize] && !inside(grid.pos(next)) {
+                        connected = true;
+                        break;
+                    }
+                    stack.push(next);
+                }
+                if connected {
+                    break;
+                }
+            }
+            for &n in &visited {
+                if inside(grid.pos(n)) {
+                    main[n as usize] = connected;
+                    settled.insert(n);
+                }
+            }
+            if connected {
+                // Everything still queued is joined to the same place.
+                for &n in &stack {
+                    if inside(grid.pos(n)) {
+                        main[n as usize] = true;
+                        settled.insert(n);
+                    }
+                }
+            }
+        }
+    }
 }
 
 /// A nearby standable spot out of sight of `threat` (an eye position),

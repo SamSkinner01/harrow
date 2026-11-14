@@ -16,7 +16,8 @@ use bevy::prelude::*;
 
 use super::nav::{BARRICADE, BreachLink, EDGE, LEDGE, LinkKind, NavGrid, NodeId, STAND};
 
-/// Reused search buffers (one search at a time).
+/// Reused search buffers (one search at a time, which may be spread over
+/// several calls: [`PathScratch::begin`], [`PathScratch::resume`]).
 #[derive(Resource, Default)]
 pub struct PathScratch {
     g: Vec<f32>,
@@ -24,7 +25,9 @@ pub struct PathScratch {
     via: Vec<LinkKind>,
     stamp: Vec<u32>,
     generation: u32,
-    /// Searches run this frame (for budgets and stats).
+    open: BinaryHeap<(Reverse<u32>, NodeId)>,
+    pending: Option<Pending>,
+    /// Searches started and nodes expanded so far (stats).
     pub searches: u32,
     pub expansions: u64,
 }
@@ -40,6 +43,12 @@ pub struct PathOptions {
     /// charge; `None` = can't (carries none).
     pub breach: Option<f32>,
     pub max_expansions: u32,
+    /// Weight of the distance-to-goal estimate: 1 finds the cheapest path;
+    /// above 1 usually searches less of a big map, for a path at most that
+    /// many times as costly (in practice the same or a few percent more).
+    /// Much above 1 makes the worst cases (dead ends towards the goal)
+    /// worse, not better.
+    pub greed: f32,
 }
 
 /// One waypoint.
@@ -79,7 +88,8 @@ pub const COST_BREACH: f32 = 14.0;
 /// For a stack that is meant to open a second way in.
 pub const COST_BREACH_PREFERRED: f32 = 2.0;
 
-/// Shortest path from `from` to `to`. `penalty` adds a cost per entered node.
+/// Shortest path from `from` to `to`, searched in one go. `penalty` adds a
+/// cost per entered node.
 pub fn find_path(
     grid: &NavGrid,
     scratch: &mut PathScratch,
@@ -88,95 +98,167 @@ pub fn find_path(
     options: PathOptions,
     penalty: &dyn Fn(NodeId) -> f32,
 ) -> Option<Path> {
-    if !grid.ready || !grid.exists(from) || !grid.exists(to) {
+    if !scratch.begin(grid, from, to, options) {
         return None;
     }
-    let n = grid.node_capacity();
-    if scratch.g.len() != n {
-        scratch.g = vec![0.0; n];
-        scratch.parent = vec![u32::MAX; n];
-        scratch.via = vec![LinkKind::Walk; n];
-        scratch.stamp = vec![0; n];
+    let mut budget = u32::MAX;
+    match scratch.resume(grid, &mut budget, penalty) {
+        Search::Found(path) => Some(path),
+        _ => None,
     }
-    scratch.generation = scratch.generation.wrapping_add(1).max(1);
-    scratch.searches += 1;
-    let generation = scratch.generation;
-    let goal = grid.pos(to);
-    let mut open = BinaryHeap::new();
-    let visit = |s: &mut PathScratch, id: NodeId, g: f32, parent: u32, via: LinkKind| {
+}
+
+/// How a search spread over several calls is going.
+pub enum Search {
+    /// Out of budget for now; call `resume` again.
+    Running,
+    Found(Path),
+    Failed,
+}
+
+/// A search in progress.
+#[derive(Clone, Copy)]
+struct Pending {
+    from: NodeId,
+    to: NodeId,
+    options: PathOptions,
+    expansions: u32,
+    /// Grid revision it started on (a change restarts it).
+    revision: u32,
+}
+
+impl PathScratch {
+    /// Start a search from `from` to `to` (dropping any in progress); false
+    /// if either node doesn't exist. Continue it with [`Self::resume`].
+    pub fn begin(&mut self, grid: &NavGrid, from: NodeId, to: NodeId, options: PathOptions) -> bool {
+        self.pending = None;
+        self.open.clear();
+        if !grid.ready || !grid.exists(from) || !grid.exists(to) {
+            return false;
+        }
+        let n = grid.node_capacity();
+        if self.g.len() != n {
+            self.g = vec![0.0; n];
+            self.parent = vec![u32::MAX; n];
+            self.via = vec![LinkKind::Walk; n];
+            self.stamp = vec![0; n];
+        }
+        self.generation = self.generation.wrapping_add(1).max(1);
+        self.searches += 1;
+        self.visit(from, 0.0, u32::MAX, LinkKind::Walk);
+        let h = grid.pos(from).distance(grid.pos(to)) * options.greed.max(1.0);
+        self.open.push((Reverse(h.to_bits()), from));
+        self.pending = Some(Pending { from, to, options, expansions: 0, revision: grid.revision });
+        true
+    }
+
+    /// Drop the search in progress.
+    pub fn cancel(&mut self) {
+        self.pending = None;
+        self.open.clear();
+    }
+
+    fn visit(&mut self, id: NodeId, g: f32, parent: u32, via: LinkKind) {
         let i = id as usize;
-        s.stamp[i] = generation;
-        s.g[i] = g;
-        s.parent[i] = parent;
-        s.via[i] = via;
-    };
-    visit(scratch, from, 0.0, u32::MAX, LinkKind::Walk);
-    open.push((Reverse(grid.pos(from).distance(goal).to_bits()), from));
-    let mut expansions = 0;
-    let mut found = false;
-    while let Some((Reverse(f_bits), id)) = open.pop() {
-        if id == to {
-            found = true;
-            break;
+        self.stamp[i] = self.generation;
+        self.g[i] = g;
+        self.parent[i] = parent;
+        self.via[i] = via;
+    }
+
+    /// Continue the search in progress, expanding at most `budget` nodes
+    /// (taken off `budget`). A changed grid restarts it.
+    pub fn resume(&mut self, grid: &NavGrid, budget: &mut u32, penalty: &dyn Fn(NodeId) -> f32) -> Search {
+        let Some(mut pending) = self.pending else {
+            return Search::Failed;
+        };
+        if grid.revision != pending.revision {
+            if !self.begin(grid, pending.from, pending.to, pending.options) {
+                return Search::Failed;
+            }
+            pending = self.pending.expect("just begun");
         }
-        let g = scratch.g[id as usize];
-        let h = grid.pos(id).distance(goal);
-        // Stale heap entry (a cheaper route was found since).
-        if f32::from_bits(f_bits) > g + h + 1e-3 {
-            continue;
-        }
-        expansions += 1;
-        if expansions > options.max_expansions {
-            break;
-        }
-        for (next, kind, length) in grid.links(id) {
-            let node = grid.node(next);
-            let mut cost = length;
-            match kind {
-                LinkKind::Walk => {}
-                LinkKind::Drop => cost += COST_DROP,
-                LinkKind::Breach => match options.breach {
-                    Some(extra) => cost += extra,
-                    None => continue,
-                },
+        let (to, options) = (pending.to, pending.options);
+        let goal = grid.pos(to);
+        let greed = options.greed.max(1.0);
+        let generation = self.generation;
+        let mut found = false;
+        let mut out_of_budget = false;
+        while let Some((Reverse(f_bits), id)) = self.open.pop() {
+            if id == to {
+                found = true;
+                break;
             }
-            if node.flags & BARRICADE != 0 {
-                let Some(extra) = options.barricades else { continue };
-                cost += extra;
-            }
-            // Keep off walls a little, and off ledges a lot.
-            if node.flags & LEDGE != 0 {
-                cost += COST_LEDGE;
-            } else if node.flags & EDGE != 0 {
-                cost += COST_EDGE;
-            }
-            if node.flags & STAND == 0 {
-                cost *= COST_CROUCH;
-            }
-            cost += penalty(next);
-            let g_next = g + cost;
-            let i = next as usize;
-            if scratch.stamp[i] == generation && scratch.g[i] <= g_next {
+            let g = self.g[id as usize];
+            let h = grid.pos(id).distance(goal) * greed;
+            // Stale heap entry (a cheaper route was found since).
+            if f32::from_bits(f_bits) > g + h + 1e-3 {
                 continue;
             }
-            visit(scratch, next, g_next, id, kind);
-            let f = g_next + grid.pos(next).distance(goal);
-            open.push((Reverse(f.to_bits()), next));
+            if *budget == 0 {
+                self.open.push((Reverse(f_bits), id));
+                out_of_budget = true;
+                break;
+            }
+            *budget -= 1;
+            pending.expansions += 1;
+            self.expansions += 1;
+            if pending.expansions > options.max_expansions {
+                break;
+            }
+            for (next, kind, length) in grid.links(id) {
+                let node = grid.node(next);
+                let mut cost = length;
+                match kind {
+                    LinkKind::Walk => {}
+                    LinkKind::Drop => cost += COST_DROP,
+                    LinkKind::Breach => match options.breach {
+                        Some(extra) => cost += extra,
+                        None => continue,
+                    },
+                }
+                if node.flags & BARRICADE != 0 {
+                    let Some(extra) = options.barricades else { continue };
+                    cost += extra;
+                }
+                // Keep off walls a little, and off ledges a lot.
+                if node.flags & LEDGE != 0 {
+                    cost += COST_LEDGE;
+                } else if node.flags & EDGE != 0 {
+                    cost += COST_EDGE;
+                }
+                if node.flags & STAND == 0 {
+                    cost *= COST_CROUCH;
+                }
+                cost += penalty(next);
+                let g_next = g + cost;
+                let i = next as usize;
+                if self.stamp[i] == generation && self.g[i] <= g_next {
+                    continue;
+                }
+                self.visit(next, g_next, id, kind);
+                let f = g_next + grid.pos(next).distance(goal) * greed;
+                self.open.push((Reverse(f.to_bits()), next));
+            }
         }
+        if out_of_budget {
+            self.pending = Some(pending);
+            return Search::Running;
+        }
+        self.cancel();
+        if !found {
+            return Search::Failed;
+        }
+        // Walk back.
+        let mut chain = Vec::new();
+        let mut id = to;
+        while id != u32::MAX {
+            chain.push((id, self.via[id as usize]));
+            id = self.parent[id as usize];
+        }
+        chain.reverse();
+        Search::Found(smooth(grid, &chain, self.g[to as usize]))
     }
-    scratch.expansions += expansions as u64;
-    if !found {
-        return None;
-    }
-    // Walk back.
-    let mut chain = Vec::new();
-    let mut id = to;
-    while id != u32::MAX {
-        chain.push((id, scratch.via[id as usize]));
-        id = scratch.parent[id as usize];
-    }
-    chain.reverse();
-    Some(smooth(grid, &chain, scratch.g[to as usize]))
 }
 
 /// Turn a node chain into sparse waypoints.
