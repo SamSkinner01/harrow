@@ -62,29 +62,92 @@
         bob_roll: 0.35,
     ),
     lighting: (
+        // ---- Sun and exposure ----
         // Camera exposure (EV100). Lower = brighter image. 15 = bright sun.
         exposure: 15.0,
-        // Direct sun, lux. Real desert sun is ~100000.
+        // Direct sun, lux. Real desert sun is ~100000. Colour is linear RGB.
         sun: 100000.0,
-        // Sky fill light in shade, cd/m2. Lower = deeper shadows.
-        ambient: 3500.0,
-        // Eye adaptation: how many stops brighter the view may get when you
-        // look into dark interiors (0 = off). Outdoors is never changed.
-        adaptation_max: 2.0,
+        sun_colour: (1.0, 0.9, 0.76),
+        // Where the sun is: degrees above the horizon, and compass bearing
+        // (0 north, 90 east, 180 south). The sky image is turned to match;
+        // keep the elevation near the sky's own (kiara_5_noon: 51.2).
+        sun_elevation: 51.2,
+        sun_azimuth: 148.5,
+        // ---- Sky and haze ----
+        // Sky cubemap (made by tools/scripts/build_sky.sh) and its brightness
+        // (the sky's mean luminance, cd/m2).
+        sky: "sky/kiara_5_noon.ktx2",
+        sky_brightness: 6500.0,
+        // Desert haze: colour of the sky's horizon (linear, in the sky
+        // image's units; printed by build_sky.sh) and the distance in metres
+        // at which it swallows everything. It grows with the square of the
+        // distance, so rooms and yards stay clear.
+        fog_colour: (1.0, 0.92, 1.0),
+        fog_visibility: 950.0,
+        // Sun glow in the haze when looking towards the sun, 0..1.
+        fog_sun_glow: 0.35,
+        // ---- Ambient ----
+        // Outdoor fill from the sky (shadowed sides, under arches), cd/m2,
+        // and its colour facing up (sky), sideways and down (sand bounce).
+        sky_fill: 3200.0,
+        sky_fill_colours: ((0.80, 0.92, 1.12), (1.10, 1.02, 0.90), (1.45, 1.20, 0.90)),
+        // Extra fill on the weapon in your hands (multiplier), so the dark
+        // metal doesn't turn into a silhouette in shade.
+        weapon_fill: 3.0,
+        // Fill inside buildings (replaces the sky fill there), cd/m2, and its
+        // colours. Lower = darker interiors; lanterns and sun through the
+        // openings do the rest.
+        interior_fill: 260.0,
+        interior_fill_colours: ((0.80, 0.76, 0.70), (1.0, 0.93, 0.82), (1.05, 0.92, 0.74)),
+        // A uniform floor added everywhere, cd/m2 (basements, odd corners).
+        ambient: 15.0,
+        // ---- Eye adaptation ----
+        // How many stops brighter the view may get when you look into dark
+        // interiors (0 = off). Outdoors is never changed.
+        adaptation_max: 2.5,
         // Scene brightness (log2) below which adaptation starts. Raise it to
         // adapt sooner, lower it to keep interiors darker.
         adaptation_threshold: -3.0,
-        // Interior lanterns: brightness (game units, not real lumens), colour
-        // (warm), and how far the light reaches in metres.
-        lamp_intensity: 400000.0,
-        lamp_colour: (1.0, 0.78, 0.52),
-        lamp_range: 9.0,
+        // Adaptation speed, stops per second: (getting brighter, darker).
+        adaptation_speed: (1.2, 2.5),
+        // ---- Image ----
+        // Display transform: AgX (soft, muted highlights), TonyMcMapface,
+        // AcesFitted (punchy), BlenderFilmic, KhronosPbrNeutral.
+        tonemapper: AgX,
+        // Colour grading. temperature: + warmer (small values, ~0.0-0.08);
+        // tint: + magenta / - green. Saturations multiply (1 = unchanged):
+        // overall, then extra for shadows and highlights. highlight_gain
+        // brightens the bright parts; post_saturation acts after tonemapping.
+        grading: (
+            temperature: 0.03,
+            tint: 0.0,
+            saturation: 0.92,
+            shadow_saturation: 0.85,
+            highlight_saturation: 0.85,
+            highlight_gain: 1.0,
+            post_saturation: 0.95,
+        ),
+        // Bloom strength (0 = off) and threshold (0 = everything glows a
+        // little, energy-conserving; above 0 only brighter parts, additive).
+        bloom: 0.06,
+        bloom_threshold: 0.0,
+        // Ambient occlusion: sample radius and assumed thickness, metres.
+        ssao_radius: 0.8,
+        ssao_thickness: 0.3,
+        // ---- Lanterns ----
+        // Brightness (game units, not real lumens), colour (warm), how far
+        // the light reaches in metres, and how bright the glass glows.
+        lamp_intensity: 2000000.0,
+        lamp_colour: (1.0, 0.86, 0.68),
+        lamp_range: 10.0,
+        lamp_glow: 60000.0,
         // Lanterns that cast no shadows (small rooms; shadows cost a render
         // pass each) light through walls, so they are dimmer and reach less
         // far: intensity and range are multiplied by this.
         unshadowed_lamp_scale: 0.7,
         // Shadow-casting lanterns only cast shadows when the camera is within
-        // this many metres (each shadow map costs a render pass).
+        // this many metres (each shadow map costs a render pass). The
+        // graphics quality setting scales it (Low: none).
         lamp_shadow_distance: 16.0,
     ),
     // Per-surface look. scale = metres one texture repeat covers.

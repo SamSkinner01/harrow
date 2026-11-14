@@ -86,11 +86,40 @@ Bevy's API changes between releases, so everything is pinned with `=` in
 | F5 | Third-person debug view |
 | F12 | Save screenshot to `screenshots/` |
 
-Hold vs. toggle for sprint, crouch, lean and aiming is set in the tuning file.
+Hold vs. toggle for sprint, crouch, lean and aiming: Settings (below), or
+the tuning file.
+
+## Settings
+
+**Settings** (main menu or pause menu) has controls (mouse sensitivity,
+invert Y, field of view, hold/toggle for sprint, crouch, lean and aim),
+audio (master and effects volume), graphics (a quality preset: Low,
+Medium, High, Ultra; or anti-aliasing, ambient occlusion, shadows, bloom
+and contact shadows one by one) and display (windowed/fullscreen, V-sync,
+FPS counter). Mouse or keyboard: Up/Down (Tab) to move, Left/Right to
+change, Enter, Esc to go back. Changes apply at once and are saved when you
+leave the page, in `~/.config/harrow/settings.ron` (Windows:
+`%APPDATA%\harrow\settings.ron`), next to the menu's `menu.ron`.
+
+Controls you never change follow the tuning file; once set, a setting wins
+over it ("Reset to defaults" hands them back). Volumes multiply the tuning
+volumes. Automated runs (`--screenshot`, test scripts) ignore the saved
+settings so results don't depend on who runs them.
+
+| Preset | Anti-aliasing | Ambient occlusion | Shadows | Bloom | Contact shadows |
+|---|---|---|---|---|---|
+| Low | FXAA | off | 1024 px, 2 cascades, 60 m, no lantern shadows | off | off |
+| Medium | SMAA | low | 2048 px, 3 cascades, 80 m | on | off |
+| High (default) | TAA | medium | 2048 px, 4 cascades, 100 m | on | on |
+| Ultra | TAA | high | 4096 px, 4 cascades, 120 m | on | on |
+
+**Credits** (main or pause menu) shows `CREDITS.md`.
 
 ## Tuning
 
-Movement, look, lighting, per-surface look (texture scale and tint) and
+Movement, look, lighting (sun, sky, haze, fill light, eye adaptation,
+tonemapping and grading, bloom, SSAO: see DESIGN.md, "Look and feel"),
+per-surface look (texture scale and tint) and
 weapons (damage, recoil, spread, reloads, the weapon models and where they sit
 on screen) live in `assets/config/tuning.ron`. Edit and save while the game is running and the
 changes apply immediately. A mistake in the file is logged and ignored.
@@ -109,6 +138,7 @@ tools/scripts/build_characters.sh                # Blender -> assets/models/char
 tools/scripts/build_characters.sh --only lark    # rebuild one operator
 tools/scripts/build_characters.sh --preview DIR  # also render each operator and some poses to DIR
 python3 tools/scripts/fetch_character_textures.py  # re-download CC0 cloth/leather detail maps
+tools/scripts/build_sky.sh kiara_5_noon_4k.hdr   # HDRI -> assets/sky/kiara_5_noon.ktx2 (sky cubemap; prints the haze colour)
 ```
 
 On Windows use `tools/scripts/build_kit.ps1`. Kit conventions are documented
@@ -156,7 +186,7 @@ on connect and refuses a different build with "Version mismatch".
   address is remembered (`~/.config/harrow/menu.ron` on Linux,
   `%APPDATA%\harrow\menu.ron` on Windows).
 
-In game, **Esc** opens the pause menu (Resume, Leave to menu, Quit). If
+In game, **Esc** opens the pause menu (Resume, Settings, Credits, Leave to menu, Quit). If
 the connection fails or drops you're taken back to the menu with the
 reason ("Server not responding", "Version mismatch", "Server full",
 "Disconnected...").
@@ -258,6 +288,8 @@ cargo run -- --stance crouch --lean left       # hold a stance / lean
 cargo run -- --third-person --hitboxes         # start with debug views on
 cargo run -- --trace-player                    # log position 4x per second, and every footstep
 cargo run -- --no-vsync                        # uncapped frame rate (performance checks)
+cargo run -- --window 1920x1080 --quality ultra  # window size; graphics preset (low/medium/high/ultra)
+tools/scripts/look_shots.sh /tmp/look --no-vsync # six reference views + contact sheet + fps (look checks)
 cargo run -- --team defenders --operator fathom  # your starting side and operator (solo testing)
 cargo run -- --no-round --operator lark          # free play: no round loop; --operator still gives that gadget
 cargo run -- --round-test                        # short round timers and a short match (round.test_timers)

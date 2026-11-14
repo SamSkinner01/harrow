@@ -5,7 +5,11 @@
 use bevy::prelude::*;
 
 use super::{BulletHit, WeaponAction, WeaponState};
-use crate::{config::Tuning, player::LocalPlayer};
+use crate::{
+    config::Tuning,
+    player::LocalPlayer,
+    ui::style::{self, palette, size, space},
+};
 
 pub struct WeaponHudPlugin;
 
@@ -44,18 +48,12 @@ struct MarkerState {
     lethal: bool,
 }
 
-const TEXT: Color = Color::srgba(1.0, 1.0, 1.0, 0.92);
-const DIM: Color = Color::srgba(1.0, 1.0, 1.0, 0.6);
-const LOW: Color = Color::srgb(1.0, 0.72, 0.25);
-const EMPTY: Color = Color::srgb(1.0, 0.3, 0.25);
+// Shared HUD style (`ui::style`).
+const TEXT: Color = palette::TEXT;
+const DIM: Color = palette::DIM;
+const LOW: Color = palette::ATTACK;
+const EMPTY: Color = palette::ALERT;
 const BAR_WIDTH: f32 = 150.0;
-
-fn font(size: f32) -> TextFont {
-    TextFont {
-        font_size: FontSize::Px(size),
-        ..default()
-    }
-}
 
 fn spawn_hud(mut commands: Commands) {
     // Bottom right: weapon name, ammo, reload bar.
@@ -63,8 +61,8 @@ fn spawn_hud(mut commands: Commands) {
         Name::new("Weapon HUD"),
         Node {
             position_type: PositionType::Absolute,
-            right: px(28.0),
-            bottom: px(24.0),
+            right: px(space::EDGE + 6.0),
+            bottom: px(space::EDGE),
             flex_direction: FlexDirection::Column,
             align_items: AlignItems::FlexEnd,
             row_gap: px(2.0),
@@ -72,7 +70,7 @@ fn spawn_hud(mut commands: Commands) {
         },
         Pickable::IGNORE,
         children![
-            (WeaponName, Text::new(""), font(14.0), TextColor(DIM)),
+            (WeaponName, Text::new(""), style::bold(size::SMALL), TextColor(DIM)),
             (
                 Node {
                     flex_direction: FlexDirection::Row,
@@ -81,8 +79,8 @@ fn spawn_hud(mut commands: Commands) {
                     ..default()
                 },
                 children![
-                    (MagazineText, Text::new(""), font(34.0), TextColor(TEXT)),
-                    (ReserveText, Text::new(""), font(18.0), TextColor(DIM)),
+                    (MagazineText, Text::new(""), style::bold(size::TITLE + 6.0), TextColor(TEXT)),
+                    (ReserveText, Text::new(""), style::text(size::LARGE), TextColor(DIM)),
                 ],
             ),
             (
@@ -92,7 +90,7 @@ fn spawn_hud(mut commands: Commands) {
                     height: px(4.0),
                     ..default()
                 },
-                BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.5)),
+                BackgroundColor(palette::BAR_TRACK),
                 Visibility::Hidden,
                 children![(
                     ReloadFill,
@@ -101,7 +99,7 @@ fn spawn_hud(mut commands: Commands) {
                         height: percent(100.0),
                         ..default()
                     },
-                    BackgroundColor(Color::srgba(1.0, 1.0, 1.0, 0.85)),
+                    BackgroundColor(palette::ACCENT),
                 )],
             ),
         ],

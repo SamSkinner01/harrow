@@ -22,6 +22,8 @@ mod physics;
 mod player;
 mod round;
 mod session;
+#[cfg(feature = "client")]
+mod settings;
 mod ui;
 mod weapons;
 
@@ -103,7 +105,7 @@ fn main() -> AppExit {
         .add_plugins((ui::UiPlugin, debug::DebugPlugin));
     #[cfg(feature = "client")]
     if !launch.dedicated {
-        app.add_plugins(menu::MenuPlugin);
+        app.add_plugins((menu::MenuPlugin, settings::SettingsPlugin));
     }
     app.run()
 }

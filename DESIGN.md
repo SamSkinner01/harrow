@@ -1158,6 +1158,83 @@ walled courtyard (16 x 12 m) with an arched gate to the south; stairs up
 the west hall; a wooden floor with a hatch over the storeroom; one site
 pair (storeroom / upper east room), attackers outside the courtyard gate.
 
+## Look and feel (polish pass, 2026-11-14)
+
+Target: grounded military realism in a sun-bleached desert fortress.
+Harsh sun, deep interior shadows, a muted sand and ochre palette;
+believable rather than photoreal. Code: `src/map/environment.rs` (sun),
+`src/map/look.rs` (cameras, sky, fill light, post-processing; client
+only), `src/map/lamps.rs`; every number is in the `lighting` section of
+the tuning file.
+
+**Light.** No baked GI, so indirect light is faked by area:
+- The sun: 100 000 lux, slightly warm, 51 deg up (the sky image's own
+  sun) from the south-south-east (bearing 148.5), four shadow cascades to
+  100 m, plus screen-space contact shadows for small-scale grounding.
+- Outdoors: a sky-fill environment light on the camera, a three-colour
+  hemisphere (blue-grey sky above, horizon, warm sand bounce below),
+  `sky_fill` cd/m2. SSAO darkens it in creases and under props.
+- Indoors: one light-probe box per building (keep, third-floor block,
+  barracks, granary, old hall, gatehouse, four towers) with a much dimmer,
+  warmer fill (`interior_fill`). Inside a box it replaces the sky fill. The
+  boxes end on the outer walls' centre lines, so the outside of a wall is
+  sky-lit and the inside isn't. Bevy uses at most 8 probes per view; the
+  8 nearest to the camera are kept on. Sun through doors and windows and the
+  lanterns do the rest.
+- `GlobalAmbientLight` is only a tiny floor (basements, odd corners).
+
+**Eye adaptation.** The base exposure is sunlight (EV100 15); auto exposure
+only ever brightens, by up to `adaptation_max` stops when the view is dark
+(below `adaptation_threshold`), at 1.2 stops/s (2.5 back). Interiors end up
+dark but readable; the yard seen through a door stays sun-bright and
+blooms.
+
+**Image.** HDR, AgX tonemapping (soft highlight roll-off, muted colours),
+slight warm white balance and desaturation (more in shadows and
+highlights), energy-conserving bloom at a low strength, debanding. No
+contrast or lift in the grading: Bevy applies them around 0.5 in linear
+light *before* eye adaptation, which crushed dark interiors to black (and
+red). Haze: exponential-squared distance fog (none inside a room, thick
+only far out in the desert), coloured like the sky's horizon at the base
+exposure so the 1 km desert floor melts into the sky.
+
+**Sky.** Kiara 5 Noon (Poly Haven, CC0; a dry valley ringed by distant
+mountains, sun 51 deg) converted to a 6 x 1024 px rgb9e5 KTX2
+cubemap by `tools/scripts/build_sky.sh`; the sun is turned to due south in
+the file and the skybox is rotated by `sun_azimuth` at runtime, so the sun
+in the sky always matches the sun light and shadows. Its distant mountains sit
+on the horizon beyond our desert floor, which runs out 3 km so that even
+from the towers and the menu's high view its edge is lost in the haze.
+(Goegap was the first pick: from above, its nearby rock hill loomed right
+behind the keep. Qwantani Noon has no horizon at all.)
+
+**Anti-aliasing and the weapon.** TAA (High/Ultra), SMAA (Medium) or FXAA
+(Low) on the world camera; all need MSAA off, which SSAO also requires. The
+weapon is drawn by its own LDR camera after TAA, so it never smears; it
+gets the same tonemapper, grading and sky fill (and the interior probes,
+which are on its render layer too), but no HDR effects. TAA history is
+reset when a camera comes back on (drone/CCTV view) or cuts (menu to game).
+
+**Graphics settings** (settings screen): presets Low/Medium/High/Ultra or
+each of anti-aliasing, ambient occlusion, shadows (sun shadow map size,
+cascades and distance; lantern shadow reach), bloom and contact shadows.
+See README, "Settings".
+
+**Menus and HUD.** One style for everything (`src/ui/style.rs`): Noto
+Sans Condensed (OFL) for text, the monospace default font only where text is
+laid out in columns; warm off-white on dark translucent panels with a
+thin sand-coloured accent edge; attackers ochre, defenders muted blue,
+alerts red; six text sizes (12, 14, 16, 21, 30, 44, plus the 96 px
+wordmark). The main menu is a left column over a slow drift above the keep
+(camera sweeping the south side with the sun behind it); settings, credits,
+pause and connecting are centred cards. Keyboard: Up/Down/Tab, Enter,
+Left/Right, Esc. All HUD roots sit under one HUD layer (`ui::HudLayer`)
+that is hidden outside the game, so nothing of the HUD shows behind the
+main menu.
+
+**Performance** (RTX 4070 Ti Super, 1920x1080, `--no-vsync`, free play):
+TABLE
+
 ## Open questions
 
 - Vault action (see Movement).

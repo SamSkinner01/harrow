@@ -6,7 +6,11 @@
 use bevy::{prelude::*, transform::TransformSystems};
 
 use super::{Activity, BreachCharge, BreachCharges, Reinforcements, melee::MeleeState};
-use crate::{combat::Team, player::LocalPlayer};
+use crate::{
+    combat::Team,
+    player::LocalPlayer,
+    ui::style::{self, palette, size, space},
+};
 
 pub struct DestructionHudPlugin;
 
@@ -34,15 +38,11 @@ struct ProgressFill;
 struct GadgetText;
 
 fn spawn_hud(mut commands: Commands) {
-    let font = |size: f32| TextFont {
-        font_size: FontSize::Px(size),
-        ..default()
-    };
     commands.spawn((
         Name::new("Destruction HUD"),
         Node {
             position_type: PositionType::Absolute,
-            bottom: px(28.0),
+            bottom: px(space::EDGE),
             width: percent(100.0),
             flex_direction: FlexDirection::Column,
             align_items: AlignItems::Center,
@@ -51,15 +51,17 @@ fn spawn_hud(mut commands: Commands) {
         },
         Pickable::IGNORE,
         children![
-            (StatusText, Text::new(""), font(16.0), TextColor(Color::srgba(1.0, 1.0, 1.0, 0.9))),
+            (StatusText, Text::new(""), style::text(size::BODY), TextColor(palette::TEXT)),
             (
                 ProgressBar,
                 Node {
-                    width: px(220.0),
-                    height: px(6.0),
+                    width: px(260.0),
+                    height: px(8.0),
+                    border: UiRect::all(px(1.0)),
                     ..default()
                 },
-                BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.55)),
+                BorderColor::all(palette::BAR_EDGE),
+                BackgroundColor(palette::BAR_TRACK),
                 Visibility::Hidden,
                 children![(
                     ProgressFill,
@@ -68,10 +70,10 @@ fn spawn_hud(mut commands: Commands) {
                         height: percent(100.0),
                         ..default()
                     },
-                    BackgroundColor(Color::srgba(0.95, 0.85, 0.55, 0.95)),
+                    BackgroundColor(palette::ACCENT),
                 )],
             ),
-            (GadgetText, Text::new(""), font(13.0), TextColor(Color::srgba(1.0, 1.0, 1.0, 0.7))),
+            (GadgetText, Text::new(""), style::text(size::SMALL), TextColor(palette::DIM)),
         ],
     ));
 }

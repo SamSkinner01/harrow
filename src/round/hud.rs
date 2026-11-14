@@ -1,8 +1,8 @@
-//! Round HUD, in the same style as `src/ui` (white text on translucent black
-//! panels): score, round, phase and timer at the top; operator card bottom
-//! left; objective prompt with a progress bar under the crosshair; short
-//! notices; site and defuser labels that follow the world; the operator
-//! selection screen; the round-end and match-end banners.
+//! Round HUD, in the shared UI style (`ui::style`: warm text on dark
+//! translucent panels): score, round, phase and timer at the top; operator
+//! card bottom left; objective prompt with a progress bar under the
+//! crosshair; short notices; site and defuser labels that follow the world;
+//! the operator selection screen; the round-end and match-end banners.
 //!
 //! Presentation only: reads the round state, never changes it.
 
@@ -17,6 +17,7 @@ use super::{
 use crate::{
     combat::{Dead, Team},
     config::Tuning,
+    ui::style::{self, palette, size, space},
     destruction::BreachCharges,
     gadgets::{
         CctvCamera, GadgetEvent, ReconStock, RemoteViewCamera, SecondaryGadget, SecondaryStock,
@@ -48,13 +49,13 @@ impl Plugin for RoundHudPlugin {
     }
 }
 
-const PANEL: Color = Color::srgba(0.0, 0.0, 0.0, 0.45);
-const TEXT: Color = Color::srgba(1.0, 1.0, 1.0, 0.9);
-const DIM: Color = Color::srgba(1.0, 1.0, 1.0, 0.65);
-const ATTACK: Color = Color::srgb(0.98, 0.70, 0.32);
-const DEFEND: Color = Color::srgb(0.48, 0.80, 0.98);
-const ALERT: Color = Color::srgb(1.0, 0.35, 0.25);
-const SITE: Color = Color::srgb(0.95, 0.75, 0.25);
+const PANEL: Color = palette::PANEL;
+const TEXT: Color = palette::TEXT;
+const DIM: Color = palette::DIM;
+const ATTACK: Color = palette::ATTACK;
+const DEFEND: Color = palette::DEFEND;
+const ALERT: Color = palette::ALERT;
+const SITE: Color = palette::SITE;
 
 fn side_color(team: Team) -> Color {
     match team {
@@ -113,12 +114,6 @@ struct Notice {
     shown_at: f32,
 }
 
-fn font(size: f32) -> TextFont {
-    TextFont {
-        font_size: FontSize::Px(size),
-        ..default()
-    }
-}
 
 fn spawn_hud(mut commands: Commands, layout: Res<KeepLayout>) {
     let root = commands
@@ -141,7 +136,7 @@ fn spawn_hud(mut commands: Commands, layout: Res<KeepLayout>) {
         ChildOf(root),
         Node {
             position_type: PositionType::Absolute,
-            top: px(10.0),
+            top: px(space::EDGE),
             width: percent(100.0),
             justify_content: JustifyContent::Center,
             ..default()
@@ -150,13 +145,15 @@ fn spawn_hud(mut commands: Commands, layout: Res<KeepLayout>) {
             Node {
                 flex_direction: FlexDirection::Column,
                 align_items: AlignItems::Center,
-                padding: UiRect::axes(px(14.0), px(6.0)),
+                padding: UiRect::axes(px(16.0), px(5.0)),
+                border: UiRect::top(px(2.0)),
                 ..default()
             },
+            BorderColor::all(palette::ACCENT),
             BackgroundColor(PANEL),
             children![
-                (ScoreText, Text::new(""), font(15.0), TextColor(TEXT)),
-                (PhaseText, Text::new(""), font(22.0), TextColor(TEXT)),
+                (ScoreText, Text::new(""), style::bold(size::SMALL), TextColor(TEXT)),
+                (PhaseText, Text::new(""), style::bold(size::LARGE), TextColor(TEXT)),
             ],
         )],
     ));
@@ -166,15 +163,17 @@ fn spawn_hud(mut commands: Commands, layout: Res<KeepLayout>) {
         ChildOf(root),
         CardText,
         Text::new(""),
-        font(14.0),
+        style::text(size::SMALL),
         TextColor(TEXT),
         Node {
             position_type: PositionType::Absolute,
-            left: px(12.0),
-            bottom: px(12.0),
-            padding: UiRect::all(px(8.0)),
+            left: px(space::EDGE),
+            bottom: px(space::EDGE),
+            padding: UiRect::axes(px(10.0), px(space::PAD)),
+            border: UiRect::left(px(2.0)),
             ..default()
         },
+        BorderColor::all(palette::ACCENT),
         BackgroundColor(PANEL),
     ));
 
@@ -194,7 +193,7 @@ fn spawn_hud(mut commands: Commands, layout: Res<KeepLayout>) {
             (
                 PromptText,
                 Text::new(""),
-                font(17.0),
+                style::text(size::BODY),
                 TextColor(TEXT),
                 TextLayout::justify(Justify::Center),
                 Node {
@@ -211,8 +210,8 @@ fn spawn_hud(mut commands: Commands, layout: Res<KeepLayout>) {
                     border: UiRect::all(px(1.0)),
                     ..default()
                 },
-                BorderColor::all(Color::srgba(1.0, 1.0, 1.0, 0.5)),
-                BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.55)),
+                BorderColor::all(palette::BAR_EDGE),
+                BackgroundColor(palette::BAR_TRACK),
                 children![(
                     PromptFill,
                     Node {
@@ -223,7 +222,7 @@ fn spawn_hud(mut commands: Commands, layout: Res<KeepLayout>) {
                     BackgroundColor(ATTACK),
                 )],
             ),
-            (NoticeText, Text::new(""), font(14.0), TextColor(TEXT)),
+            (NoticeText, Text::new(""), style::text(size::SMALL), TextColor(TEXT)),
         ],
     ));
 
@@ -247,13 +246,13 @@ fn spawn_hud(mut commands: Commands, layout: Res<KeepLayout>) {
                 row_gap: px(4.0),
                 ..default()
             },
-            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.6)),
+            BackgroundColor(PANEL),
             children![
-                (BannerTitle, Text::new(""), font(38.0), TextColor(TEXT)),
+                (BannerTitle, Text::new(""), style::bold(size::DISPLAY), TextColor(TEXT)),
                 (
                     BannerDetail,
                     Text::new(""),
-                    font(17.0),
+                    style::text(size::BODY),
                     TextColor(TEXT),
                     TextLayout::justify(Justify::Center),
                 ),
@@ -277,13 +276,16 @@ fn spawn_hud(mut commands: Commands, layout: Res<KeepLayout>) {
         children![(
             SelectText,
             Text::new(""),
-            font(16.0),
+            // Monospace: the roster is laid out in columns.
+            style::mono(size::BODY),
             TextColor(TEXT),
             Node {
-                padding: UiRect::all(px(16.0)),
+                padding: UiRect::all(px(18.0)),
+                border: UiRect::top(px(2.0)),
                 ..default()
             },
-            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.7)),
+            BorderColor::all(palette::ACCENT),
+            BackgroundColor(Color::srgba(0.045, 0.038, 0.03, 0.85)),
         )],
     ));
 
@@ -305,14 +307,14 @@ fn spawn_hud(mut commands: Commands, layout: Res<KeepLayout>) {
             children![(
                 LabelText,
                 Text::new(""),
-                font(14.0),
+                style::bold(size::SMALL),
                 TextColor(SITE),
                 TextLayout::justify(Justify::Center),
                 Node {
-                    padding: UiRect::axes(px(5.0), px(1.0)),
+                    padding: UiRect::axes(px(6.0), px(1.0)),
                     ..default()
                 },
-                BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.35)),
+                BackgroundColor(palette::PANEL_SOFT),
             )],
         ));
     }
@@ -621,7 +623,7 @@ fn update_banner(
             let won = round.squad_on(result.winner) == squad;
             set_visible(&mut banner, true);
             set_text(&mut title.0, if won { "ROUND WON" } else { "ROUND LOST" }.into());
-            title.1.0 = if won { Color::srgb(0.6, 0.95, 0.55) } else { ALERT };
+            title.1.0 = if won { palette::GOOD } else { ALERT };
             set_text(
                 &mut detail,
                 format!("{} WIN  -  {}\n{score}", team_label(result.winner), result.reason.label()),
@@ -631,7 +633,7 @@ fn update_banner(
             let won = winner == squad;
             set_visible(&mut banner, true);
             set_text(&mut title.0, if won { "MATCH WON" } else { "MATCH LOST" }.into());
-            title.1.0 = if won { Color::srgb(0.6, 0.95, 0.55) } else { ALERT };
+            title.1.0 = if won { palette::GOOD } else { ALERT };
             set_text(&mut detail, format!("{score}\nA new match starts shortly"));
         }
         _ => set_visible(&mut banner, false),
