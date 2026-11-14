@@ -11,7 +11,11 @@
 //! - `--hold-fire`: hold the trigger (full auto keeps firing).
 //! - `--fire-at <tick>` / `--reload-at <tick>`: pull the trigger / press
 //!   reload once at that fixed tick (64 per second).
-//! - `--dummies` (in `dummies.rs`): training dummies.
+//! - `--screenshot-on-hit <path>`: screenshot just after your first bullet
+//!   hit (hit marker, dummy feedback), then quit. No mouse grab.
+//! - `--dummies` (in `dummies.rs`): training dummies. `--no-viewmodel` (in
+//!   `viewmodel.rs`): don't draw the weapon. `--dump-weapon-sounds <dir>`
+//!   (in `audio.rs`): write the synthesised sounds as .wav files.
 //!
 //! The test drives the same intent components a bot will (`PlayerInput`,
 //! `WeaponInput`), so it exercises the real input-to-damage path.
