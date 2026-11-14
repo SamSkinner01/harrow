@@ -865,6 +865,15 @@ soft), `--ai-breach-test` (free play: breach into site A), `--ai-shots DIR`
 `--ai-spectate`. Bot cost is measured every frame and logged every 10 s
 (`ai: cost ...`).
 
+Measured on the full Harrow Keep (dev build, 5v5 of bots, 2026-11-14):
+three matches at 2x clock went 2-1, 2-1, 2-0 (eight rounds: five defender
+wins, four by elimination and one by disabling the defuser; three attacker
+wins by elimination, two of them after a plant); 0 of 43 checked shots
+went through stone, 1 failed path search, 12 stuck reports. At 1x without
+vsync: 230-395 fps, bots 0.02-0.07 ms a frame on average; the worst frames
+(2-9 ms) are round starts (the full map analysis, ~20 ms once per round,
+and the attack-route search).
+
 **Not yet:** bots don't use the ring cutter, backplate charges, drones,
 CCTV, razor wire or proximity alarms (the M6 part two gadgets), and never
 go prone or vault. Breach charges only open plain soft walls into a site,
