@@ -48,7 +48,7 @@ from .pipeline import Character, triangulate
 ARM_PREFIXES = ("clavicle", "upperarm", "lowerarm", "hand", "thumb", "index", "middle", "ring", "pinky")
 FINGERS = ("index", "middle", "ring", "pinky")
 # Keep the upper arm from this fraction of its length (shoulder = 0) down.
-UPPER_ARM_KEEP = 0.12
+UPPER_ARM_KEEP = 0.3
 # Clip length the reloads are authored over (the game rescales them).
 RELOAD_SECONDS = 2.4
 FPS = anim.FPS
@@ -286,7 +286,7 @@ def holds(nodes_by_weapon):
             rack_left=Hand(rack + Vector((-0.03, 0.01, 0.06)), (0.7, 0.1, -0.7), (0.3, 0.0, -0.95),
                            (-0.5, -0.5, -1.0), curl=(70, 75, 80, 82), thumb=(40, 35, 30)),
             rack_pull=(0.0, -0.075, 0.0),
-            stash=(-0.12, -0.25, -0.35),
+            stash=(-0.05, 0.0, -0.45),
         )
     n = nodes_by_weapon.get("acacia")
     if n is not None:

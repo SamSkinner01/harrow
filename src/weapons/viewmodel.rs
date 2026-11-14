@@ -676,7 +676,7 @@ fn pose_viewmodel(
             // Cant the weapon and bring it in.
             let tilt = bump(t, 0.0, 1.0).powf(0.6);
             // Lift it into view, muzzle up, rolled so the magazine well shows.
-            position += Vec3::new(-0.08, 0.1, 0.06) * tilt;
+            position += Vec3::new(-0.07, 0.09, 0.0) * tilt;
             rotation *= Quat::from_euler(EulerRot::YXZ, 0.35 * tilt, 0.25 * tilt, -0.5 * tilt);
             // Old magazine out (and gone), new one in.
             magazine_drop = if t < 0.55 {
