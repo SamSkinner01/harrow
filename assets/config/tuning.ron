@@ -95,4 +95,10 @@
         // Volume of your own footsteps (placeholder sound).
         volume: 0.7,
     ),
+    // ---- Weapons (M3) ----
+    weapons: (),
+    // ---- Destruction (M4) ----
+    destruction: (),
+    // ---- Round loop and gadgets (M6) ----
+    round: (),
 )

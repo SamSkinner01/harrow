@@ -240,6 +240,13 @@ fn toggled(current: Stance, pressed: Stance) -> Stance {
     if current == pressed { Stance::Stand } else { pressed }
 }
 
+/// Run condition: the mouse is captured, so gameplay input should be read.
+/// Other modules' input systems should use this too (menus, alt-tab).
+#[allow(dead_code)] // used by M3+ input systems
+pub fn input_captured(cursor: Single<&CursorOptions>) -> bool {
+    cursor.grab_mode != CursorGrabMode::None
+}
+
 fn grab_cursor(mut cursor: Single<&mut CursorOptions>) {
     cursor.grab_mode = CursorGrabMode::Locked;
     cursor.visible = false;

@@ -19,12 +19,16 @@ mod input;
 mod movement;
 
 pub use hitbox::HitZone;
-pub use input::AutomatedRun;
+#[allow(unused_imports)] // used by M3+ input systems
+pub use input::{AutomatedRun, input_captured};
 
 use avian3d::prelude::*;
 use bevy::prelude::*;
 
-use crate::config::{BodyTuning, Tuning};
+use crate::{
+    combat::{Health, Team},
+    config::{BodyTuning, Tuning},
+};
 
 pub struct PlayerPlugin;
 
@@ -173,6 +177,9 @@ fn spawn_local_player(mut commands: Commands, spawn: Res<SpawnPoint>, tuning: Re
                 ..default()
             },
             CharacterState::new(tuning.body.stand_height),
+            Health::new(100.0),
+            // Until the round loop assigns sides (M6).
+            Team::Attackers,
             // The transform origin is at the feet and rotates with yaw. The
             // movement capsule is built from `CharacterState::height` each
             // tick rather than stored as a collider, so a stance change is

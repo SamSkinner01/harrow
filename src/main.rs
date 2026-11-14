@@ -1,9 +1,12 @@
 //! HARROW: a tactical first-person attack/defense shooter.
 //!
 //! Each gameplay area lives in its own module and exposes a Bevy plugin.
-//! Modules that are still empty are placeholders for later milestones.
+//! Every plugin is registered here up front; a module that is still a
+//! placeholder simply does nothing.
 
 mod ai;
+mod characters;
+mod combat;
 mod config;
 mod debug;
 mod destruction;
@@ -27,16 +30,28 @@ fn main() -> AppExit {
             }),
             ..default()
         }))
+        // Engine-level setup first: input, physics, tuning values.
         .add_plugins((
             EnhancedInputPlugin,
             physics::PhysicsSetupPlugin,
             config::TuningPlugin,
         ))
+        // World and player.
         .add_plugins((
             map::MapPlugin,
+            combat::CombatPlugin,
             player::PlayerPlugin,
-            ui::UiPlugin,
-            debug::DebugPlugin,
         ))
+        // Gameplay systems (M3+).
+        .add_plugins((
+            weapons::WeaponsPlugin,
+            destruction::DestructionPlugin,
+            gadgets::GadgetsPlugin,
+            round::RoundPlugin,
+            characters::CharactersPlugin,
+            ai::AiPlugin,
+        ))
+        // Presentation and tools last.
+        .add_plugins((ui::UiPlugin, debug::DebugPlugin))
         .run()
 }

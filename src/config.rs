@@ -41,7 +41,29 @@ pub struct Tuning {
     pub lighting: LightingTuning,
     pub surfaces: HashMap<String, SurfaceTuning>,
     pub footsteps: FootstepTuning,
+    // Placeholder sections, filled in by M3 / M4 / M6.
+    #[allow(dead_code)]
+    pub weapons: WeaponTuning,
+    #[allow(dead_code)]
+    pub destruction: DestructionTuning,
+    #[allow(dead_code)]
+    pub round: RoundTuning,
 }
+
+/// Weapons (M3). Owned by `src/weapons`.
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct WeaponTuning {}
+
+/// Destruction (M4). Owned by `src/destruction`.
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct DestructionTuning {}
+
+/// Round loop and gadgets (M6). Owned by `src/round` and `src/gadgets`.
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct RoundTuning {}
 
 #[derive(Deserialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]

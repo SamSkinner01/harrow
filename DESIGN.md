@@ -48,6 +48,34 @@ All numbers live in `assets/config/tuning.ron`; these are the rules.
 - Level rule: characters don't step up ledges, so every staircase and
   threshold needs a ramp collider (visual steps on top).
 
+## Controls (key map)
+
+Every module binds its own keys; this is the shared map so they don't clash.
+Hold/toggle options live in the tuning file.
+
+| Key | Action | Owner |
+|---|---|---|
+| W A S D, mouse | Move, look | player (M1) |
+| Shift | Sprint | player |
+| C / Z | Crouch / prone | player |
+| Q / E | Lean left / right | player |
+| Left mouse | Fire | weapons (M3) |
+| Right mouse | Aim down sights | weapons |
+| R | Reload | weapons |
+| 1 / 2 | Primary / sidearm | weapons |
+| V | Melee | destruction (M4) |
+| 3 | Unique gadget (operator ability) | gadgets (M6) |
+| 4 | Secondary gadget (breach charge, razor wire...) | gadgets / destruction |
+| 5 | Defuser (attackers) | round (M6) |
+| F (hold) | Interact: reinforce, barricade, plant/disable defuser | destruction / round |
+| Mouse wheel | Cycle weapon | weapons |
+| Esc | Free mouse | player |
+| F1-F12 | Debug and help keys | debug / ui |
+
+Input code: each module creates its own input context entity (see
+`src/player/input.rs` for the pattern) and copies values into an intent
+component on the player, and only reads input while `input_captured`.
+
 ## Destruction (decided 2026-11-13: match the reference's Y3S4 rules)
 
 Fortress logic: thick stone and rammed earth are **indestructible**; plaster,
