@@ -35,8 +35,8 @@ pub struct MeleeState {
     pub prev: DestructionIntent,
 }
 
-#[allow(clippy::too_many_arguments)]
-fn melee(
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
+pub(super) fn melee(
     mut characters: Query<
         (
             Entity,

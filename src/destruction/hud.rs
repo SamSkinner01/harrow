@@ -130,7 +130,8 @@ const JAB_TIME: f32 = 0.22;
 /// A quick forward jab and tilt of the camera on every swing.
 fn melee_jab(
     player: Query<&MeleeState, With<LocalPlayer>>,
-    mut camera: Query<&mut Transform, With<Camera3d>>,
+    // The player camera (not a child camera such as a weapon view).
+    mut camera: Query<&mut Transform, (With<Camera3d>, Without<ChildOf>)>,
     time: Res<Time>,
     mut jab: Local<(u32, f32)>,
 ) {

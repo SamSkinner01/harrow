@@ -311,7 +311,7 @@ fn move_chunks(
 
 fn animate_dust(
     mut dust: Query<(Entity, &mut Dust, &mut Transform, &mut MeshMaterial3d<StandardMaterial>)>,
-    camera: Query<&GlobalTransform, With<Camera3d>>,
+    camera: Query<&GlobalTransform, (With<Camera3d>, Without<ChildOf>)>,
     assets: Option<Res<DebrisAssets>>,
     time: Res<Time>,
     mut pool: ResMut<DebrisPool>,

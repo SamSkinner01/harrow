@@ -65,7 +65,9 @@ impl Plugin for DestructionDebugPlugin {
             .add_systems(Update, log_events)
             .add_systems(
                 FixedUpdate,
-                fire_queued_shots.in_set(DestructionSystems::Actions),
+                fire_queued_shots
+                    .before(super::melee::melee)
+                    .in_set(DestructionSystems::Actions),
             );
     }
 }
@@ -182,7 +184,7 @@ struct Held {
     shots: Vec<(bool, f32, u32, u32)>,
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn run_script(
     mut script: ResMut<Script>,
     mut held: ResMut<Held>,

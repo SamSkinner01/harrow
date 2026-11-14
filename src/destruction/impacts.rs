@@ -179,7 +179,7 @@ fn cut(
     tuning: &DestructionTuning,
 ) -> Outcome {
     let was_broken = surface.broken;
-    let (uv, w) = surface.spec.plane.from_local(local);
+    let (uv, w) = surface.spec.plane.split_local(local);
     let role = surface.spec.role;
     let lip = surface.spec.lip;
     let floor_v = surface.grid.min().y;
@@ -371,7 +371,7 @@ fn apply_hard_breaches(
         };
         debug!("hard breach on {root:?} by {:?}", breach.source);
         let local = transform.affine().inverse().transform_point3(breach.centre);
-        let (uv, _) = surface.spec.plane.from_local(local);
+        let (uv, _) = surface.spec.plane.split_local(local);
         let mut c = Cutter {
             surface: &mut surface,
             tuning: t,
@@ -418,7 +418,7 @@ fn apply_reinforce_requests(
             continue;
         }
         let local = transform.affine().inverse().transform_point3(request.from);
-        let (_, w) = surface.spec.plane.from_local(local);
+        let (_, w) = surface.spec.plane.split_local(local);
         surface.reinforce(w, request.by);
         commands.entity(root).insert(SurfaceKind::Hard);
         reinforced.write(Reinforced {
@@ -431,7 +431,7 @@ fn apply_reinforce_requests(
 /// Explosions: open every soft surface in range (by writing explosion
 /// impacts, so they go through the same path as everything else) and hurt
 /// people in range.
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn explode(
     mut explosions: MessageReader<Explosion>,
     spatial: SpatialQuery,

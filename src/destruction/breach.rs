@@ -38,6 +38,7 @@ impl Plugin for BreachChargePlugin {
             FixedUpdate,
             (breach_charges, drop_orphaned_charges)
                 .chain()
+                .after(super::interact::interact)
                 .in_set(DestructionSystems::Actions),
         )
         .add_systems(Update, dress_charges);
@@ -72,7 +73,7 @@ fn placement(
     let plane = surface.spec.plane;
     let point = surface.aim_point(transform, eye, dir, tuning.destruction.breach_charge.reach + 0.3)?;
     let inverse = transform.affine().inverse();
-    let (mut uv, _) = plane.from_local(inverse.transform_point3(point));
+    let (mut uv, _) = plane.split_local(inverse.transform_point3(point));
     let side = surface.side_of(transform, eye);
     let (w0, w1) = surface.spec.skin_depth;
     let (min, max) = (surface.grid.min(), surface.grid.max());
@@ -107,7 +108,7 @@ fn placement(
 }
 
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
-fn breach_charges(
+pub(super) fn breach_charges(
     mut characters: Query<
         (
             Entity,
@@ -219,12 +220,15 @@ fn drop_orphaned_charges(
     }
 }
 
+/// Meshes and materials for charges: body, light.
+type ChargeLook = (Handle<Mesh>, Handle<Mesh>, Handle<StandardMaterial>, Handle<StandardMaterial>);
+
 /// Looks for new charges: a dark box with a red light.
 fn dress_charges(
     new: Query<Entity, Added<BreachCharge>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    mut assets: Local<Option<(Handle<Mesh>, Handle<Mesh>, Handle<StandardMaterial>, Handle<StandardMaterial>)>>,
+    mut assets: Local<Option<ChargeLook>>,
     mut commands: Commands,
 ) {
     if new.is_empty() {
@@ -240,10 +244,10 @@ fn dress_charges(
                     perceptual_roughness: 0.75,
                     ..default()
                 }),
+                // Unlit, so it reads as a red light in any lighting.
                 materials.add(StandardMaterial {
-                    base_color: Color::srgb(0.25, 0.01, 0.01),
-                    // Bright enough to read in sunlight exposure.
-                    emissive: LinearRgba::rgb(900.0, 12.0, 4.0),
+                    base_color: Color::srgb(1.0, 0.06, 0.03),
+                    unlit: true,
                     ..default()
                 }),
             )

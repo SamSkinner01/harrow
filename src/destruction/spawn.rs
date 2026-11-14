@@ -92,6 +92,7 @@ struct NeedsMaterial {
 /// Tint applied to the library metal for reinforcement plates.
 const PLATE_TINT: Color = Color::linear_rgb(0.42, 0.42, 0.44);
 
+#[allow(clippy::too_many_arguments)]
 fn convert_piece(
     insert: On<Insert<SurfaceKind>>,
     names: Query<&Name>,

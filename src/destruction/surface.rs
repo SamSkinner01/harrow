@@ -84,7 +84,7 @@ impl Plane {
     }
 
     /// Local point -> ((u, v), w).
-    pub fn from_local(self, p: Vec3) -> (Vec2, f32) {
+    pub fn split_local(self, p: Vec3) -> (Vec2, f32) {
         match self {
             Plane::Wall => (Vec2::new(p.x, p.y), p.z),
             Plane::Floor => (Vec2::new(p.x, p.z), p.y),
@@ -250,7 +250,7 @@ impl SoftSurface {
         }
         let point = eye + dir * t;
         let local = transform.affine().inverse().transform_point3(point);
-        let (uv, _) = plane.from_local(local);
+        let (uv, _) = plane.split_local(local);
         let (min, max) = (self.grid.min(), self.grid.max());
         (uv.cmpge(min).all() && uv.cmple(max).all()).then_some(point)
     }
@@ -265,7 +265,7 @@ impl SoftSurface {
         let (w0, w1) = self.spec.skin_depth;
         let face = if side > 0.0 { w1 } else { w0 };
         let local = transform.affine().inverse().transform_point3(point);
-        let (uv, _) = self.spec.plane.from_local(local);
+        let (uv, _) = self.spec.plane.split_local(local);
         let on_face = transform.transform_point(self.spec.plane.to_local(uv.x, uv.y, face));
         Some(SurfaceMount {
             point: on_face,
@@ -277,7 +277,7 @@ impl SoftSurface {
     /// Which side of the surface `point` (world space) is on: +1 or -1.
     pub fn side_of(&self, transform: &GlobalTransform, point: Vec3) -> f32 {
         let local = transform.affine().inverse().transform_point3(point);
-        let (_, w) = self.spec.plane.from_local(local);
+        let (_, w) = self.spec.plane.split_local(local);
         if w >= 0.0 { 1.0 } else { -1.0 }
     }
 

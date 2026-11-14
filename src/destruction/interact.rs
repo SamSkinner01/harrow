@@ -30,7 +30,12 @@ pub struct InteractPlugin;
 impl Plugin for InteractPlugin {
     fn build(&self, app: &mut App) {
         app.add_observer(register_opening)
-            .add_systems(FixedUpdate, interact.in_set(DestructionSystems::Actions));
+            .add_systems(
+                FixedUpdate,
+                interact
+                    .after(super::melee::melee)
+                    .in_set(DestructionSystems::Actions),
+            );
     }
 }
 
@@ -96,7 +101,7 @@ fn aim_through(slot: &BarricadeSlot, transform: &GlobalTransform, eye: Vec3, dir
 }
 
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
-fn interact(
+pub(super) fn interact(
     mut characters: Query<
         (
             Entity,
