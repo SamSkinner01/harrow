@@ -35,18 +35,35 @@ struct WeaponSounds {
 }
 
 fn create_sounds(mut commands: Commands, mut sources: ResMut<Assets<AudioSource>>) {
-    let mut add = |samples: Vec<f32>| {
+    // `--dump-weapon-sounds <dir>`: also write each sound as a .wav file,
+    // to listen to them outside the game.
+    let dump = {
+        let args: Vec<String> = std::env::args().collect();
+        args.iter()
+            .position(|a| a == "--dump-weapon-sounds")
+            .and_then(|i| args.get(i + 1))
+            .map(std::path::PathBuf::from)
+    };
+    let mut add = |name: &str, samples: Vec<f32>| {
+        let bytes = wav(&samples);
+        if let Some(dir) = &dump {
+            let path = dir.join(format!("{name}.wav"));
+            match std::fs::create_dir_all(dir).and_then(|_| std::fs::write(&path, &bytes)) {
+                Ok(()) => info!("wrote {}", path.display()),
+                Err(err) => warn!("could not write {}: {err}", path.display()),
+            }
+        }
         sources.add(AudioSource {
-            bytes: wav(&samples).into(),
+            bytes: bytes.into(),
         })
     };
     commands.insert_resource(WeaponSounds {
-        rifle: add(gunshot(0.42, 70.0, 0.55, 11)),
-        pistol: add(gunshot(0.3, 110.0, 0.35, 23)),
-        click: add(click(1800.0, 0.025, 31)),
-        mag_out: add(mag_out()),
-        mag_in: add(mag_in()),
-        rack: add(rack()),
+        rifle: add("rifle_shot", gunshot(0.42, 70.0, 0.55, 11)),
+        pistol: add("pistol_shot", gunshot(0.3, 110.0, 0.35, 23)),
+        click: add("dry_click", click(1800.0, 0.025, 31)),
+        mag_out: add("magazine_out", mag_out()),
+        mag_in: add("magazine_in", mag_in()),
+        rack: add("rack", rack()),
     });
 }
 
@@ -142,7 +159,7 @@ fn gunshot(length: f32, boom_hz: f32, tail: f32, seed: u32) -> Vec<f32> {
             let body = band * (-t * 28.0).exp();
             let boom = (t * TAU * boom_hz * (1.0 - t)).sin() * (-t * 18.0).exp();
             let echo = low * tail * (-t * 7.0).exp() * (1.0 - (-t * 60.0).exp());
-            (crack * 0.9 + body * 0.6 + boom * 0.9 + echo * 1.4).clamp(-1.0, 1.0)
+            ((crack * 0.9 + body * 0.6 + boom * 0.9 + echo * 1.4) * 0.7).clamp(-1.0, 1.0)
         })
         .collect()
 }

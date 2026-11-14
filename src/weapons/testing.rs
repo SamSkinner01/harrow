@@ -233,6 +233,8 @@ enum Check {
     Switch,
     /// The dummy was killed and is back up with full health.
     Respawned { dummy: &'static str },
+    /// Average walking speed over the ops is `walk_speed * scale`.
+    MoveSpeed { scale: f32 },
 }
 
 struct Scenario {
@@ -353,7 +355,7 @@ fn scenarios() -> Vec<Scenario> {
             .ops(&[Op::Fire(30)])
             .check(Check::Spray { same_as: Some(10) }),
         // 13-15: spread standing, walking, aimed (5-round bursts);
-        // crouched and prone are last (23, 24).
+        // crouched and prone are last (25, 26).
         Scenario::new("spread: hip, standing", Primary, RANGE_SPOT, wall)
             .hip()
             .ops(&[Op::Fire(5)]),
@@ -387,7 +389,17 @@ fn scenarios() -> Vec<Scenario> {
         Scenario::new("leaning right, head shot from the true eye", Primary, COURTYARD, AimAt::Dummy(b, Head))
             .lean(Lean::Right)
             .check(hits(b, Head, 1, None, 0, true)),
-        // 23-24: last, because standing back up from crouch/prone is refused
+        // 23-24: aiming slows walking (rifle: ads_move_speed 0.75).
+        Scenario::new("walking from the hip: full speed", Primary, COURTYARD, AimAt::Angles(0.0, 0.0))
+            .hip()
+            .moving(Vec2::new(0.0, 1.0))
+            .ops(&[Op::WaitTicks(64)])
+            .check(Check::MoveSpeed { scale: 1.0 }),
+        Scenario::new("walking while aimed: slower", Primary, COURTYARD, AimAt::Angles(0.0, 0.0))
+            .moving(Vec2::new(0.0, 1.0))
+            .ops(&[Op::WaitTicks(64)])
+            .check(Check::MoveSpeed { scale: 0.75 }),
+        // 25-26: last, because standing back up from crouch/prone is refused
         // at this spot (the movement code's stand-up probe reports the
         // desert-floor slab under the courtyard; reported, not a weapons
         // issue).
@@ -424,6 +436,9 @@ struct Record {
     health_before: Vec<(&'static str, f32)>,
     /// Tick when a switch was requested.
     switch_asked: Option<u32>,
+    /// Feet position and tick when the ops started, and when they ended.
+    start: (Vec3, u32),
+    end: (Vec3, u32),
     ready_at: Option<u32>,
 }
 
@@ -593,6 +608,7 @@ fn drive_test(
                 && (body.lean - target_lean).abs() < 0.01;
             if test.ticks >= 24 && aimed && settled && state.action == WeaponAction::Ready {
                 look.move_axis = move_axis;
+                test.record.start = (transform.translation, test.tick);
                 test.record.base_yaw = look.yaw;
                 test.record.base_pitch = look.pitch;
                 test.record.health_before = dummies
@@ -619,6 +635,7 @@ fn drive_test(
             let ops = test.scenarios[test.index].ops.clone();
             let Some(&op) = ops.get(test.op) else {
                 look.move_axis = Vec2::ZERO;
+                test.record.end = (transform.translation, test.tick);
                 test.next_phase(Phase::Observe);
                 return;
             };
@@ -911,6 +928,24 @@ fn evaluate(
                 format!(
                     "now holding {:?} after {measured:.3} s (holster {:.2} + draw {:.2} = {expected:.2} s)",
                     state.active, tuning.weapons.holster_time, tuning.weapons.sidearm.draw_time
+                ),
+            )
+        }
+        Check::MoveSpeed { scale } => {
+            let (from, t0) = r.start;
+            let (to, t1) = r.end;
+            let seconds = (t1 - t0) as f32 / TICK_HZ;
+            let speed = (to - from).with_y(0.0).length() / seconds.max(1e-3);
+            let expected = tuning.movement.walk_speed * scale;
+            // Allow for the short acceleration at the start.
+            let ok = speed <= expected * 1.01 && speed >= expected * 0.9;
+            (
+                ok,
+                format!(
+                    "moved {:.2} m in {seconds:.2} s = {speed:.2} m/s (walk {:.2} x {scale:.2} = {expected:.2} m/s); aim {:.2}",
+                    (to - from).with_y(0.0).length(),
+                    tuning.movement.walk_speed,
+                    state.aim,
                 ),
             )
         }
