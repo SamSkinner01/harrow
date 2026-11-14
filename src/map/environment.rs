@@ -6,7 +6,12 @@
 
 use avian3d::prelude::*;
 use bevy::{
-    camera::Exposure, light::CascadeShadowConfigBuilder, mesh::VertexAttributeValues, prelude::*,
+    camera::Exposure,
+    curve::cubic_splines::LinearSpline,
+    light::CascadeShadowConfigBuilder,
+    mesh::VertexAttributeValues,
+    post_process::auto_exposure::{AutoExposure, AutoExposureCompensationCurve, AutoExposurePlugin},
+    prelude::*,
 };
 
 use super::materials::MaterialLibrary;
@@ -23,7 +28,8 @@ pub struct EnvironmentPlugin;
 
 impl Plugin for EnvironmentPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(ClearColor(SKY))
+        app.add_plugins(AutoExposurePlugin)
+            .insert_resource(ClearColor(SKY))
             .insert_resource(GlobalAmbientLight {
                 // Sky fill (bluish). Brightness comes from the tuning file.
                 color: Color::srgb(0.75, 0.82, 1.0),
@@ -88,28 +94,65 @@ fn spawn_desert_floor(
     ));
 }
 
-/// Sun, ambient and exposure from the `lighting` section of the tuning file.
+/// Sun, ambient, exposure and eye adaptation from the `lighting` section of
+/// the tuning file.
 fn apply_lighting_tuning(
     tuning: Res<Tuning>,
     mut suns: Query<&mut DirectionalLight>,
     mut ambient: ResMut<GlobalAmbientLight>,
-    mut exposures: Query<&mut Exposure>,
+    mut cameras: Query<(&mut Exposure, Option<&mut AutoExposure>)>,
+    mut curves: ResMut<Assets<AutoExposureCompensationCurve>>,
 ) {
     let l = &tuning.lighting;
     for mut sun in &mut suns {
         sun.illuminance = l.sun;
     }
     ambient.brightness = l.ambient;
-    for mut exposure in &mut exposures {
+    let curve = curves.add(adaptation_curve(l.adaptation_threshold, l.adaptation_max));
+    for (mut exposure, auto) in &mut cameras {
         exposure.ev100 = l.exposure;
+        if let Some(mut auto) = auto {
+            auto.compensation_curve = curve.clone();
+        }
     }
 }
 
-/// Every 3D camera gets sunlight exposure and the dusty haze.
-fn configure_camera(add: On<Add<Camera3d>>, mut commands: Commands, tuning: Res<Tuning>) {
+/// Eye adaptation that only ever brightens, and by at most `max_boost`
+/// stops. Bevy's auto exposure targets `curve(avg) - avg` stops of
+/// correction on top of the base exposure (avg = average log2 luminance), so:
+/// at or above `threshold` the curve is y = x (no change); just below it the
+/// curve is flat (brighten towards the threshold); far below it the curve is
+/// y = x + max_boost (capped boost).
+fn adaptation_curve(threshold: f32, max_boost: f32) -> AutoExposureCompensationCurve {
+    let boost = max_boost.max(0.01);
+    let (lo, hi) = (-16.0, 8.0);
+    let points = [
+        Vec2::new(lo, lo + boost),
+        Vec2::new(threshold - boost, threshold),
+        Vec2::new(threshold, threshold),
+        Vec2::new(hi, hi),
+    ];
+    AutoExposureCompensationCurve::from_curve(LinearSpline::new(points))
+        .expect("adaptation curve is monotonic")
+}
+
+/// Every 3D camera gets sunlight exposure, eye adaptation and the dusty haze.
+fn configure_camera(
+    add: On<Add<Camera3d>>,
+    mut commands: Commands,
+    tuning: Res<Tuning>,
+    mut curves: ResMut<Assets<AutoExposureCompensationCurve>>,
+) {
+    let l = &tuning.lighting;
     commands.entity(add.entity).insert((
-        Exposure {
-            ev100: tuning.lighting.exposure,
+        Exposure { ev100: l.exposure },
+        AutoExposure {
+            range: -16.0..=8.0,
+            speed_brighten: 1.5,
+            speed_darken: 2.5,
+            compensation_curve: curves
+                .add(adaptation_curve(l.adaptation_threshold, l.adaptation_max)),
+            ..default()
         },
         DistanceFog {
             color: SKY,

@@ -191,6 +191,9 @@ pub struct WeaponState {
     pub sprint_lock: f32,
     /// A semi-auto click waiting for the fire-rate limit.
     pub queued_shot: bool,
+    /// Hands busy with something else (e.g. the defuser): no firing or
+    /// aiming, weapon lowered.
+    pub hands_busy: bool,
     /// The empty click already played for the current trigger hold.
     pub dry_fired: bool,
     /// Input counters already handled.
@@ -223,6 +226,7 @@ impl WeaponState {
             shots_fired: 0,
             sprint_lock: 0.0,
             queued_shot: false,
+            hands_busy: false,
             dry_fired: false,
             seen_trigger: 0,
             seen_reload: 0,
@@ -288,12 +292,14 @@ pub struct WeaponEvent {
     pub kind: WeaponEventKind,
 }
 
-/// A bullet hit a character's hit zone (hit markers, dummies, tests).
+/// A bullet hit something with health: a character's hit zone or a hit
+/// volume such as a gadget (hit markers, dummies, tests).
 #[derive(Message, Clone, Debug)]
 pub struct BulletHit {
     pub shooter: Entity,
     pub target: Entity,
-    pub zone: HitZone,
+    /// The hit zone, or None for other hit volumes (gadgets).
+    pub zone: Option<HitZone>,
     pub point: Vec3,
     /// Damage sent with the `DamageMessage`.
     pub damage: f32,

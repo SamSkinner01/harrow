@@ -26,7 +26,7 @@ use super::{
     firing::{aim_rotation, eye_position},
 };
 use crate::{
-    combat::{Dead, Health, SurfaceImpact, SurfaceKind},
+    combat::{Armour, Dead, Health, Noise, NoiseKind, SurfaceImpact, SurfaceKind},
     config::Tuning,
     player::{AutomatedRun, CharacterState, HitZone, Lean, LocalPlayer, PlayerInput, Stance},
 };
@@ -51,10 +51,24 @@ impl Plugin for WeaponTestPlugin {
         if std::env::args().any(|a| a == "--weapon-test") {
             app.insert_resource(AutomatedRun)
                 .insert_resource(WeaponTest::new(scenarios()))
+                .add_systems(Startup, spawn_test_gadget)
                 .add_systems(FixedPreUpdate, drive_test)
                 .add_systems(FixedUpdate, record_test.after(WeaponSystems::Simulate));
         }
     }
+}
+
+/// A hit volume like a deployed gadget's: `Health`, a sensor on the hit
+/// zone layer, no `HitZone`.
+fn spawn_test_gadget(mut commands: Commands) {
+    commands.spawn((
+        Name::new("Test gadget"),
+        Health::new(30.0),
+        Collider::sphere(0.1),
+        Sensor,
+        CollisionLayers::new(crate::physics::GameLayer::Hitbox, LayerMask::NONE),
+        Transform::from_translation(TEST_GADGET),
+    ));
 }
 
 // --- Screenshot helpers -------------------------------------------------------
@@ -191,6 +205,8 @@ enum AimAt {
     Dummy(&'static str, HitZone),
     /// Fixed look angles, degrees.
     Angles(f32, f32),
+    /// A point in the world.
+    Point(Vec3),
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -233,6 +249,9 @@ enum Check {
     Switch,
     /// The dummy was killed and is back up with full health.
     Respawned { dummy: &'static str },
+    /// One hit on a hit volume that isn't a character (a gadget): no zone,
+    /// `damage`, lethal as `lethal`.
+    Object { damage: f32, lethal: bool },
     /// Average walking speed over the ops is `walk_speed * scale`.
     MoveSpeed { scale: f32 },
 }
@@ -243,6 +262,8 @@ struct Scenario {
     feet: Vec3,
     stance: Stance,
     lean: Lean,
+    /// Armour on every dummy for this scenario (damage scale).
+    armour: Option<f32>,
     move_axis: Vec2,
     aim: AimAt,
     ads: bool,
@@ -258,6 +279,7 @@ impl Scenario {
             feet,
             stance: Stance::Stand,
             lean: Lean::Center,
+            armour: None,
             move_axis: Vec2::ZERO,
             aim,
             ads: true,
@@ -271,6 +293,10 @@ impl Scenario {
     }
     fn stance(mut self, stance: Stance) -> Self {
         self.stance = stance;
+        self
+    }
+    fn armour(mut self, damage_scale: f32) -> Self {
+        self.armour = Some(damage_scale);
         self
     }
     fn lean(mut self, lean: Lean) -> Self {
@@ -296,6 +322,8 @@ const COURTYARD: Vec3 = Vec3::new(8.0, 0.0, 9.0);
 const RANGE_SPOT: Vec3 = Vec3::new(13.0, 0.0, 10.0);
 /// Courtyard-side room, south of the storeroom's plaster wall.
 const ROOM_PLASTER: Vec3 = Vec3::new(7.0, 0.0, -1.5);
+/// A stand-in for a deployed gadget (spawned by the weapon test).
+const TEST_GADGET: Vec3 = Vec3::new(10.0, 1.3, 5.0);
 /// Same room, east of the stone wall into the west hall.
 const ROOM_STONE: Vec3 = Vec3::new(7.5, 0.0, -1.0);
 
@@ -355,7 +383,7 @@ fn scenarios() -> Vec<Scenario> {
             .ops(&[Op::Fire(30)])
             .check(Check::Spray { same_as: Some(10) }),
         // 13-15: spread standing, walking, aimed (5-round bursts);
-        // crouched and prone are last (25, 26).
+        // crouched and prone are last (28, 29).
         Scenario::new("spread: hip, standing", Primary, RANGE_SPOT, wall)
             .hip()
             .ops(&[Op::Fire(5)]),
@@ -399,7 +427,18 @@ fn scenarios() -> Vec<Scenario> {
             .moving(Vec2::new(0.0, 1.0))
             .ops(&[Op::WaitTicks(64)])
             .check(Check::MoveSpeed { scale: 0.75 }),
-        // 25-26: last, because standing back up from crouch/prone is refused
+        // 25-26: operator armour (0.8 = takes 80%) applies to body shots;
+        // head shots still kill.
+        Scenario::new("armoured target (x0.8), torso", Primary, COURTYARD, AimAt::Dummy(b, Torso))
+            .armour(0.8)
+            .check(hits(b, Torso, 1, Some(42.0 * 0.8), 0, false)),
+        Scenario::new("armoured target (x0.8), head shot still kills", Primary, COURTYARD, AimAt::Dummy(b, Head))
+            .armour(0.8)
+            .check(hits(b, Head, 1, None, 0, true)),
+        // 27: a gadget-style hit volume (Health, Hitbox layer, no HitZone).
+        Scenario::new("gadget hit volume takes bullet damage", Primary, COURTYARD, AimAt::Point(TEST_GADGET))
+            .check(Check::Object { damage: 42.0, lethal: true }),
+        // 28-29: last, because standing back up from crouch/prone is refused
         // at this spot (the movement code's stand-up probe reports the
         // desert-floor slab under the courtyard; reported, not a weapons
         // issue).
@@ -430,6 +469,8 @@ struct Record {
     hits: Vec<BulletHit>,
     impacts: Vec<(SurfaceImpact, SurfaceKind)>,
     events: Vec<(u32, WeaponEventKind)>,
+    /// Noise messages from the local player.
+    noises: Vec<NoiseKind>,
     /// Look angles the shots were aimed with (radians).
     base_yaw: f32,
     base_pitch: f32,
@@ -536,6 +577,11 @@ fn drive_test(
         Without<LocalPlayer>,
     >| match aim_at {
         AimAt::Angles(yaw, pitch) => Some((yaw.to_radians(), pitch.to_radians())),
+        AimAt::Point(point) => {
+            let eye = eye_position(transform.translation, look.yaw, body.height, body.lean, &tuning);
+            let d = point - eye;
+            Some(((-d.x).atan2(-d.z), d.y.atan2(Vec2::new(d.x, d.z).length())))
+        }
         AimAt::Dummy(label, zone) => {
             let (_, _, dummy, ..) = dummies.iter().find(|(d, ..)| d.label == label)?;
             let height = match zone {
@@ -579,9 +625,18 @@ fn drive_test(
             fresh.seen_reload = input.reload_requests;
             *state = fresh;
             // Fresh dummies.
+            let armour = test.scenarios[test.index].armour;
             for (mut dummy, mut health, _, dead, children, entity) in &mut dummies {
                 dummy.down_for = 0.0;
                 health.current = health.max;
+                match armour {
+                    Some(damage_scale) => {
+                        commands.entity(entity).insert(Armour { damage_scale });
+                    }
+                    None => {
+                        commands.entity(entity).remove::<Armour>();
+                    }
+                }
                 if dead {
                     commands.entity(entity).remove::<Dead>();
                     for child in children.iter().filter(|c| zones.contains(*c)) {
@@ -755,6 +810,7 @@ fn record_test(
     mut hits: MessageReader<BulletHit>,
     mut impacts: MessageReader<SurfaceImpact>,
     mut events: MessageReader<WeaponEvent>,
+    mut noises: MessageReader<Noise>,
     colliders: Query<&ColliderOf>,
     surfaces: Query<&SurfaceKind>,
 ) {
@@ -781,6 +837,11 @@ fn record_test(
     for event in events.read() {
         if event.shooter == me && recording {
             test.record.events.push((tick, event.kind));
+        }
+    }
+    for noise in noises.read() {
+        if noise.source == Some(me) && recording {
+            test.record.noises.push(noise.kind);
         }
     }
 }
@@ -821,7 +882,7 @@ fn evaluate(
                 return (false, format!("no dummy '{dummy}'"));
             };
             let on_target: Vec<&BulletHit> = r.hits.iter().collect();
-            let zones_ok = on_target.iter().all(|h| h.zone == zone);
+            let zones_ok = on_target.iter().all(|h| h.zone == Some(zone));
             let layers_ok = on_target.iter().all(|h| h.layers == layers);
             let damage_ok = match damage {
                 Some(expected) => on_target.iter().all(|h| (h.damage - expected).abs() < 0.01),
@@ -896,14 +957,17 @@ fn evaluate(
             });
             let done = r.events.iter().find_map(|(t, e)| (*e == WeaponEventKind::ReloadDone).then_some(*t));
             let dry = r.events.iter().any(|(_, e)| *e == WeaponEventKind::DryFire);
+            let reload_noise = r.noises.contains(&NoiseKind::Reload);
             match (reload, start, done) {
                 (Some(empty), Some((t0, was_empty)), Some(t1)) => {
                     let def = state.active.def(tuning);
                     let expected = if empty { def.reload_empty } else { def.reload_tactical };
                     let measured = (t1 - t0) as f32 / TICK_HZ;
-                    ok &= was_empty == empty && (measured - expected).abs() <= 1.5 / TICK_HZ;
+                    ok &= was_empty == empty
+                        && (measured - expected).abs() <= 1.5 / TICK_HZ
+                        && reload_noise;
                     detail += &format!(
-                        "; {} reload took {measured:.3} s (tuning {expected:.2} s){}",
+                        "; {} reload took {measured:.3} s (tuning {expected:.2} s), reload noise {reload_noise}{}",
                         if was_empty { "empty" } else { "tactical" },
                         if dry { "; dry-fire click first" } else { "" }
                     );
@@ -946,6 +1010,27 @@ fn evaluate(
                     (to - from).with_y(0.0).length(),
                     tuning.movement.walk_speed,
                     state.aim,
+                ),
+            )
+        }
+        Check::Object { damage, lethal } => {
+            let ok = r.hits.len() == 1
+                && r.hits[0].zone.is_none()
+                && (r.hits[0].damage - damage).abs() < 0.01
+                && r.hits[0].lethal == lethal;
+            (
+                ok,
+                format!(
+                    "{} hit(s): [{}]",
+                    r.hits.len(),
+                    r.hits
+                        .iter()
+                        .map(|h| format!(
+                            "zone {:?}, {:.1} dmg at {:.1} m, lethal {}",
+                            h.zone, h.damage, h.distance, h.lethal
+                        ))
+                        .collect::<Vec<_>>()
+                        .join("; ")
                 ),
             )
         }
@@ -1009,9 +1094,13 @@ fn spray_report(r: &Record, reference: Option<&[Vec3]>, tuning: &Tuning) -> (boo
     } else {
         0.0
     };
-    let mut ok = r.shots.len() == 30 && within_cone && (rpm - def.rpm).abs() < def.rpm * 0.03;
+    let gunfire = r.noises.iter().filter(|k| **k == NoiseKind::Gunfire).count();
+    let mut ok = r.shots.len() == 30
+        && within_cone
+        && (rpm - def.rpm).abs() < def.rpm * 0.03
+        && gunfire == r.shots.len();
     let mut detail = format!(
-        "{} shots at {rpm:.0} rpm (ticks between shots {:?}..{:?}); recoil after shots 1-8 (right,up deg): {}; \
+        "{} shots ({gunfire} gunfire noises) at {rpm:.0} rpm (ticks between shots {:?}..{:?}); recoil after shots 1-8 (right,up deg): {}; \
          after 30: ({:+.2},{:.2}); spread cone first {:.3} deg, last {:.2} deg; mean deviation {mean_dev:.3} deg, \
          all inside cone: {within_cone}; impact path every 5th shot (cm right,up from the first): {}",
         r.shots.len(),

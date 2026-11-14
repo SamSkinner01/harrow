@@ -15,9 +15,13 @@ use super::{
     ballistics::{self, TraceWorld},
 };
 use crate::{
-    combat::{DamageKind, DamageMessage, Dead, Health, SurfaceImpact, SurfaceKind},
+    combat::{
+        Armour, DamageKind, DamageMessage, Dead, Health, Noise, NoiseKind, SurfaceImpact,
+        SurfaceKind,
+    },
     config::{Tuning, WeaponDef},
     player::{CharacterState, HitZone, PlayerInput},
+    round::defuser::DefuserCarrier,
 };
 
 pub struct FiringPlugin;
@@ -124,6 +128,7 @@ struct Outputs<'w> {
     shots: MessageWriter<'w, ShotFired>,
     events: MessageWriter<'w, WeaponEvent>,
     hits: MessageWriter<'w, BulletHit>,
+    noise: MessageWriter<'w, Noise>,
 }
 
 #[derive(bevy::ecs::system::SystemParam)]
@@ -132,7 +137,9 @@ struct Targets<'w, 's> {
     colliders: Query<'w, 's, &'static ColliderOf>,
     zones: Query<'w, 's, &'static HitZone>,
     surfaces: Query<'w, 's, &'static SurfaceKind>,
-    health: Query<'w, 's, &'static Health, Without<Dead>>,
+    layers: Query<'w, 's, &'static CollisionLayers>,
+    damageable: Query<'w, 's, (), With<Health>>,
+    health: Query<'w, 's, (&'static Health, Option<&'static Armour>), Without<Dead>>,
 }
 
 #[allow(clippy::type_complexity)]
@@ -147,6 +154,7 @@ fn simulate_weapons(
         &mut WeaponState,
         &mut MoveSpeedScale,
         Has<Dead>,
+        Option<&DefuserCarrier>,
     )>,
     world: Targets,
     mut out: Outputs,
@@ -160,9 +168,11 @@ fn simulate_weapons(
         colliders: &world.colliders,
         zones: &world.zones,
         surfaces: &world.surfaces,
+        layers: &world.layers,
+        damageable: &world.damageable,
     };
 
-    for (entity, input, look, body, transform, velocity, mut state, mut speed_scale, dead) in
+    for (entity, input, look, body, transform, velocity, mut state, mut speed_scale, dead, defuser) in
         &mut characters
     {
         // Edge-triggered requests: compare the input's counters with what
@@ -199,7 +209,9 @@ fn simulate_weapons(
         } else {
             state.sprint_lock = (state.sprint_lock - dt).max(0.0);
         }
-        let sprint_blocked = body.sprinting || state.sprint_lock > 0.0;
+        // The defuser in hand (round loop, M6) takes the hands off the weapon.
+        state.hands_busy = defuser.is_some_and(|d| d.equipped);
+        let blocked = body.sprinting || state.sprint_lock > 0.0 || state.hands_busy;
 
         // --- Switching ------------------------------------------------------
         match state.action {
@@ -282,14 +294,15 @@ fn simulate_weapons(
         let capacity = def.magazine + u32::from(def.chamber && ammo.magazine > 0);
         if reload_requested
             && state.action == WeaponAction::Ready
+            && !state.hands_busy
             && ammo.magazine < capacity
             && ammo.reserve > 0
         {
-            start_reload(&mut state, &def, entity, &mut out.events);
+            start_reload(&mut state, &def, entity, transform.translation, &mut out, &tuning);
         }
 
         // --- Aim down sights --------------------------------------------------
-        let can_aim = !sprint_blocked
+        let can_aim = !blocked
             && matches!(state.action, WeaponAction::Ready | WeaponAction::Drawing { .. });
         let aim_target = if input.aim && can_aim { 1.0 } else { 0.0 };
         state.aim = state
@@ -309,7 +322,7 @@ fn simulate_weapons(
         } else {
             state.queued_shot
         };
-        let can_fire = state.action == WeaponAction::Ready && !sprint_blocked;
+        let can_fire = state.action == WeaponAction::Ready && !blocked;
         if !wants_fire || !can_fire {
             // No banking of fire-rate time while not shooting.
             state.cooldown = state.cooldown.max(0.0);
@@ -325,7 +338,7 @@ fn simulate_weapons(
                         kind: WeaponEventKind::DryFire,
                     });
                     if w.auto_reload && state.ammo().reserve > 0 {
-                        start_reload(&mut state, &def, entity, &mut out.events);
+                        start_reload(&mut state, &def, entity, transform.translation, &mut out, &tuning);
                     }
                 }
                 state.cooldown = state.cooldown.max(0.0);
@@ -349,7 +362,9 @@ fn start_reload(
     state: &mut WeaponState,
     def: &WeaponDef,
     shooter: Entity,
-    events: &mut MessageWriter<WeaponEvent>,
+    at: Vec3,
+    out: &mut Outputs,
+    tuning: &Tuning,
 ) {
     let empty = state.ammo().magazine == 0;
     state.action = WeaponAction::Reloading {
@@ -362,10 +377,16 @@ fn start_reload(
         empty,
     };
     state.queued_shot = false;
-    events.write(WeaponEvent {
+    out.events.write(WeaponEvent {
         shooter,
         slot: state.active,
         kind: WeaponEventKind::ReloadStart { empty },
+    });
+    out.noise.write(Noise {
+        source: Some(shooter),
+        position: at,
+        loudness: tuning.weapons.noise.reload,
+        kind: NoiseKind::Reload,
     });
 }
 
@@ -383,7 +404,7 @@ fn fire_one(
     def: &WeaponDef,
     state: &mut WeaponState,
     world: &TraceWorld,
-    health: &Query<&Health, Without<Dead>>,
+    health: &Query<(&Health, Option<&Armour>), Without<Dead>>,
     out: &mut Outputs,
     tuning: &Tuning,
 ) {
@@ -417,21 +438,26 @@ fn fire_one(
         out.impacts.write(impact.clone());
     }
     if let Some(hit) = trace.hit
-        && let Ok(target_health) = health.get(hit.target)
+        && let Ok((target_health, armour)) = health.get(hit.target)
     {
         let zones = &tuning.weapons.damage;
+        // Armour is applied by the combat module when the damage lands.
+        let armour = armour.map_or(1.0, |a| a.damage_scale).max(1e-3);
         let base = def.damage * hit.damage_scale * falloff(def, hit.distance);
         let amount = match hit.zone {
-            HitZone::Head if zones.headshot_kills => target_health.current,
-            HitZone::Head => base * zones.head,
-            HitZone::Torso => base * zones.torso,
-            HitZone::Legs => base * zones.legs,
+            Some(HitZone::Head) if zones.headshot_kills => target_health.current / armour,
+            Some(HitZone::Head) => base * zones.head,
+            Some(HitZone::Torso) => base * zones.torso,
+            Some(HitZone::Legs) => base * zones.legs,
+            // Gadgets and other hit volumes.
+            None => base,
         };
+        let taken = amount * armour;
         out.damage.write(DamageMessage {
             target: hit.target,
             amount,
             kind: DamageKind::Bullet,
-            zone: Some(hit.zone),
+            zone: hit.zone,
             source: Some(shot.shooter),
         });
         out.hits.write(BulletHit {
@@ -439,10 +465,10 @@ fn fire_one(
             target: hit.target,
             zone: hit.zone,
             point: hit.point,
-            damage: amount,
+            damage: taken,
             distance: hit.distance,
             layers: hit.layers,
-            lethal: amount >= target_health.current,
+            lethal: taken >= target_health.current,
         });
     }
 
@@ -455,6 +481,12 @@ fn fire_one(
         direction: *direction,
         end: trace.end,
         spread,
+    });
+    out.noise.write(Noise {
+        source: Some(shot.shooter),
+        position: origin,
+        loudness: tuning.weapons.noise.gunshot,
+        kind: NoiseKind::Gunfire,
     });
 
     // Recoil applies after the shot: the first bullet goes where you aim.

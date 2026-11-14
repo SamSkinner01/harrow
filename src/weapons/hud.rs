@@ -225,7 +225,7 @@ fn update_hit_marker(
     let me = *me;
     let duration = tuning.weapons.effects.hit_marker_time;
     for hit in hits.read().filter(|h| h.shooter == me) {
-        let head = hit.zone == crate::player::HitZone::Head;
+        let head = hit.zone == Some(crate::player::HitZone::Head);
         // A head shot or kill isn't overwritten by a body hit on the same frame.
         state.head = head || (state.timer > 0.0 && state.head);
         state.lethal = hit.lethal || (state.timer > 0.0 && state.lethal);

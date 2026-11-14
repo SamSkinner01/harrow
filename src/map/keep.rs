@@ -35,7 +35,33 @@ impl Plugin for KeepPlugin {
             yaw: 0.0,
             pitch: 0.0,
         })
-        .add_systems(Startup, build_section);
+        .add_systems(Startup, (build_section, place_lamps));
+    }
+}
+
+/// One lantern per room, hanging from the ceiling (slab underside).
+fn place_lamps(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    tuning: Res<crate::config::Tuning>,
+) {
+    let ground_ceiling = GROUND + WALL;
+    let upper_ceiling = UPPER + WALL;
+    for (x, y, z) in [
+        (3.5, ground_ceiling, -4.0), // west hall
+        (9.0, ground_ceiling, -2.0), // courtyard-side room
+        (9.0, ground_ceiling, -5.6), // storeroom (clear of the hatch)
+        (3.5, upper_ceiling, -4.0),  // upper west room
+        (9.0, upper_ceiling, -4.0),  // upper east room
+    ] {
+        super::lamps::spawn_lamp(
+            &mut commands,
+            &mut meshes,
+            &mut materials,
+            &tuning,
+            Vec3::new(x, y, z),
+        );
     }
 }
 

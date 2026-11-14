@@ -65,6 +65,12 @@ Bevy's API changes between releases, so everything is pinned with `=` in
 | Right mouse | Aim down sights (hold; toggle option in the tuning file) |
 | R | Reload |
 | 1 / 2, mouse wheel | Primary (TAMARISK rifle) / sidearm (ACACIA pistol) |
+| V | Melee (breaks soft walls, hatches from above, barricades) |
+| F (hold) | Plant the defuser in a site (attackers) / disable it (defenders). Defenders elsewhere: reinforce the wall or hatch you look at (5 s), or barricade an empty doorway/window (2 s) |
+| 3 | Unique gadget (operator ability) |
+| 4 (hold, then press) | Breach charge: hold to stick it on a soft wall, floor or barricade, press again to set it off |
+| 5 | Equip / stow the defuser (attackers) |
+| 1 / 2 | Pick an operator on the selection screen |
 | Esc / left click | Release / capture the mouse |
 | F1 | Toggle key help |
 | F3 | Toggle FPS overlay |
@@ -116,6 +122,12 @@ cargo run -- --stance crouch --lean left       # hold a stance / lean
 cargo run -- --third-person --hitboxes         # start with debug views on
 cargo run -- --trace-player                    # log position 4x per second, and every footstep
 cargo run -- --no-vsync                        # uncapped frame rate (performance checks)
+cargo run -- --team defenders --operator fathom  # your starting side and operator (solo testing)
+cargo run -- --no-round --operator lark          # free play: no round loop; --operator still gives that gadget
+cargo run -- --round-test                        # short round timers and a short match (round.test_timers)
+cargo run -- --round-script "action@0.5: hold; planted@1: shot out.png; planted@2: quit"
+                                               # scripted automated run; commands in src/round/script.rs
+cargo run -- --show-all-intel                    # show both teams' gadget reveals (testing)
 cargo run -- --dummies                         # training dummies in the keep (courtyard, behind plaster, behind stone)
 cargo run -- --weapon-test                     # scripted weapon checks; logs PASS/FAIL, exit code 1 on failure
 cargo run -- --weapon sidearm --ads            # hold a weapon / aim down sights
@@ -123,12 +135,34 @@ cargo run -- --hold-fire                       # hold the trigger
 cargo run -- --fire-at 90 --reload-at 120      # pull the trigger / press reload at a fixed tick (64 per second)
 cargo run -- --screenshot-on-hit out.png --dummies --fire-at 90  # screenshot just after your first hit, then quit
 cargo run -- --dump-weapon-sounds sounds/      # also write the synthesised weapon sounds as .wav files
+cargo run -- --no-viewmodel                    # don't draw the weapon in your hands (look/performance comparisons)
 ```
 
 Used for automated checks: e.g. spawn at the stairs, auto-move forward, and
 screenshot/log where the player ends up. Automated runs (`--screenshot`,
 `--weapon-test`, `--screenshot-on-hit`) don't grab the mouse and don't play
 player or weapon sounds.
+
+The round loop (Harrow Keep only) starts with operator selection. In
+`--screenshot` runs everyone is auto-picked; `--round-script` runs pick
+with `pick N` or let the timer run out, can spawn stand-in characters
+(`walker`), plant (`plant A`), place gadgets (`dart`, `stake`), shoot,
+take screenshots (`shot`) and quit, and log the round state once a second.
+
+Destruction test script (`src/destruction/debug.rs` lists every command):
+a timed list of `<seconds> <command>` separated by `;`.
+
+```sh
+# shoot the plaster wall, take a screenshot, quit
+cargo run -- --no-round --spawn 7,0,-2.3,0,0 --m4 "0 lamp 7.5 2.2 -2 3e7; 1 fire bullet 40 12; 3 shot out.png; 3.5 quit"
+# reinforce as a defender (hold F 5.6 s), shoot it, then hard-breach it
+cargo run -- --no-round --spawn 7,0,-2.6,0,0 --m4 "0.5 team defenders; 1 interact 5.6; 7 fire bullet 30 10; 9 hardbreach 0.5; 10 log; 10.5 quit"
+```
+
+Use `--no-round` for free play (otherwise the round loop respawns and
+locks the player). Commands: `team`, `look`, `tp`, `move`, `stance`, `fire bullet|pellet`,
+`melee`, `interact`, `gadget`, `explode`, `hardbreach`, `reinforce`, `lamp`,
+`dummy`, `log` (surfaces, player, rebuild cost, FPS), `shot`, `quit`.
 
 ## Layout
 

@@ -1,17 +1,22 @@
 //! First-person weapon view ("viewmodel"). Presentation only.
 //!
 //! The weapon is drawn by a second camera that renders only render layer
-//! [`VIEWMODEL_LAYER`], after the world camera, without clearing colour and
-//! with its own (cleared) depth. So the weapon is always drawn on top and
-//! never clips into walls, and its field of view is independent of the
-//! player's FOV setting and ADS zoom.
+//! [`VIEWMODEL_LAYER`], after the world camera, into its own image (cleared
+//! to transparent, with its own depth), which Bevy then alpha-blends over the
+//! world camera's output. So the weapon is always drawn on top and never
+//! clips into walls, and its field of view is independent of the player's
+//! FOV setting and ADS zoom.
 //!
-//! The weapon camera sits at the true eye position with the world view's
-//! rotation (look + recoil + lean tilt), so lights hit the weapon from the
-//! right directions:
+//! The weapon camera is a child of the player camera (so it follows the eye,
+//! look, recoil, lean tilt and bob exactly; other modules treat the
+//! top-level 3D camera as "the player camera"). It is kept LDR without auto
+//! exposure: the map gives every 3D camera HDR + auto exposure, but a second
+//! HDR camera sharing the world's image would tone-map the world twice.
+//! Lighting:
 //! - the world's sun only lights layer 0, so a matching shadowless sun on the
 //!   weapon layer follows it, dimmed when a ray from the eye to the sun is
-//!   blocked (in shade / indoors). Cheaper than a second set of shadow
+//!   blocked (in shade / indoors), and the weapon's exposure brightens there
+//!   like the world's eye adaptation. Cheaper than a second set of shadow
 //!   cascades for the weapon camera.
 //! - the muzzle flash light is on both layers (lights the weapon and walls).
 //!
@@ -25,12 +30,13 @@ use std::f32::consts::{PI, TAU};
 use avian3d::prelude::*;
 use bevy::{
     asset::RenderAssetUsages,
+    camera::{CameraOutputMode, Exposure, Hdr, visibility::RenderLayers},
     math::Affine3A,
-    camera::visibility::RenderLayers,
+    post_process::auto_exposure::AutoExposure,
     gltf::{GltfAssetLabel, GltfMaterialName},
     light::NotShadowCaster,
     prelude::*,
-    render::render_resource::{Extent3d, TextureDimension, TextureFormat},
+    render::render_resource::{BlendState, Extent3d, TextureDimension, TextureFormat},
     world_serialization::{WorldAssetRoot, WorldInstanceReady},
 };
 
@@ -40,6 +46,7 @@ use super::{
 };
 use crate::{
     config::{Tuning, WeaponDef},
+    debug::DebugView,
     physics::GameLayer,
     player::{CharacterState, Footstep, LocalPlayer, PlayerInput, Stance},
 };
@@ -52,8 +59,11 @@ pub struct ViewmodelPlugin;
 impl Plugin for ViewmodelPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<ViewmodelAnim>()
-            .add_systems(Startup, (create_flash_assets, spawn_viewmodel).chain())
+            .add_systems(Startup, create_flash_assets)
+            // After the player camera exists (spawned in Startup).
+            .add_systems(PostStartup, spawn_viewmodel)
             .add_observer(prepare_weapon_model)
+            .add_observer(keep_weapon_camera_ldr)
             .add_systems(
                 Update,
                 (pose_viewmodel, update_muzzle_flash, follow_sun).chain(),
@@ -154,6 +164,8 @@ struct ViewmodelAnim {
     bob_cycle: f32,
     bob_amount: f32,
     sprint: f32,
+    /// 0..1, weapon lowered because the hands are busy (defuser).
+    busy: f32,
     /// Recoil kick, 0 = rest; jumps on each shot and settles.
     kick: f32,
     slide_kick: f32,
@@ -221,7 +233,12 @@ fn create_flash_assets(
     });
 }
 
-fn spawn_viewmodel(mut commands: Commands, assets: Res<AssetServer>, tuning: Res<Tuning>) {
+fn spawn_viewmodel(
+    mut commands: Commands,
+    assets: Res<AssetServer>,
+    tuning: Res<Tuning>,
+    world_cameras: Query<Entity, (With<Camera3d>, Without<ChildOf>)>,
+) {
     let layer = RenderLayers::layer(VIEWMODEL_LAYER);
     let camera = commands
         .spawn((
@@ -229,10 +246,17 @@ fn spawn_viewmodel(mut commands: Commands, assets: Res<AssetServer>, tuning: Res
             ViewmodelCamera,
             Camera3d::default(),
             Camera {
-                // After the world camera, on top of it.
+                // After the world camera; Bevy alpha-blends later cameras'
+                // output over earlier ones.
                 order: 1,
-                // Keep the world image; depth is still cleared per camera.
-                clear_color: ClearColorConfig::None,
+                clear_color: ClearColorConfig::Custom(Color::NONE),
+                // The image holds premultiplied colour (cleared to transparent,
+                // everything blended over it), so composite it that way; plain
+                // alpha blending would darken see-through UI and glass.
+                output_mode: CameraOutputMode::Write {
+                    blend_state: Some(BlendState::PREMULTIPLIED_ALPHA_BLENDING),
+                    clear_color: ClearColorConfig::None,
+                },
                 ..default()
             },
             Projection::Perspective(PerspectiveProjection {
@@ -241,9 +265,18 @@ fn spawn_viewmodel(mut commands: Commands, assets: Res<AssetServer>, tuning: Res
                 far: 10.0,
                 ..default()
             }),
+            Transform::default(),
             layer.clone(),
         ))
         .id();
+    // Follow the player camera (the top-level 3D camera).
+    let mut player_cameras = world_cameras.iter();
+    match (player_cameras.next(), player_cameras.next()) {
+        (Some(player_camera), None) => {
+            commands.entity(camera).insert(ChildOf(player_camera));
+        }
+        _ => warn!("weapon view: expected exactly one top-level 3D camera to follow"),
+    }
     let rig = commands
         .spawn((
             Name::new("Weapon rig"),
@@ -294,6 +327,18 @@ fn spawn_viewmodel(mut commands: Commands, assets: Res<AssetServer>, tuning: Res
         // World and weapon.
         RenderLayers::from_layers(&[0, VIEWMODEL_LAYER]),
     ));
+}
+
+/// The map gives every 3D camera auto exposure (which brings HDR). The
+/// weapon camera stays LDR (see the module docs), so take them off again.
+fn keep_weapon_camera_ldr(
+    add: On<Add<AutoExposure>>,
+    cameras: Query<(), With<ViewmodelCamera>>,
+    mut commands: Commands,
+) {
+    if cameras.contains(add.entity) {
+        commands.entity(add.entity).remove::<(AutoExposure, Hdr)>();
+    }
 }
 
 /// Once a weapon model has spawned: move it to the weapon layer, swap in the
@@ -451,7 +496,6 @@ fn stride(state: &CharacterState, tuning: &Tuning) -> f32 {
 
 type LocalParts<'a> = (
     Entity,
-    &'a Transform,
     &'a PlayerInput,
     &'a CharacterState,
     &'a LinearVelocity,
@@ -462,12 +506,10 @@ type LocalParts<'a> = (
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn pose_viewmodel(
     player: Single<LocalParts, With<LocalPlayer>>,
-    mut camera: Single<
-        &mut Transform,
-        (With<ViewmodelCamera>, Without<LocalPlayer>, Without<ViewmodelRig>),
-    >,
-    mut rig: Single<
-        &mut Transform,
+    debug_view: Res<DebugView>,
+    mut no_viewmodel: Local<Option<bool>>,
+    rig: Single<
+        (&mut Transform, &mut Visibility),
         (With<ViewmodelRig>, Without<LocalPlayer>, Without<ViewmodelCamera>),
     >,
     mut models: Query<
@@ -488,26 +530,23 @@ fn pose_viewmodel(
     mut steps: MessageReader<Footstep>,
     tuning: Res<Tuning>,
     time: Res<Time>,
-    fixed_time: Res<Time<Fixed>>,
 ) {
-    let (me, body, look, character, velocity, state, aim_view) = player.into_inner();
+    let (me, look, character, velocity, state, aim_view) = player.into_inner();
+    let (mut rig_transform, mut rig_visibility) = rig.into_inner();
     let dt = time.delta_secs().max(1e-4);
     let view = &tuning.weapons.view;
     let slot = state.active;
     let def = slot.def(&tuning);
 
-    // --- Camera at the true eye, like the world camera ---------------------
-    let (height, lean) = character.interpolated(fixed_time.overstep_fraction());
-    let right = Quat::from_rotation_y(look.yaw) * Vec3::X;
-    camera.translation = body.translation
-        + Vec3::Y * (height - tuning.body.eye_from_top)
-        + right * (lean * tuning.lean.offset);
-    camera.rotation = Quat::from_euler(
-        EulerRot::YXZ,
-        look.yaw + aim_view.yaw,
-        look.pitch + aim_view.pitch,
-        -lean * tuning.lean.angle.to_radians(),
-    );
+    // No weapon in the third-person debug view (or with `--no-viewmodel`).
+    // The camera keeps running: the UI is drawn by the last camera.
+    let hidden = *no_viewmodel.get_or_insert_with(|| {
+        std::env::args().any(|a| a == "--no-viewmodel")
+    }) || debug_view.third_person;
+    let wanted = if hidden { Visibility::Hidden } else { Visibility::Inherited };
+    if *rig_visibility != wanted {
+        *rig_visibility = wanted;
+    }
 
     // --- Shots ----------------------------------------------------------------
     for shot in shots.read().filter(|s| s.shooter == me) {
@@ -559,6 +598,9 @@ fn pose_viewmodel(
     let sprint_target = if character.sprinting { 1.0 } else { 0.0 };
     anim.sprint += (sprint_target - anim.sprint) * (1.0 - (-8.0 * dt).exp());
     let sprint = ease(anim.sprint);
+    let busy_target = if state.hands_busy { 1.0 } else { 0.0 };
+    anim.busy += (busy_target - anim.busy) * (1.0 - (-10.0 * dt).exp());
+    let busy = ease(anim.busy);
 
     // --- Pose ---------------------------------------------------------------------
     let info = models
@@ -587,6 +629,10 @@ fn pose_viewmodel(
     // Sprint: tilt the weapon down and across the body.
     position += Vec3::new(-0.05, -0.04, 0.04) * sprint;
     rotation *= Quat::from_euler(EulerRot::YXZ, 0.55 * sprint, -0.35 * sprint, 0.25 * sprint);
+
+    // Hands busy (e.g. the defuser): weapon lowered out of the way.
+    position.y -= 0.3 * busy;
+    rotation *= Quat::from_rotation_x(-0.8 * busy);
 
     // Recoil kick: back and muzzle up (less when aimed, to keep the sight
     // picture readable).
@@ -630,8 +676,8 @@ fn pose_viewmodel(
         }
         WeaponAction::Ready => {}
     }
-    rig.translation = position;
-    rig.rotation = rotation;
+    rig_transform.translation = position;
+    rig_transform.rotation = rotation;
 
     // --- Models: show the active one, animate its parts ----------------------------
     for (model, mut visibility, mut transform) in &mut models {
@@ -744,13 +790,14 @@ fn update_muzzle_flash(
 fn follow_sun(
     world_sun: Query<&GlobalTransform, (With<DirectionalLight>, Without<ViewmodelSun>)>,
     sun: Single<(&mut Transform, &mut DirectionalLight), With<ViewmodelSun>>,
-    camera: Single<&GlobalTransform, With<ViewmodelCamera>>,
+    camera: Single<(&GlobalTransform, Option<&mut Exposure>), With<ViewmodelCamera>>,
     spatial: SpatialQuery,
     mut anim: ResMut<ViewmodelAnim>,
     tuning: Res<Tuning>,
     time: Res<Time>,
 ) {
     let (mut transform, mut light) = sun.into_inner();
+    let (camera, exposure) = camera.into_inner();
     let Some(world) = world_sun.iter().next() else {
         return;
     };
@@ -765,5 +812,15 @@ fn follow_sun(
     let illuminance = tuning.lighting.sun * anim.sun;
     if (light.illuminance - illuminance).abs() > 1.0 {
         light.illuminance = illuminance;
+    }
+    // Stand-in for the world camera's eye adaptation (which only brightens,
+    // by up to `adaptation_max` stops, in dark places): brighten the weapon
+    // as it goes into shade.
+    if let Some(mut exposure) = exposure {
+        let l = &tuning.lighting;
+        let ev100 = l.exposure - l.adaptation_max * (1.0 - anim.sun);
+        if (exposure.ev100 - ev100).abs() > 0.01 {
+            exposure.ev100 = ev100;
+        }
     }
 }

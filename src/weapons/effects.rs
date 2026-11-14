@@ -195,7 +195,12 @@ fn spawn_impacts(
                 size: 0.07,
             },
             Mesh3d(assets.puff.clone()),
-            MeshMaterial3d(assets.blood.clone()),
+            // Characters bleed; gadgets and other hit volumes throw dust.
+            MeshMaterial3d(if hit.zone.is_some() {
+                assets.blood.clone()
+            } else {
+                assets.stone_dust.clone()
+            }),
             Transform::from_translation(hit.point).with_scale(Vec3::splat(0.01)),
             NotShadowCaster,
         ));

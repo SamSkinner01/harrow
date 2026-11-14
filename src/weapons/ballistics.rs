@@ -1,10 +1,13 @@
 //! Hitscan bullet tracing with soft-surface penetration.
 //!
 //! One ray cast per surface the bullet meets, against world geometry
-//! (`GameLayer::World`) and character hit zones (`GameLayer::Hitbox`, sensor
+//! (`GameLayer::World`) and hit volumes (`GameLayer::Hitbox`, sensor
 //! colliders: Avian's ray casts include sensors, filtered by layer):
 //!
-//! - a hit zone: the bullet stops there (no over-penetration through bodies);
+//! - a character hit zone (`HitZone`): the bullet stops there (no
+//!   over-penetration through bodies);
+//! - another hit volume with `Health` (deployed gadgets): it is hit and the
+//!   bullet stops; a hit volume without `Health` is ignored;
 //! - a soft world piece (`SurfaceKind::Soft` on its rigid body): reported,
 //!   then the bullet carries on from the entry point with that whole piece
 //!   ignored, losing damage, up to a maximum number of soft layers;
@@ -16,7 +19,7 @@ use avian3d::prelude::*;
 use bevy::prelude::*;
 
 use crate::{
-    combat::{ImpactKind, SurfaceImpact, SurfaceKind},
+    combat::{Health, ImpactKind, SurfaceImpact, SurfaceKind},
     config::PenetrationTuning,
     physics::GameLayer,
     player::HitZone,
@@ -28,14 +31,17 @@ pub struct TraceWorld<'a, 'w, 's> {
     pub colliders: &'a Query<'w, 's, &'static ColliderOf>,
     pub zones: &'a Query<'w, 's, &'static HitZone>,
     pub surfaces: &'a Query<'w, 's, &'static SurfaceKind>,
+    pub layers: &'a Query<'w, 's, &'static CollisionLayers>,
+    pub damageable: &'a Query<'w, 's, (), With<Health>>,
 }
 
-/// A character hit zone struck by a bullet.
+/// Something with health struck by a bullet: a character's hit zone
+/// (`zone` set) or another hit volume such as a gadget (`zone` = None).
 #[derive(Debug, Clone, Copy)]
-pub struct ZoneHit {
-    /// The character (rigid body of the hit zone).
+pub struct TargetHit {
+    /// The entity to damage (the character, or the hit volume itself).
     pub target: Entity,
-    pub zone: HitZone,
+    pub zone: Option<HitZone>,
     pub point: Vec3,
     pub distance: f32,
     /// Share of damage left after penetration (1 = none lost).
@@ -47,7 +53,7 @@ pub struct ZoneHit {
 pub struct Trace {
     /// Where the bullet stopped, or the end of its range.
     pub end: Vec3,
-    pub hit: Option<ZoneHit>,
+    pub hit: Option<TargetHit>,
     /// Every world surface the bullet entered, in order, with its kind.
     pub impacts: Vec<(SurfaceImpact, SurfaceKind)>,
 }
@@ -72,6 +78,12 @@ pub fn trace(
             .get(collider)
             .map(|c| c.body)
             .unwrap_or(collider)
+    };
+    let is_hit_volume = |collider: Entity| {
+        world
+            .layers
+            .get(collider)
+            .is_ok_and(|l| l.memberships.has_all(GameLayer::Hitbox))
     };
 
     let mut passed: Vec<Entity> = Vec::new();
@@ -98,24 +110,42 @@ pub fn trace(
             break;
         };
         let point = start + *direction * hit.distance;
-        travelled += hit.distance;
+        let body = body_of(hit.entity);
+        let hit_target = |target: Entity, zone: Option<HitZone>| TargetHit {
+            target,
+            zone,
+            point,
+            distance: travelled + hit.distance,
+            damage_scale,
+            layers,
+        };
 
         if let Ok(&zone) = world.zones.get(hit.entity) {
             return Trace {
                 end: point,
-                hit: Some(ZoneHit {
-                    target: body_of(hit.entity),
-                    zone,
-                    point,
-                    distance: travelled,
-                    damage_scale,
-                    layers,
-                }),
+                hit: Some(hit_target(body, Some(zone))),
                 impacts,
             };
         }
+        if is_hit_volume(hit.entity) {
+            let target = [hit.entity, body]
+                .into_iter()
+                .find(|e| world.damageable.contains(*e));
+            if let Some(target) = target {
+                return Trace {
+                    end: point,
+                    hit: Some(hit_target(target, None)),
+                    impacts,
+                };
+            }
+            // Nothing to damage: fly on through.
+            passed.push(body);
+            start = point;
+            travelled += hit.distance;
+            continue;
+        }
 
-        let body = body_of(hit.entity);
+        travelled += hit.distance;
         let kind = world
             .surfaces
             .get(body)
