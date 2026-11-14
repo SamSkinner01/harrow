@@ -170,6 +170,15 @@ impl<'w, 's, 'a> Builder<'w, 's, 'a> {
         self.place(name, Vec3::new(x, y, z), Quat::from_rotation_y(yaw.to_radians()))
     }
 
+    /// A scanned prop (`assets/models/props/`) at local (x, y, z), turned
+    /// `yaw` degrees and scaled uniformly.
+    pub fn model(&mut self, name: &str, x: f32, y: f32, z: f32, yaw: f32, scale: f32) {
+        let transform = Transform::from_translation(self.world(x, y, z))
+            .with_rotation(Quat::from_rotation_y(yaw.to_radians()))
+            .with_scale(Vec3::splat(scale));
+        self.commands.spawn(crate::map::props::prop(self.assets, name, transform));
+    }
+
     /// Junction piece (post, cap or merlon) at a local grid point, once per
     /// world position and height.
     pub fn junction(&mut self, name: &str, p: IVec2, y: f32) {

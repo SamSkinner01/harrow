@@ -24,14 +24,14 @@ MANIFEST = {
     "metal": ("rusty_metal_02", "1k"),
     "burlap": ("hessian_230", "1k"),
     "rock": ("rock_face_03", "1k"),
-    "fabric": ("fabric_pattern_07", "1k"),
+    "fabric": ("quatrefoil_jacquard_fabric", "1k"),
     "gravel": ("gravelly_sand", "1k"),
 }
 
 # Poly Haven map name -> our file name
 MAPS = {"Diffuse": "diff", "nor_gl": "normal", "arm": "arm"}
 # Textures that come in colour variants instead of one "Diffuse" map.
-DIFFUSE_VARIANT = {"fabric": "col_1"}
+DIFFUSE_VARIANT = {}
 
 USER_AGENT = "harrow-asset-fetch (hobby game project)"
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")

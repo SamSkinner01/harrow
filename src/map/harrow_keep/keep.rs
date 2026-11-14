@@ -298,7 +298,6 @@ fn dress(b: &mut Builder) {
     b.prop("shelf_2m", 2.0, u, 0.25, 180.0);
     b.prop("shelf_2m", 13.0, u, 0.25, 180.0);
     b.prop("table_2m", 2.0, u, 6.6, 0.0);
-    b.prop("radio_set", 2.0, u + 0.8, 6.6, 0.0);
     b.prop("crate_large", 7.0, u, 1.0, 0.0);
     // Records (site): free-standing shelf rows.
     for x in [21.0, 25.0, 29.0] {
@@ -331,7 +330,6 @@ fn dress(b: &mut Builder) {
     b.prop("table_2m", 10.0, t, 1.0, 0.0);
     b.prop("radio_set", 10.0, t + 0.8, 1.0, 0.0);
     b.prop("table_2m", 13.0, t, 9.0, 90.0);
-    b.prop("radio_set", 13.0, t + 0.8, 9.0, 90.0);
     b.prop("generator", 9.4, t, 10.6, 0.0);
     b.prop("crate_large", 12.6, t, 4.6, 0.0);
     // Study (site).

@@ -95,7 +95,7 @@
         "metal": (scale: 1.0, tint: (1.0, 1.0, 1.0)),
         "burlap": (scale: 0.27, tint: (1.0, 1.0, 1.0)),
         "rock": (scale: 2.7, tint: (1.25, 1.12, 0.95)),
-        "fabric": (scale: 1.2, tint: (0.9, 0.8, 0.75)),
+        "fabric": (scale: 0.6, tint: (1.0, 0.95, 0.95)),
         "gravel": (scale: 2.48, tint: (1.25, 1.15, 1.0)),
     },
     footsteps: (

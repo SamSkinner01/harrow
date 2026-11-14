@@ -13,6 +13,7 @@
 
 mod builder;
 mod compound;
+mod dressing;
 mod exterior;
 mod keep;
 mod wings;
@@ -65,6 +66,7 @@ fn build_map(commands: Commands, assets: Res<AssetServer>, lamp_assets: Res<Lamp
     compound::build(&mut b);
     wings::build(&mut b);
     exterior::build(&mut b);
+    dressing::build(&mut b);
     let pieces = b.pieces;
     let lamps = std::mem::take(&mut b.lamps);
     let mut commands = b.commands;

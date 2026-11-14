@@ -13,6 +13,7 @@ mod keep;
 mod kit;
 mod lamps;
 mod materials;
+mod props;
 
 use bevy::prelude::*;
 
@@ -28,6 +29,7 @@ impl Plugin for MapPlugin {
             environment::EnvironmentPlugin,
             lamps::LampsPlugin,
             batch::BatchPlugin,
+            props::PropsPlugin,
         ));
         match MapChoice::from_args() {
             MapChoice::Greybox => app.add_plugins(greybox::GreyboxPlugin),

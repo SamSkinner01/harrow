@@ -162,7 +162,7 @@ fn generate_mipmaps(
 
 /// Appends a full box-filtered mip chain to an RGBA8 image. sRGB images are
 /// averaged in linear space so distant surfaces don't darken.
-fn add_mip_chain(image: &mut Image) {
+pub(super) fn add_mip_chain(image: &mut Image) {
     let srgb = match image.texture_descriptor.format {
         TextureFormat::Rgba8UnormSrgb => true,
         TextureFormat::Rgba8Unorm => false,
