@@ -236,13 +236,14 @@ fn dress_charges(
                 meshes.add(Cuboid::new(CHARGE_SIZE.x, CHARGE_SIZE.y, CHARGE_SIZE.z)),
                 meshes.add(Cuboid::new(0.03, 0.03, 0.012)),
                 materials.add(StandardMaterial {
-                    base_color: Color::srgb(0.16, 0.17, 0.15),
-                    perceptual_roughness: 0.7,
+                    base_color: Color::srgb(0.2, 0.22, 0.15),
+                    perceptual_roughness: 0.75,
                     ..default()
                 }),
                 materials.add(StandardMaterial {
-                    base_color: Color::srgb(1.0, 0.1, 0.05),
-                    emissive: LinearRgba::rgb(40.0, 2.0, 1.0),
+                    base_color: Color::srgb(0.25, 0.01, 0.01),
+                    // Bright enough to read in sunlight exposure.
+                    emissive: LinearRgba::rgb(4000.0, 60.0, 20.0),
                     ..default()
                 }),
             )

@@ -174,8 +174,9 @@ pub struct Explosion {
     pub damage_radius: f32,
     pub max_damage: f32,
     pub source: Option<Entity>,
-    /// Surface the charge was stuck to, if any: always hit, and not counted
-    /// as cover.
+    /// Surface a shaped charge was stuck to, if any: only that surface is
+    /// opened, and it doesn't count as cover. `None` (grenades) opens every
+    /// soft surface in range.
     pub attached_to: Option<Entity>,
 }
 

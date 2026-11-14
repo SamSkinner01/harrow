@@ -45,6 +45,8 @@ impl Plugin for SurfaceSpawnPlugin {
 pub struct SurfaceMaterials {
     by_name: HashMap<String, Handle<StandardMaterial>>,
     fallback: HashMap<SurfaceMaterial, Handle<StandardMaterial>>,
+    /// Reinforcement plates: the library metal, darkened to steel.
+    plate: Option<Handle<StandardMaterial>>,
 }
 
 impl SurfaceMaterials {
@@ -66,9 +68,17 @@ pub struct SurfaceParts {
     mesh_revision: u32,
 }
 
-/// Mesh child still waiting for its library material.
+/// Mesh child still waiting for its library material (frames waited).
 #[derive(Component)]
-struct NeedsMaterial(SurfaceMaterial, u32);
+struct NeedsMaterial {
+    material: SurfaceMaterial,
+    /// Metal on a reinforceable surface is the reinforcement plate.
+    plate: bool,
+    waited: u32,
+}
+
+/// Tint applied to the library metal for reinforcement plates.
+const PLATE_TINT: Color = Color::linear_rgb(0.42, 0.42, 0.44);
 
 fn convert_piece(
     insert: On<Insert<SurfaceKind>>,
@@ -133,7 +143,11 @@ fn convert_piece(
                 Mesh3d(handle.clone()),
                 Transform::default(),
                 if visible { Visibility::Inherited } else { Visibility::Hidden },
-                NeedsMaterial(material, 0),
+                NeedsMaterial {
+                    material,
+                    plate: material == SurfaceMaterial::Metal && surface.spec.reinforceable,
+                    waited: 0,
+                },
                 ChildOf(root),
             ))
             .id();
@@ -160,10 +174,20 @@ fn assign_materials(
     mut commands: Commands,
 ) {
     for (entity, mut need) in &mut waiting {
-        let handle = match materials.get(need.0) {
+        let handle = match materials.get(need.material) {
+            Some(handle) if need.plate => match &materials.plate {
+                Some(plate) => plate.clone(),
+                None => {
+                    let mut steel = assets.get(&handle).cloned().unwrap_or_default();
+                    steel.base_color = PLATE_TINT;
+                    let plate = assets.add(steel);
+                    materials.plate = Some(plate.clone());
+                    plate
+                }
+            },
             Some(handle) => handle,
-            None if need.1 > 60 => {
-                let colour = match need.0 {
+            None if need.waited > 60 => {
+                let colour = match need.material {
                     SurfaceMaterial::Plaster => Color::srgb(0.86, 0.80, 0.70),
                     SurfaceMaterial::Wood => Color::srgb(0.45, 0.33, 0.22),
                     SurfaceMaterial::Metal => Color::srgb(0.35, 0.35, 0.36),
@@ -171,14 +195,14 @@ fn assign_materials(
                 let handle = assets.add(StandardMaterial {
                     base_color: colour,
                     perceptual_roughness: 0.8,
-                    metallic: if need.0 == SurfaceMaterial::Metal { 0.8 } else { 0.0 },
+                    metallic: if need.material == SurfaceMaterial::Metal { 0.8 } else { 0.0 },
                     ..default()
                 });
-                materials.fallback.insert(need.0, handle.clone());
+                materials.fallback.insert(need.material, handle.clone());
                 handle
             }
             None => {
-                need.1 += 1;
+                need.waited += 1;
                 continue;
             }
         };

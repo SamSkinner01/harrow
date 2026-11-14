@@ -211,8 +211,9 @@
             count: 3,
             // Seconds to hold 4 to stick one on.
             place_time: 1.0,
-            // How close (from the eyes) you must be, metres.
-            reach: 1.6,
+            // How close (from the eyes) you must be, metres. Your eyes are
+            // 1.6 m above the floor, so floors need more than that.
+            reach: 2.0,
             // On walls the charge sits at this height above the floor, so the
             // blast always opens a walk-through hole (top = height + radius;
             // a standing person needs about 1.9 m).

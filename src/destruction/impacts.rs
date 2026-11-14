@@ -454,7 +454,8 @@ fn explode(
         {
             hit.push((root, parts.collider));
         }
-        if blast.breach_radius > 0.0 {
+        // A charge stuck to a surface is shaped: it only opens that one.
+        if blast.breach_radius > 0.0 && blast.attached_to.is_none() {
             let sphere = Collider::sphere(blast.breach_radius);
             for collider in spatial.shape_intersections(&sphere, blast.centre, Quat::IDENTITY, &world) {
                 let root = surface_root(collider, &colliders);
