@@ -146,7 +146,10 @@ class Gear:
         obj.parent = self.ch.rig
         mod = obj.modifiers.new("Armature", "ARMATURE")
         mod.object = self.ch.rig
-        mesh.color_attributes.active_color = mesh.color_attributes["Color"]
+        # The glTF exporter's "ACTIVE" vertex colour is the *render* one.
+        colours = mesh.color_attributes
+        colours.active_color = colours["Color"]
+        colours.render_color_index = colours.find("Color")
         return obj
 
     # --------------------------------------------------------- finishing
@@ -379,9 +382,8 @@ class Gear:
 # =================================================================== pieces
 
 
-def build(ch):
+def build(ch, s):
     """Build every gear piece named in the config into one skinned object."""
-    s = Surfaces(ch.body)
     g = Gear(ch, s)
     gear = ch.cfg["gear"]
     m = ch.marks
@@ -478,19 +480,36 @@ def helmet(g, kind):
         raise ValueError(f"unknown helmet {kind!r}")
     if kind == "cap":
         _head_shell(g, "cap", 0.004, 0.006, col["gear_alt"])
-        # Brim: a curved peak in front.
-        p, n = _on_shell(g, 0, 0.05, 0.004)
-        if p is not None:
-            for k in range(5):
-                phi = -50 + 25 * k
-                q, qn = _on_shell(g, phi, 0.05, 0.006)
-                if q is None:
-                    continue
-                out = Vector((qn.x, qn.y, 0)).normalized()
-                frame = _frame(out)
-                frame.translation = q + out * 0.035 + Vector((0, 0, -0.004))
-                g.box(frame @ Matrix.Rotation(math.radians(-12), 4, "X"), (0.032, 0.07, 0.006), col["gear_alt"],
-                      weights={"head": 1.0})
+        # Peak: one curved plate following the rim, sloping down a little.
+        rim = _lerp_table(HELMET_CUTS["cap"], 0)
+        top, bottom = [], []
+        n_phi, n_out = 9, 3
+        for i in range(n_phi):
+            phi = -62 + 124 * i / (n_phi - 1)
+            q, qn = _on_shell(g, phi, rim + 0.002, 0.008)
+            if q is None:
+                continue
+            out = Vector((qn.x, qn.y, 0)).normalized()
+            reach = 0.065 * math.cos(math.radians(phi) * 0.8)
+            row_t, row_b = [], []
+            for j in range(n_out):
+                t = j / (n_out - 1)
+                pt = q + out * (reach * t) + Vector((0, 0, -0.022 * t * t))
+                row_t.append(g.bm.verts.new(pt))
+                row_b.append(g.bm.verts.new(pt + Vector((0, 0, -0.006))))
+            top.append(row_t)
+            bottom.append(row_b)
+        faces = []
+        for i in range(len(top) - 1):
+            for j in range(n_out - 1):
+                faces.append(g.bm.faces.new((top[i][j], top[i + 1][j], top[i + 1][j + 1], top[i][j + 1])))
+                faces.append(g.bm.faces.new((bottom[i][j + 1], bottom[i + 1][j + 1], bottom[i + 1][j], bottom[i][j])))
+            for j in (0, n_out - 1):
+                faces.append(g.bm.faces.new((top[i][j], bottom[i][j], bottom[i + 1][j], top[i + 1][j])))
+        for i in (0, len(top) - 1):
+            for j in range(n_out - 1):
+                faces.append(g.bm.faces.new((top[i][j], top[i][j + 1], bottom[i][j + 1], bottom[i][j])))
+        g.finish(faces, col["gear_alt"], weights={"head": 1.0}, smooth=True)
         return
     shell_off, thick = (0.02, 0.012) if kind == "highcut" else (0.024, 0.014)
     _head_shell(g, kind, shell_off, thick, col["helmet"])
@@ -613,14 +632,28 @@ def eyewear(g, kind, helmet_kind):
         g.shell("head", band(55, 305, 0.02, 0.036, 13), 13, 2, off - 0.006, 0.004, col["straps"],
                 weights={"head": 1.0})
     elif kind == "glasses":
-        def rays(i, j):
-            phi = math.radians(-70 + 140 * i / 10)
-            z = m.eye.z - 0.018 + 0.038 * j / 1
-            d = Vector((math.sin(phi), math.cos(phi), 0))
-            o = Vector((0, c.y, z))
-            return o + d * 0.4, -d
+        # Wrap-around lens with a thin top bar, arms back to the ears.
+        def band(phi0, phi1, z0, z1):
+            def rays(i, j):
+                phi = math.radians(phi0 + (phi1 - phi0) * i / 10)
+                z = m.eye.z + z0 + (z1 - z0) * j
+                d = Vector((math.sin(phi), math.cos(phi), 0))
+                return Vector((0, c.y, z)) + d * 0.4, -d
+            return rays
 
-        g.shell("head", rays, 11, 2, 0.014, 0.004, col["dark"], weights={"head": 1.0}, smooth_iters=3)
+        g.shell("head", band(-56, 56, -0.013, 0.011), 11, 2, 0.015, 0.003, col["lens"],
+                weights={"head": 1.0}, smooth_iters=3)
+        g.shell("head", band(-60, 60, 0.009, 0.015), 11, 2, 0.014, 0.005, col["dark"],
+                weights={"head": 1.0}, smooth_iters=3)
+        for side in (-1, 1):
+            front, _n = _on_shell(g, side * 60, 0.012, 0.016)
+            back = Vector((side * (g.ear_x + 0.004), g.head_centre.y - 0.01, m.eye.z + 0.01))
+            if front is None:
+                continue
+            axis = back - front
+            f = axis.to_track_quat("Z", "X").to_matrix().to_4x4()
+            f.translation = (front + back) / 2
+            g.box(f, (0.004, 0.006, axis.length), col["dark"], weights={"head": 1.0})
     else:
         raise ValueError(f"unknown eyewear {kind!r}")
 
@@ -711,22 +744,24 @@ def _shoulder_strap(g, x, width, colour, front_z, back_z, thickness=0.012):
 
 
 def _pauldron(g, s):
+    """Shoulder guard: a shell over the deltoid and the top of the shoulder."""
     m, col = g.m, g.c
     sign = -1 if s == "l" else 1
     sh = m.shoulder[s]
     arm_dir = (m.elbow[s] - sh).normalized()
-    out = Vector((sign, 0, 0))
-    centre = sh + arm_dir * 0.05
+    centre = sh + arm_dir * 0.04 + Vector((0, 0, -0.02))
+    side = Vector((sign, 0, 0))
+    up = Vector((0, 0, 1))
+    fwd = Vector((0, 1, 0))
 
     def rays(i, j):
-        a = math.radians(-70 + 140 * i / 6)   # around the arm, front to back
-        e = math.radians(10 + 60 * j / 3)     # from the side up towards the top
-        side_dir = (out * math.cos(e) + Vector((0, 0, 1)) * math.sin(e)).normalized()
-        fwd = Vector((0, 1, 0))
-        d = (side_dir * math.cos(a) + fwd * math.sin(a)).normalized()
-        return centre + d * 0.4, -d
+        a = math.radians(-75 + 150 * i / 6)   # front to back around the shoulder
+        e = math.radians(5 + 70 * j / 4)      # from the side of the arm up to the top
+        d = (side * math.cos(e) + up * math.sin(e)) * math.cos(a) + fwd * math.sin(a)
+        return centre + d.normalized() * 0.4, -d.normalized()
 
-    g.shell("arms_" + s, rays, 7, 4, 0.02, 0.014, col["gear"], weights={f"upperarm_{s}": 0.85, f"clavicle_{s}": 0.15})
+    g.shell("all", rays, 7, 5, 0.016, 0.013, col["gear"], weights={f"upperarm_{s}": 0.8, f"clavicle_{s}": 0.2},
+            smooth_iters=3)
 
 
 # ---------------------------------------------------------------- pouches

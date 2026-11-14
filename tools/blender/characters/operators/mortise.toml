@@ -1,0 +1,46 @@
+# MORTISE: defender, anchor / anti-breach. Armour 3 / speed 1.
+# Big, older, unhurried. The heaviest kit in the game: full-cut helmet with
+# a jaw guard and raised visor, plate carrier with side plates, collar and
+# shoulder guards, and the Backplate Charge cases stacked on his back.
+# Rebuild with tools/scripts/build_characters.sh --only mortise
+
+id = "mortise"
+name = "Mortise"
+team = "defenders"
+role = "anchor"
+armour = 3
+speed = 1
+
+[body]
+gender = 1.0
+age = 0.72
+muscle = 0.82
+weight = 0.78
+proportions = 0.45
+height = 0.6
+height_m = 1.79
+race = { african = 0.85, asian = 0.05, caucasian = 0.10 }
+
+[face]
+eyebrows = "eyebrow002"
+eyes = "brown"
+targets = { "head-square" = 0.7, "chin-width-incr" = 0.6, "nose-scale-horiz-incr" = 0.5, "nose-flaring-incr" = 0.3, "neck-scale-horiz-incr" = 0.8, "mouth-lowerlip-volume-incr" = 0.3 }
+
+[skin]
+texture = "middleage_african_male"
+tint = [1.0, 0.98, 0.96]
+hair = "buzz"
+hair_colour = "#151210"
+stubble = 0.5
+
+[gear]
+helmet = "full"
+headset = true
+eyewear = "none"
+carrier = "heavy"
+pouches = ["mags_triple", "admin", "radio_left", "charge_cases", "med_pouch"]
+gloves = "full"
+boots = "high"
+pads = ["knees", "elbows"]
+neck = "none"
+sleeves = "long"

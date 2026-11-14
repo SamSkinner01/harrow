@@ -3,7 +3,7 @@ animations. Returns a `Character` ready for export."""
 
 from . import body as body_mod
 from . import gear as gear_mod
-from . import materials, mpfb
+from . import anim, materials, mpfb
 from .palette import palette_for
 
 # Target triangle count for the body before clothing (MakeHuman's base mesh
@@ -55,5 +55,7 @@ def build(cfg, scratch):
         obj.data.materials.append(mats[name])
     ch.materials = mats
     ch.colours = colours
-    ch.gear = gear_mod.build(ch)
+    surfaces = gear_mod.Surfaces(body)
+    ch.gear = gear_mod.build(ch, surfaces)
+    anim.build(ch, gear_mod, surfaces)
     return ch
