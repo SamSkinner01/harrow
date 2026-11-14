@@ -182,6 +182,7 @@ pub struct WeaponModelTuning {
     /// `assets/models/characters/arms_*.glb` (`<arms>_hold`,
     /// `<arms>_reload`, `<arms>_reload_empty`; built for the model's grip,
     /// so use the model they were posed on). None = no arms.
+    #[cfg_attr(not(feature = "client"), allow(dead_code))] // arms are client only
     pub arms: Option<String>,
 }
 
