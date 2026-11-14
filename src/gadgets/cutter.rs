@@ -86,6 +86,9 @@ pub struct RingCutter {
     pub axis_u: Vec3,
     pub axis_v: Vec3,
     pub radius: f32,
+    /// Half size of the frame and the blade's path along `axis_u` /
+    /// `axis_v` (the cut circle clipped to the panel between its posts).
+    pub extent: Vec2,
     /// The blade has broken through to the far side.
     pub exposed: bool,
     pub noise_timer: f32,
@@ -98,7 +101,9 @@ pub struct RingCutter {
 impl RingCutter {
     /// Where the blade is (world), on the far face.
     pub fn blade_position(&self) -> Vec3 {
-        self.far + (self.axis_u * self.angle.cos() + self.axis_v * self.angle.sin()) * self.radius
+        self.far
+            + self.axis_u * (self.angle.cos() * self.extent.x)
+            + self.axis_v * (self.angle.sin() * self.extent.y)
             - self.normal * 0.03
     }
 }
@@ -116,6 +121,7 @@ struct Mount {
     normal: Vec3,
     axis_u: Vec3,
     axis_v: Vec3,
+    extent: Vec2,
     reinforced: bool,
     hatch: bool,
 }
@@ -140,13 +146,17 @@ fn cutter_mount(surface: &SoftSurface, gt: &GlobalTransform, eye: Vec3, dir: Vec
     let inverse = gt.affine().inverse();
     let (mut uv, _) = plane.split_local(inverse.transform_point3(mount.point));
     let (min, max) = (surface.grid.min(), surface.grid.max());
-    if hatch {
-        uv = (min + max) / 2.0;
+    // The frame sits in the middle of the panel (between the posts, or on
+    // the hatch cover); the cut circle is clipped by whatever is around.
+    let half = (max - min) / 2.0;
+    uv.x = (min.x + max.x) / 2.0;
+    let extent = if hatch {
+        uv.y = (min.y + max.y) / 2.0;
+        Vec2::new(t.cut_radius.min(half.x - 0.02), t.cut_radius.min(half.y - 0.02))
     } else {
         uv.y = t.cut_height;
-        let margin = 0.3_f32.min((max.x - min.x) / 2.0);
-        uv.x = uv.x.clamp(min.x + margin, max.x - margin);
-    }
+        Vec2::new(t.cut_radius.min(half.x - 0.06), t.cut_radius)
+    };
     let side = surface.side_of(gt, eye);
     let (w0, w1) = surface.spec.skin_depth;
     // Outer face on each side, plate and braces included.
@@ -176,6 +186,7 @@ fn cutter_mount(surface: &SoftSurface, gt: &GlobalTransform, eye: Vec3, dir: Vec
         normal,
         axis_u,
         axis_v,
+        extent,
         reinforced: mount.reinforced,
         hatch,
     })
@@ -365,6 +376,7 @@ fn spawn_cutter(
                 axis_u: mount.axis_u,
                 axis_v: mount.axis_v,
                 radius: 0.0,
+                extent: mount.extent,
                 exposed: false,
                 noise_timer: 0.0,
                 serial,
@@ -496,6 +508,7 @@ fn run_cutters(
                 axis_v: cutter.axis_v,
                 far: cutter.far,
                 radius: cutter.radius,
+                extent: cutter.extent,
                 thickness: (cutter.near - cutter.far).length(),
                 hatch: cutter.hatch,
                 metal: cutter.reinforced,
@@ -561,19 +574,29 @@ fn drop_orphans(blades: Query<(Entity, &CutterBlade)>, cutters: Query<(), With<R
 #[derive(Component)]
 struct CutterVisual;
 
-/// The rotating ring and cutting head.
+/// The drive ring: spins with the cut.
 #[derive(Component)]
 struct CutterSpinner;
+
+/// Arm from the hub to the cutting head (follows the oval track).
+#[derive(Component)]
+struct CutterArm;
+
+/// The cutting head on the track.
+#[derive(Component)]
+struct CutterHead;
+
+/// The head's glow and its little saw disc (lit / spinning while cutting).
+#[derive(Component)]
+struct HeadGlow;
+#[derive(Component)]
+struct SawDisc;
 
 /// Glowing cut line on the far side (shown once through).
 #[derive(Component)]
 struct FarKerf;
 
-/// The cutting head's glow (lit while cutting).
-#[derive(Component)]
-struct CutterHead;
-
-/// Model meshes and materials.
+/// Model meshes and materials. Rings are unit-sized and scaled per cutter.
 #[derive(Resource)]
 struct CutterLook {
     guide_ring: Handle<Mesh>,
@@ -586,13 +609,17 @@ struct CutterLook {
     kerf_glow: Handle<StandardMaterial>,
 }
 
+/// Point on the oval track at `angle` (cutter local XY).
+fn on_track(extent: Vec2, angle: f32) -> Vec3 {
+    Vec3::new(angle.cos() * extent.x, angle.sin() * extent.y, 0.0)
+}
+
 #[allow(clippy::too_many_arguments)]
 fn dress_cutters(
     new_cutters: Query<(Entity, &RingCutter), Added<RingCutter>>,
     new_blades: Query<Entity, Added<CutterBlade>>,
     new_plugs: Query<(Entity, &FallingPlug), Added<FallingPlug>>,
     assets: Res<GadgetAssets>,
-    tuning: Res<Tuning>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut look: Local<Option<CutterLook>>,
@@ -601,11 +628,11 @@ fn dress_cutters(
     if new_cutters.is_empty() && new_blades.is_empty() && new_plugs.is_empty() {
         return;
     }
-    let r = tuning.round.gadgets.ring_cutter.cut_radius;
     let look = look.get_or_insert_with(|| CutterLook {
-        guide_ring: meshes.add(TorusMeshBuilder::new(r + 0.035, r + 0.095).major_resolution(48).minor_resolution(8)),
-        spin_ring: meshes.add(TorusMeshBuilder::new(r - 0.03, r + 0.01).major_resolution(48).minor_resolution(6)),
-        kerf: meshes.add(TorusMeshBuilder::new(r - 0.012, r + 0.012).major_resolution(48).minor_resolution(4)),
+        // Tube radius about 3 cm on a 1 m ring.
+        guide_ring: meshes.add(TorusMeshBuilder::new(0.97, 1.03).major_resolution(56).minor_resolution(8)),
+        spin_ring: meshes.add(TorusMeshBuilder::new(0.975, 1.0).major_resolution(48).minor_resolution(6)),
+        kerf: meshes.add(TorusMeshBuilder::new(0.99, 1.01).major_resolution(56).minor_resolution(4)),
         plug_plaster: materials.add(StandardMaterial {
             base_color: Color::srgb(0.78, 0.72, 0.62),
             perceptual_roughness: 0.95,
@@ -632,32 +659,37 @@ fn dress_cutters(
         }),
     });
     let a = &*assets;
-    // Torus meshes lie flat (axis Y); stand them up into the cutter's XY plane.
+    // Torus meshes lie flat (axis Y); stand them up into the cutter's XY
+    // plane. Local Z of the torus becomes the cutter's -Y.
     let upright = Quat::from_rotation_x(FRAC_PI_2);
+    let oval = |e: Vec2| Vec3::new(e.x, 1.0, e.y);
     for (entity, cutter) in &new_cutters {
         let thickness = (cutter.near - cutter.far).length();
+        let e = cutter.extent;
+        let track = e + Vec2::splat(0.065);
+        let drive = e.min_element() - 0.06;
         commands.entity(entity).with_children(|root| {
             root.spawn((CutterVisual, Transform::default(), Visibility::default()))
                 .with_children(|v| {
-                    // Guide ring held off the wall on four clamp feet.
+                    // Oval guide track held off the wall on four clamp feet.
                     v.spawn((
                         Mesh3d(look.guide_ring.clone()),
                         MeshMaterial3d(a.olive.clone()),
-                        Transform::from_xyz(0.0, 0.0, 0.07).with_rotation(upright),
+                        Transform::from_xyz(0.0, 0.0, 0.07).with_rotation(upright).with_scale(oval(track)),
                     ));
                     for k in 0..4 {
                         let ang = k as f32 * FRAC_PI_2 + FRAC_PI_2 / 2.0;
-                        let dir = Vec3::new(ang.cos(), ang.sin(), 0.0);
-                        let foot = dir * (r + 0.065);
-                        v.spawn(super::part(a, &a.dark_metal, foot + Vec3::Z * 0.035, Vec3::new(0.08, 0.08, 0.07)));
-                        // Spoke from the hub to the ring.
-                        let mid = dir * (r + 0.065) / 2.0 + Vec3::Z * 0.12;
+                        let foot = on_track(track, ang);
+                        v.spawn(super::part(a, &a.dark_metal, foot + Vec3::Z * 0.035, Vec3::new(0.09, 0.09, 0.07)));
+                        v.spawn(super::part(a, &a.steel, foot + Vec3::Z * 0.075, Vec3::new(0.04, 0.04, 0.02)));
+                        // Strut from the hub to the foot.
+                        let length = foot.length();
                         v.spawn((
                             Mesh3d(a.unit_cube.clone()),
                             MeshMaterial3d(a.olive.clone()),
-                            Transform::from_translation(mid)
-                                .with_rotation(Quat::from_rotation_z(ang))
-                                .with_scale(Vec3::new(r + 0.06, 0.05, 0.03)),
+                            Transform::from_translation(foot / 2.0 + Vec3::Z * 0.13)
+                                .with_rotation(Quat::from_rotation_z(foot.y.atan2(foot.x)))
+                                .with_scale(Vec3::new(length, 0.045, 0.03)),
                         ));
                     }
                     // Hub, motor and handles.
@@ -676,28 +708,44 @@ fn dress_cutters(
                         MeshMaterial3d(a.red_light.clone()),
                         Transform::from_xyz(0.09, 0.07, 0.355).with_scale(Vec3::splat(0.025)),
                     ));
-                    // The spinning ring with its cutting head.
-                    v.spawn((CutterSpinner, Transform::from_xyz(0.0, 0.0, 0.03), Visibility::default()))
+                    // The drive ring spins on the hub.
+                    v.spawn((CutterSpinner, Transform::from_xyz(0.0, 0.0, 0.1), Visibility::default()))
                         .with_children(|s| {
                             s.spawn((
                                 Mesh3d(look.spin_ring.clone()),
                                 MeshMaterial3d(a.steel.clone()),
-                                Transform::from_rotation(upright),
+                                Transform::from_rotation(upright).with_scale(Vec3::splat(drive)),
                             ));
                             for k in 0..3 {
                                 let ang = k as f32 * TAU / 3.0;
                                 s.spawn((
                                     Mesh3d(a.unit_cube.clone()),
                                     MeshMaterial3d(a.steel.clone()),
-                                    Transform::from_translation(Vec3::new(ang.cos(), ang.sin(), 0.0) * r / 2.0 + Vec3::Z * 0.04)
+                                    Transform::from_translation(Vec3::new(ang.cos(), ang.sin(), 0.0) * drive / 2.0)
                                         .with_rotation(Quat::from_rotation_z(ang))
-                                        .with_scale(Vec3::new(r, 0.025, 0.015)),
+                                        .with_scale(Vec3::new(drive, 0.025, 0.015)),
                                 ));
                             }
-                            s.spawn(super::part(a, &a.dark_metal, Vec3::new(r, 0.0, 0.02), Vec3::new(0.09, 0.07, 0.07)));
-                            s.spawn((
-                                CutterHead,
-                                super::part(a, &a.hot, Vec3::new(r, 0.0, -0.02), Vec3::new(0.05, 0.03, 0.03)),
+                        });
+                    // Arm and cutting head, placed every frame.
+                    v.spawn((
+                        CutterArm,
+                        Mesh3d(a.unit_cube.clone()),
+                        MeshMaterial3d(a.dark_metal.clone()),
+                        Transform::default(),
+                    ));
+                    v.spawn((CutterHead, Transform::default(), Visibility::default()))
+                        .with_children(|h| {
+                            h.spawn(super::part(a, &a.dark_metal, Vec3::new(0.0, 0.0, 0.04), Vec3::new(0.1, 0.08, 0.08)));
+                            h.spawn((
+                                SawDisc,
+                                Mesh3d(a.unit_cylinder.clone()),
+                                MeshMaterial3d(a.steel.clone()),
+                                Transform::from_rotation(upright).with_scale(Vec3::new(0.11, 0.008, 0.11)),
+                            ));
+                            h.spawn((
+                                HeadGlow,
+                                super::part(a, &a.hot, Vec3::new(0.0, 0.0, -0.01), Vec3::new(0.05, 0.03, 0.02)),
                                 Visibility::Hidden,
                             ));
                         });
@@ -707,7 +755,9 @@ fn dress_cutters(
                 FarKerf,
                 Mesh3d(look.kerf.clone()),
                 MeshMaterial3d(look.kerf_glow.clone()),
-                Transform::from_xyz(0.0, 0.0, -thickness - 0.005).with_rotation(upright),
+                Transform::from_xyz(0.0, 0.0, -thickness - 0.005)
+                    .with_rotation(upright)
+                    .with_scale(oval(e)),
                 Visibility::Hidden,
             ));
         });
@@ -732,8 +782,9 @@ fn dress_cutters(
             p.spawn((
                 Mesh3d(look.plug_mesh.clone()),
                 MeshMaterial3d(material),
-                // Cylinder axis (Y) along the surface normal: set per frame.
-                Transform::from_scale(Vec3::new(plug.radius * 0.97, plug.thickness, plug.radius * 0.97)),
+                // Cylinder axis (Y) along the surface normal: the parent
+                // turns it. Squashed to the opening's oval.
+                Transform::from_scale(Vec3::new(plug.extent.x * 0.97, plug.thickness, plug.extent.y * 0.97)),
             ));
         });
     }
@@ -742,60 +793,85 @@ fn dress_cutters(
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn animate_cutters(
     cutters: Query<(&RingCutter, &Children)>,
-    mut visuals: Query<(&mut Transform, &Children), (With<CutterVisual>, Without<CutterSpinner>)>,
-    mut spinners: Query<(&mut Transform, &Children), (With<CutterSpinner>, Without<CutterVisual>)>,
-    mut heads: Query<&mut Visibility, (With<CutterHead>, Without<FarKerf>)>,
-    mut kerfs: Query<&mut Visibility, (With<FarKerf>, Without<CutterHead>)>,
+    mut visuals: Query<(&mut Transform, &Children), With<CutterVisual>>,
+    mut parts: ParamSet<(
+        Query<&mut Transform, (With<CutterSpinner>, Without<CutterVisual>)>,
+        Query<&mut Transform, (With<CutterArm>, Without<CutterVisual>)>,
+        Query<(&mut Transform, &Children), (With<CutterHead>, Without<CutterVisual>)>,
+        Query<&mut Transform, (With<SawDisc>, Without<CutterVisual>)>,
+    )>,
+    mut glows: Query<&mut Visibility, (With<HeadGlow>, Without<FarKerf>)>,
+    mut kerfs: Query<&mut Visibility, (With<FarKerf>, Without<HeadGlow>)>,
     blade_places: Query<(&CutterBlade, &GlobalTransform)>,
     time: Res<Time>,
     mut bursts: MessageWriter<Burst>,
     mut dust_timer: Local<f32>,
+    mut saw_angle: Local<f32>,
 ) {
     let now = time.elapsed_secs();
     *dust_timer -= time.delta_secs();
+    *saw_angle = (*saw_angle + time.delta_secs() * 40.0).rem_euclid(TAU);
     let puff = *dust_timer <= 0.0;
     if puff {
         *dust_timer = 0.12;
     }
     for (cutter, children) in &cutters {
         let cutting = cutter.state == CutterState::Cutting;
+        let head = on_track(cutter.extent, cutter.angle);
         for child in children.iter() {
-            if let Ok((mut transform, grandchildren)) = visuals.get_mut(child) {
-                transform.translation = if cutting {
-                    let k = now * 61.0;
-                    Vec3::new((k * 1.3).sin(), (k * 1.7).cos(), (k * 2.3).sin()) * 0.004
-                } else {
-                    Vec3::ZERO
-                };
-                for g in grandchildren.iter() {
-                    if let Ok((mut spin, heads_children)) = spinners.get_mut(g) {
-                        spin.rotation = Quat::from_rotation_z(cutter.angle);
-                        for h in heads_children.iter() {
-                            if let Ok(mut v) = heads.get_mut(h) {
-                                v.set_if_neq(if cutting { Visibility::Inherited } else { Visibility::Hidden });
-                            }
-                        }
-                    }
-                }
-            }
             if let Ok(mut v) = kerfs.get_mut(child) {
                 v.set_if_neq(if cutter.exposed { Visibility::Inherited } else { Visibility::Hidden });
             }
+            let grandchildren: Vec<Entity> = match visuals.get_mut(child) {
+                Ok((mut transform, grandchildren)) => {
+                    transform.translation = if cutting {
+                        let k = now * 61.0;
+                        Vec3::new((k * 1.3).sin(), (k * 1.7).cos(), (k * 2.3).sin()) * 0.004
+                    } else {
+                        Vec3::ZERO
+                    };
+                    grandchildren.iter().collect()
+                }
+                Err(_) => continue,
+            };
+            for &g in &grandchildren {
+                if let Ok(mut spin) = parts.p0().get_mut(g) {
+                    spin.rotation = Quat::from_rotation_z(cutter.angle * 2.0);
+                }
+                if let Ok(mut arm) = parts.p1().get_mut(g) {
+                    let length = head.length();
+                    *arm = Transform::from_translation(head / 2.0 + Vec3::Z * 0.06)
+                        .with_rotation(Quat::from_rotation_z(head.y.atan2(head.x)))
+                        .with_scale(Vec3::new(length, 0.04, 0.03));
+                }
+                let mut head_children = Vec::new();
+                if let Ok((mut at, kids)) = parts.p2().get_mut(g) {
+                    at.translation = head + Vec3::Z * 0.02;
+                    at.rotation = Quat::from_rotation_z(head.y.atan2(head.x));
+                    head_children.extend(kids.iter());
+                }
+                for h in head_children {
+                    if let Ok(mut v) = glows.get_mut(h) {
+                        v.set_if_neq(if cutting { Visibility::Inherited } else { Visibility::Hidden });
+                    }
+                    if cutting && let Ok(mut disc) = parts.p3().get_mut(h) {
+                        disc.rotation = Quat::from_rotation_z(*saw_angle) * Quat::from_rotation_x(FRAC_PI_2);
+                    }
+                }
+            }
         }
         if cutting && puff {
-            let head = cutter.near
-                + (cutter.axis_u * cutter.angle.cos() + cutter.axis_v * cutter.angle.sin()) * cutter.radius
-                + cutter.normal * 0.05;
+            let head_world = cutter.near + cutter.axis_u * head.x + cutter.axis_v * head.y + cutter.normal * 0.05;
             bursts.write(
-                Burst::new(ParticleKind::Spark, head)
+                Burst::new(ParticleKind::Spark, head_world)
                     .toward(cutter.normal + Vec3::Y * 0.3, 0.7)
                     .count(5),
             );
-            bursts.write(Burst::new(ParticleKind::Dust, head).toward(cutter.normal, 0.9).count(1).speed(0.4));
+            bursts.write(Burst::new(ParticleKind::Dust, head_world).toward(cutter.normal, 0.9).count(1).speed(0.4));
             // The whole wall sheds dust from its top on both sides.
             if !cutter.hatch {
                 let top = cutter.near + Vec3::Y * (cutter.radius + 1.0);
-                let side = cutter.axis_u * ((now * 7.3).sin() * cutter.radius);
+                let side = cutter.axis_u * ((now * 7.3).sin() * cutter.extent.x);
                 bursts.write(Burst::new(ParticleKind::Dust, top + side).toward(-Vec3::Y, 0.4).count(1).speed(0.3));
                 let far_top = cutter.far + Vec3::Y * (cutter.radius + 1.0) - side;
                 bursts.write(Burst::new(ParticleKind::Dust, far_top).toward(-Vec3::Y, 0.4).count(1).speed(0.3));
@@ -825,6 +901,7 @@ pub struct FallingPlug {
     axis_v: Vec3,
     far: Vec3,
     radius: f32,
+    extent: Vec2,
     thickness: f32,
     hatch: bool,
     metal: bool,

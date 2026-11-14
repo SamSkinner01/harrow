@@ -51,7 +51,7 @@ use crate::{
     combat::{DamageKind, DamageMessage, Health, Team},
     config::Tuning,
     destruction::{
-        BreachCharge, BreachCharges, Explosion, HardBreach, ReinforceRequest, SoftSurface, SurfaceChanged,
+        BreachCharge, BreachCharges, DestructionIntent, Explosion, HardBreach, ReinforceRequest, SoftSurface, SurfaceChanged,
         surface_root,
     },
     physics::GameLayer,
@@ -607,11 +607,14 @@ fn log_state(q: &LogQueries, me: Entity, at: Vec3) {
 fn apply_held(
     mut held: ResMut<Held>,
     time: Res<Time>,
-    mut player: Query<(&mut PlayerInput, &mut GadgetIntent, &mut DroneIntent), (With<LocalPlayer>, Without<TestWalker>)>,
+    mut player: Query<
+        (&mut PlayerInput, &mut GadgetIntent, &mut DroneIntent, Option<&mut DestructionIntent>),
+        (With<LocalPlayer>, Without<TestWalker>),
+    >,
     mut walkers: Query<&mut PlayerInput, (With<TestWalker>, Without<LocalPlayer>)>,
 ) {
     let now = time.elapsed_secs();
-    for (mut input, mut gadget, mut drone) in &mut player {
+    for (mut input, mut gadget, mut drone, destruction) in &mut player {
         if let Some(axis) = held.movement {
             input.move_axis = axis;
         }
@@ -620,6 +623,10 @@ fn apply_held(
         }
         gadget.unique_held = now < held.unique_until;
         gadget.secondary_held = now < held.secondary_until;
+        // Key 4 is also destruction's breach charge.
+        if let Some(mut d) = destruction {
+            d.gadget = gadget.secondary_held;
+        }
         drone.recon_held = now < held.recon_until;
         drone.drive = held.drive;
         drone.cycle += std::mem::take(&mut held.cycle);

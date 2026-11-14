@@ -252,9 +252,9 @@ fn update_notices(
             }
             GadgetEvent::CutterBreached { knocked_down, .. } => Some((
                 if *knocked_down > 0 {
-                    format!("Wall cut through ({knocked_down} knocked down)")
+                    format!("Ring cutter is through ({knocked_down} knocked down)")
                 } else {
-                    "Wall cut through".into()
+                    "Ring cutter is through".into()
                 },
                 ACCENT,
             )),

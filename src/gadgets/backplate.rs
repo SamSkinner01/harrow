@@ -116,7 +116,6 @@ fn use_backplates(
     charges: Query<(Entity, &BackplateCharge)>,
     cutters: Query<(Entity, &RingCutter, &GadgetOwner)>,
     breach_charges: Query<(Entity, &BreachCharge, &GlobalTransform)>,
-    owners: Query<&Team>,
     mut events: MessageWriter<GadgetEvent>,
     (mut breaches, mut explosions, mut bursts): (
         MessageWriter<HardBreach>,
@@ -232,10 +231,10 @@ fn use_backplates(
                 destroyed += 1;
             }
         }
-        for (breach_entity, breach, at) in &breach_charges {
-            let enemy = owners.get(breach.owner).is_ok_and(|t| t != team);
+        // Only attackers carry breach charges (destruction's loadout rule).
+        for (breach_entity, _, at) in &breach_charges {
             let far_side = (at.translation() - charge.centre).dot(charge.normal) < 0.0;
-            if enemy && far_side && at.translation().distance(charge.far) <= reach {
+            if far_side && at.translation().distance(charge.far) <= reach {
                 events.write(GadgetEvent::Destroyed {
                     entity: breach_entity,
                     position: at.translation(),
