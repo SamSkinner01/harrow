@@ -106,7 +106,7 @@ pub enum SurfaceKind {
     Soft,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum ImpactKind {
     Bullet,
     /// One shotgun pellet; destruction groups nearby pellets into a bigger hole.

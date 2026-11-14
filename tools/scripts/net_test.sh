@@ -73,15 +73,16 @@ sleep 3
 
 # Alpha faces west (towards Bravo) and walks slowly towards it; Bravo
 # faces east and watches. Both take a screenshot ~10 s in, then Bravo
-# leaves first (the disconnect test) and Alpha a few seconds later.
+# leaves first (the disconnect test) and Alpha a few seconds later. In
+# between, Alpha opens fire on Bravo (server-side, lag-compensated hits).
 "$BIN" --connect "127.0.0.1:$PORT" --name Alpha --net-trace --look 90 --auto-move 0,0.05 \
-    --screenshot "$OUT/alpha.png" --screenshot-frames 1500 --exit-after 20 "${NET[@]}" \
+    --screenshot "$OUT/alpha.png" --screenshot-secs 11 --auto-fire 11.5 --exit-after 20 "${NET[@]}" \
     > "$OUT/alpha.log" 2>&1 &
 ALPHA=$!
 PIDS+=("$ALPHA")
 sleep 1
 "$BIN" --connect "127.0.0.1:$PORT" --name Bravo --net-trace --look 270 \
-    --screenshot "$OUT/bravo.png" --screenshot-frames 1500 --exit-after 15 "${NET[@]}" \
+    --screenshot "$OUT/bravo.png" --screenshot-secs 10 --exit-after 15 "${NET[@]}" \
     > "$OUT/bravo.log" 2>&1 &
 BRAVO=$!
 PIDS+=("$BRAVO")

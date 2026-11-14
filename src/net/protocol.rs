@@ -94,6 +94,9 @@ impl Plugin for ProtocolPlugin {
         app.register_message::<BulletHit>()
             .add_map_entities()
             .add_direction(NetworkDirection::ServerToClient);
+        // Destruction (M4): the server's surface edits, replayed by clients.
+        app.register_message::<super::destruction_sync::SurfaceEdit>()
+            .add_direction(NetworkDirection::ServerToClient);
 
         // --- Characters -----------------------------------------------------
         app.component::<Player>().replicate();
@@ -146,8 +149,7 @@ impl Plugin for ProtocolPlugin {
         app.component::<SensorDart>().replicate();
         app.component::<SeismicStake>().replicate();
         app.component::<GadgetOwner>().replicate();
-        // M4: destruction is replicated as surface snapshots keyed by the
-        // piece's placement, see `destruction_sync.rs`.
+        // M4: destruction travels as surface edits (`destruction_sync.rs`).
     }
 }
 

@@ -10,6 +10,10 @@ use lightyear::prelude::PredictionMetrics;
 
 use super::NetPlayer;
 use crate::{
+    destruction::SurfaceChanged,
+    weapons::{BulletHit, ShotFired},
+};
+use crate::{
     combat::{Dead, Health, Team},
     player::LocalPlayer,
     round::Round,
@@ -20,8 +24,29 @@ pub(super) struct NetTracePlugin;
 
 impl Plugin for NetTracePlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, trace.run_if(on_timer(Duration::from_secs(1))));
+        app.init_resource::<Counts>()
+            .add_systems(Update, (count, trace.run_if(on_timer(Duration::from_secs(1)))).chain());
     }
+}
+
+/// Things seen since startup: shots (simulated on the server, forwarded to
+/// clients), hits, and destruction (cells knocked out, on every machine).
+#[derive(Resource, Default)]
+struct Counts {
+    shots: u32,
+    hits: u32,
+    cells: u32,
+}
+
+fn count(
+    mut counts: ResMut<Counts>,
+    mut shots: MessageReader<ShotFired>,
+    mut hits: MessageReader<BulletHit>,
+    mut changes: MessageReader<SurfaceChanged>,
+) {
+    counts.shots += shots.read().count() as u32;
+    counts.hits += hits.read().count() as u32;
+    counts.cells += changes.read().map(|c| c.removed.len() as u32).sum::<u32>();
 }
 
 #[allow(clippy::type_complexity)]
@@ -33,6 +58,7 @@ fn trace(
     others: Query<(&Transform, &NetPlayer, Option<&Team>, Has<Dead>), Without<LocalPlayer>>,
     metrics: Option<Res<PredictionMetrics>>,
     server: Option<Res<super::client::ServerInfo>>,
+    counts: Res<Counts>,
 ) {
     let me = local
         .single()
@@ -69,7 +95,7 @@ fn trace(
         .map(|s| format!(" on \"{}\" ({})", s.name, s.address))
         .unwrap_or_default();
     info!(
-        "net-trace: {:?} {:?}{} | round {} {:?} {:.1}s score {}-{} | {} | others [{}]{}",
+        "net-trace: {:?} {:?}{} | round {} {:?} {:.1}s score {}-{} | {} | others [{}] | shots {} hits {} cells {}{}",
         state.get(),
         *mode,
         joined,
@@ -80,6 +106,9 @@ fn trace(
         round.score_red,
         me,
         players.join("; "),
+        counts.shots,
+        counts.hits,
+        counts.cells,
         rollbacks
     );
 }

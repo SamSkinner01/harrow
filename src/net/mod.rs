@@ -31,6 +31,7 @@
 mod bodies;
 mod client;
 pub mod dedicated;
+mod destruction_sync;
 mod events;
 pub mod input;
 pub mod lag_comp;
@@ -103,6 +104,7 @@ impl Plugin for NetPlugin {
             client::ClientPlugin,
             round_sync::RoundSyncPlugin,
             events::EventsPlugin,
+            destruction_sync::DestructionSyncPlugin,
             lag_comp::LagCompPlugin,
             tuning_sync::TuningSyncPlugin,
         ));

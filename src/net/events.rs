@@ -32,7 +32,9 @@ impl Plugin for EventsPlugin {
         .add_systems(
             PreUpdate,
             (
-                receive_events,
+                receive::<RoundEvent>,
+                receive::<GadgetEvent>,
+                receive::<Reveal>,
                 receive::<ShotFired>,
                 receive::<WeaponEvent>,
                 receive::<BulletHit>,
@@ -82,7 +84,10 @@ fn forward_events(
 }
 
 /// Forward every `M` to all clients.
-fn forward<M: bevy::prelude::Message + Clone>(mut messages: MessageReader<M>, mut links: Query<&mut MessageSender<M>, ReadyLink>) {
+fn forward<M: bevy::prelude::Message + Clone>(
+    mut messages: MessageReader<M>,
+    mut links: Query<&mut MessageSender<M>, ReadyLink>,
+) {
     let all: Vec<M> = messages.read().cloned().collect();
     if all.is_empty() {
         return;
@@ -94,30 +99,14 @@ fn forward<M: bevy::prelude::Message + Clone>(mut messages: MessageReader<M>, mu
     }
 }
 
-/// Write every received `M` locally.
-fn receive<M: bevy::prelude::Message>(mut links: Query<&mut MessageReceiver<M>, With<NetClient>>, mut writer: MessageWriter<M>) {
+/// Write every received `M` locally. (A link only gets a receiver for a
+/// message type once the first one arrives, hence one system per type.)
+fn receive<M: bevy::prelude::Message>(
+    mut links: Query<&mut MessageReceiver<M>, With<NetClient>>,
+    mut writer: MessageWriter<M>,
+) {
     for mut receiver in &mut links {
         writer.write_batch(receiver.receive());
-    }
-}
-
-fn receive_events(
-    mut links: Query<
-        (
-            &mut MessageReceiver<RoundEvent>,
-            &mut MessageReceiver<GadgetEvent>,
-            &mut MessageReceiver<Reveal>,
-        ),
-        With<NetClient>,
-    >,
-    mut round_events: MessageWriter<RoundEvent>,
-    mut gadget_events: MessageWriter<GadgetEvent>,
-    mut reveals: MessageWriter<Reveal>,
-) {
-    for (mut round, mut gadget, mut intel) in &mut links {
-        round_events.write_batch(round.receive());
-        gadget_events.write_batch(gadget.receive());
-        reveals.write_batch(intel.receive());
     }
 }
 
