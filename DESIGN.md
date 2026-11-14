@@ -177,7 +177,7 @@ Built by `tools/scripts/build_characters.sh` from one config per operator
   child of `hand_r`) and `weapon_mag`. Chosen over Rigify, whose generated
   rig has hundreds of control and mechanism bones that would have to be
   stripped for export; the naming also suits retargeting common game
-  animation sets later.
+  animation sets (and mocap) later.
 - **Uniform:** not a separate mesh. The body is split by bone weights into
   shirt, trousers, gloves and boots (clean plane-cut seams), pushed out
   slightly and vertex-coloured. Sleeves can be rolled; gloves can be
@@ -208,12 +208,25 @@ Built by `tools/scripts/build_characters.sh` from one config per operator
   | Mortise (D, 3/1) | male, 40s, big | full helmet with jaw guard and visor, heavy carrier, charge cases, elbow and knee pads |
   | Fathom (D, 1/3) | female, late 20s, lean | soft cap, glasses, gaiter, chest rig, stake quiver, thigh holster |
 
-- **Budget:** ~15k triangles per operator (body 10.5k, gear 3.3–4.2k,
-  carbine 0.35k, eyes and brows 0.36k), 55 bones, four materials: skin
-  (1024 px CC0 texture times vertex colour), gear (vertex colour only; the
-  uniform, gear and carbine share it), eyes (128 px), eyebrows (128 px,
-  alpha cut-out). Ten characters on screen: ~150k skinned triangles and
-  ~50 draw calls, which is cheap.
+- **Materials (realism pass):** seven per operator, so ~7 draw calls:
+  `skin` (1024 px CC0 MakeHuman/Mindfront skin times vertex colour),
+  `uniform`, `webbing`, `leather` (vertex colour plus tiling CC0 cloth and
+  leather detail maps: weave/grain normals and roughness), `hard` (helmet
+  shells, hardware, lenses, carbine; smoother, untextured), `eyes`, and
+  `brows` (eyebrow + eyelash atlas, alpha cut-out). Detail maps are shared
+  by everyone and loaded once by the game from `assets/textures/characters/`
+  (skin pores/roughness from the Mindfront skin; Poly Haven poplin, twill
+  and leather); per-operator colour textures are embedded in the .glb.
+- **Budget:** ~26–27k triangles per operator (body ~21k, gear 3.7–5.2k,
+  carbine 0.35k, eyes/brows/lashes 0.7k), 55 bones. Ten on screen is
+  ~270k skinned triangles and ~70 draw calls plus shadows: fine on a
+  mid-range PC. Measured (dev build, `--no-vsync`): the keep alone 343 fps
+  (2.9 ms), with 12 animated operators (`--lineup-crowd`) 274 fps
+  (3.65 ms), so ~0.06 ms per character. **LOD plan:** the build already decimates the body by bone region;
+  a second export at ~10k body triangles (gear unchanged) would make LOD1
+  for distant characters.
+- **Builds are reproducible:** rebuilding produces byte-identical .glb
+  files, so unchanged operators don't churn Git LFS.
 - **Animations:** scripted placeholders (no CC0 set without a login fits
   this skeleton), 30 fps, in place, posed in armature axes with our own
   two-bone IK: `idle`, `walk` (authored for 3.4 m/s), `run` (5.6),
@@ -225,9 +238,13 @@ Built by `tools/scripts/build_characters.sh` from one config per operator
 - **Hit zones (later):** the fixed capsules in `src/player/hitbox.rs` can
   follow bones: head on `head`, torso between `spine_01` and `spine_03`
   (or `neck_01`), legs on `thigh_*`/`calf_*`.
+- **Mocap plan:** when CC0/permissive mocap (e.g. CMU BVH) is staged,
+  retarget it onto `game_engine` in `anim.py` by mapping its joints to
+  these bone names and baking per operator; the clip names, masks and the
+  game side stay the same.
 - **Not yet:** prone aiming and reloading, strafe/backpedal clips, hair
-  meshes, real weapon models (they attach to `weapon_r`, and should hide
-  the prop carbine).
+  meshes (short hair is a scalp tint under the headgear), real weapon
+  models (they attach to `weapon_r`, and should hide the prop carbine).
 
 ## Fortress kit (M2)
 
