@@ -383,5 +383,6 @@ cargo run -- --no-round --operator lark --gadget-test "1.5 g; 3 drive 0 1; 4.5 d
 ```
 src/        game code, one module (and Bevy plugin) per area
 assets/     models, textures, audio, shaders loaded by the game
-tools/      Blender Python scripts and build helpers
+tools/      Blender Python scripts and build helpers (net tests, server packaging and deploy)
+deploy/     dedicated server on a VPS: systemd unit, install script, guide, Dockerfile
 ```
