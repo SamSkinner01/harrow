@@ -47,6 +47,7 @@ pub struct Tuning {
     pub lighting: LightingTuning,
     pub surfaces: HashMap<String, SurfaceTuning>,
     pub footsteps: FootstepTuning,
+    #[cfg_attr(not(feature = "client"), allow(dead_code))] // sounds only
     pub audio: AudioTuning,
     // Placeholder sections, filled in by M3 / M4 / M6.
     pub weapons: WeaponTuning,
@@ -515,6 +516,7 @@ pub struct FootstepTuning {
 /// is explained in the tuning file.
 #[derive(Deserialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
+#[cfg_attr(not(feature = "client"), allow(dead_code))] // sounds only
 pub struct AudioTuning {
     /// Overall volume (menu: master).
     pub master: f32,
@@ -554,6 +556,7 @@ pub struct AudioTuning {
 /// Volume and distance range of one kind of sound.
 #[derive(Deserialize, Clone, Copy, Debug)]
 #[serde(deny_unknown_fields)]
+#[cfg_attr(not(feature = "client"), allow(dead_code))] // sounds only
 pub struct SoundCategory {
     pub volume: f32,
     /// Full volume up to here, metres.
@@ -564,6 +567,7 @@ pub struct SoundCategory {
 
 #[derive(Deserialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
+#[cfg_attr(not(feature = "client"), allow(dead_code))] // sounds only
 pub struct SoundCategories {
     pub shots: SoundCategory,
     pub shots_distant: SoundCategory,
