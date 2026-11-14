@@ -48,7 +48,7 @@ from .pipeline import Character, triangulate
 ARM_PREFIXES = ("clavicle", "upperarm", "lowerarm", "hand", "thumb", "index", "middle", "ring", "pinky")
 FINGERS = ("index", "middle", "ring", "pinky")
 # Keep the upper arm from this fraction of its length (shoulder = 0) down.
-UPPER_ARM_KEEP = 0.4
+UPPER_ARM_KEEP = 0.12
 # Clip length the reloads are authored over (the game rescales them).
 RELOAD_SECONDS = 2.4
 FPS = anim.FPS
@@ -106,7 +106,10 @@ def build_body(cfg, scratch):
         bpy.data.objects.remove(obj, do_unlink=True)
     ch.eyes = None
     ch.body = keep_arms(body, rig, "arms")
-    ch.gear = keep_arms(gear, rig, "arms_gear")
+    # Gear: the glove's knuckle guards and sleeve patches; not the glove
+    # cuff bands (half wrist, half forearm), which read as bracelets in
+    # close-up.
+    ch.gear = keep_arms(gear, rig, "arms_gear", skip_cuffs=True)
     for obj in ch.meshes:
         triangulate(obj)
     for pb in rig.pose.bones:
@@ -114,7 +117,7 @@ def build_body(cfg, scratch):
     return ch
 
 
-def keep_arms(obj, rig, name):
+def keep_arms(obj, rig, name, skip_cuffs=False):
     """Delete everything but the forearms, hands and the lower part of the
     upper arms. Returns the object (renamed) or None if nothing is left."""
     bones = rig.data.bones
@@ -122,7 +125,7 @@ def keep_arms(obj, rig, name):
     mw = obj.matrix_world
     keep = set()
     for v in obj.data.vertices:
-        total = arm = upper = 0.0
+        total = arm = upper = lower = 0.0
         side = None
         for g in v.groups:
             n = groups.get(g.group, "")
@@ -132,7 +135,11 @@ def keep_arms(obj, rig, name):
             if n.startswith("upperarm"):
                 upper += g.weight
                 side = n[-1]
+            if n.startswith("lowerarm"):
+                lower += g.weight
         if total <= 0.0 or arm / total < 0.6:
+            continue
+        if skip_cuffs and 0.2 < lower / total < 0.8:
             continue
         if side is not None and upper / total > 0.3:
             sh = bones[f"upperarm_{side}"].head_local
@@ -268,11 +275,11 @@ def holds(nodes_by_weapon):
             # Firing hand: palm against the right of the raked grip, the web
             # at the top-back, wrist behind; index finger on the trigger.
             right=Hand((0.025, -0.065, -0.03), (-0.15, 0.94, -0.35), (-1.0, 0.0, 0.0), (0.8, -0.3, -0.6),
-                       curl=(25, 85, 90, 92), thumb=(40, 35, 30)),
+                       curl=(25, 85, 90, 92), thumb=(50, 35, 25), swing=-35),
             # Support hand cradling the lower handguard: palm up, fingers
             # round the right side, thumb along the left.
             left=Hand((-0.05, 0.27, -0.045), (0.85, 0.35, 0.25), (0.3, 0.0, 0.95), (-0.4, -0.2, -1.0),
-                      curl=(60, 65, 70, 72), thumb=(10, 15, 10)),
+                      curl=(60, 65, 70, 72), thumb=(5, 10, 5), swing=40),
             mag_left=Hand(mag + Vector((-0.035, -0.04, -0.035)), (0.25, 0.7, -0.65), (0.95, 0.1, 0.25),
                           (-0.5, -0.3, -1.0), curl=(55, 60, 64, 68), thumb=(30, 25, 20)),
             # Over the top to the charging handle on the right.
@@ -288,12 +295,12 @@ def holds(nodes_by_weapon):
             "acacia",
             shoulder_r=(0.16, -0.5, -0.06),
             blade=8.0,
-            right=Hand((0.02, -0.062, -0.03), (-0.15, 0.94, -0.35), (-1.0, 0.0, 0.0), (0.7, -0.3, -0.8),
-                       curl=(25, 85, 90, 92), thumb=(35, 30, 25)),
+            right=Hand((0.02, -0.062, -0.045), (-0.15, 0.92, -0.38), (-1.0, 0.0, 0.0), (0.7, -0.3, -0.8),
+                       curl=(25, 85, 90, 92), thumb=(25, 15, 10), swing=-15),
             # Support hand wrapped round the firing hand's fingers, heel of
             # the palm on the left grip panel, thumb forward along the frame.
-            left=Hand((-0.045, -0.035, -0.075), (0.55, 0.55, -0.6), (0.9, 0.0, 0.3), (-0.6, -0.3, -1.0),
-                      curl=(70, 75, 80, 82), thumb=(5, 10, 5)),
+            left=Hand((-0.045, -0.035, -0.095), (0.55, 0.55, -0.6), (0.9, 0.0, 0.3), (-0.6, -0.3, -1.0),
+                      curl=(70, 75, 80, 82), thumb=(0, 5, 0), swing=25),
             # Palm under the magazine's base plate, pushing it home.
             mag_left=Hand(mag + Vector((-0.03, -0.05, -0.045)), (0.4, 0.8, 0.3), (0.0, 0.0, 1.0),
                           (-0.6, -0.4, -1.0), curl=(45, 50, 55, 60), thumb=(25, 25, 20)),
