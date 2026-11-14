@@ -71,14 +71,13 @@ lath and timber partitions are **soft**.
   non-reinforceable.
 - Defenders can barricade any doorway/window (unlimited, ~2 s).
 
-**PROPOSED implementation:** bullet- and melee-sized holes anywhere on a wall
-don't work well with pre-fractured chunks. Soft surfaces would instead be a
-runtime grid of ~10 cm cells, with the wall mesh rebuilt around removed cells
-(cheap: ~300 cells per 1 x 3 m wall). The Blender kit still provides frames,
-studs, materials and debris pieces; pre-fractured meshes are kept for props
-and barricades only. Decide before M2.
+**Implementation (decided 2026-11-13):** soft surfaces are a runtime grid of
+~10 cm cells, with the mesh rebuilt around removed cells (cheap: ~300 cells
+per 1 x 3 m wall), so bullets, melee and explosives can open holes anywhere.
+The Blender kit provides the intact pieces (marked soft), materials and debris;
+pre-fractured meshes are used for props and barricades only.
 
-## Operator structure (PROPOSED)
+## Operator structure (approved 2026-11-13)
 
 - Armour/speed split: 1/3, 2/2 or 3/1.
 - Loadout: primary + sidearm, **one unique gadget**, and a choice of one shared
@@ -91,7 +90,7 @@ and barricades only. Decide before M2.
 - Recon: each attacker has 2 recon throwbots (two-wheeled, can't jump, climbs
   low steps, can be shot). Defenders get fixed CCTV cameras at map-defined spots.
 
-## Starter operators (PROPOSED, callsigns are placeholders)
+## Starter operators (approved 2026-11-13; callsigns are placeholders)
 
 ### AUGER: attacker, hard breacher (armour 2 / speed 2)
 **Ring Cutter** x2. Clamps to any wall or hatch, reinforced or soft, and cuts a
@@ -139,5 +138,4 @@ layout must not be modelled on it.
 
 ## Open questions
 
-- Soft-surface destruction implementation (see above), before M2.
-- Approve or change the operator and loadout proposals above.
+- Vault action (see Movement).
