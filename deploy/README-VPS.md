@@ -7,7 +7,7 @@ runs one match on UDP port 5888 (configurable) for up to 10 players.
 
 ```
 harrow                     the server binary (dedicated build)
-assets/                    what the server loads: map models (collision), tuning
+assets/                    what the server loads: models (map collision), tuning
 server.example.ron         example settings
 harrow-server.service      systemd unit
 install.sh                 installs or updates everything (run with sudo)
@@ -46,7 +46,7 @@ the first time: updates keep your settings) and starts the systemd service
 (
     name: "Harrow server",   // shown to players when they join
     port: 5888,              // UDP
-    map: "keep",
+    map: "keep",             // the full map; or "section_a", "greybox"
     max_players: 10,
     log_level: "info",
     round_loop: true,        // false: free play

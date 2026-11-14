@@ -39,6 +39,8 @@
 #           with no extra rollbacks (net-trace rollback counter).
 #   cutter  Bravo reinforces a wall, Alpha clamps a ring cutter on it and
 #           cuts through: the hole is the same on all three instances.
+#   cctv    Bravo watches the courtyard camera, Alpha shoots it out: Bravo's
+#           feed moves to the next camera.
 #   all     every scenario above, one after the other.
 # Screenshots: $OUT/<scenario>-alpha*.png, $OUT/<scenario>-bravo*.png.
 
@@ -64,7 +66,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ $GADGETS == all ]]; then
-    for scenario in frag smoke flash drone wire cutter; do
+    for scenario in frag smoke flash drone wire cutter cctv; do
         "$0" --gadgets "$scenario" --latency "$LATENCY" --jitter "$JITTER" --loss "$LOSS"
     done
     exit 0
@@ -146,7 +148,14 @@ if [[ -n $GADGETS ]]; then
             BRAVO="6 look 180 0; 9.5 log; 19 log; 20 shot $S-bravo-blade.png; 27 log; 27.5 shot $S-bravo.png; 29 quit"
             ALPHA="7 look 0 -12; 11 hold3 2; 13.5 tap3; 18 log; 26.5 log; 27 shot $S-alpha.png; 29 quit"
             ;;
-        *) echo "unknown scenario $GADGETS (frag smoke flash drone wire cutter all)" >&2; exit 2 ;;
+        cctv)
+            # Bravo watches the courtyard camera; Alpha shoots it out: the
+            # feed is lost on Bravo's client and moves to the next camera.
+            SERVER="6 equip Alpha lark; 6 equip Bravo fathom; 6 tp Alpha 11 0 6; 6 tp Bravo 4 0 7; 16 log; 20 log"
+            BRAVO="8 g; 9.5 log; 10 shot $S-bravo-view.png; 13 log; 13.5 shot $S-bravo-next.png; 14.5 g; 15 log; 16 quit"
+            ALPHA="8 aimat 13.6 2.7 0.45; 9.8 shot $S-alpha.png; 11 fire; 11.4 fire; 11.8 fire; 13 log; 14 shot $S-alpha-after.png; 15 quit"
+            ;;
+        *) echo "unknown scenario $GADGETS (frag smoke flash drone wire cutter cctv all)" >&2; exit 2 ;;
     esac
     # Positions are on Harrow Keep section A (the first, small map).
     NET+=(--map section_a)

@@ -79,8 +79,8 @@ echo
 echo "== server log (Ctrl+C stops watching; the server keeps running)"
 "${SSH_TTY[@]}" "$TARGET" "sudo timeout 8 journalctl -u harrow-server -n 20 -f --no-pager -o short-iso" || true
 
-SHOW_PORT=${PORT:-$("${SSH[@]}" "$TARGET" "sudo sed -n -E 's/^[[:space:]]*port:[[:space:]]*([0-9]+).*/\\1/p' /etc/harrow-server/server.ron" 2>/dev/null | head -n 1)}
-SHOW_PORT=${SHOW_PORT:-5888}
+# Without --port: the default (or whatever server.ron on the VPS says).
+SHOW_PORT=${PORT:-5888}
 HOST=${TARGET#*@}
 cat <<EOF
 
