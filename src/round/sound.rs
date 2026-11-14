@@ -73,12 +73,14 @@ fn create_sounds(mut commands: Commands, mut sources: ResMut<Assets<AudioSource>
 fn round_event_sounds(
     mut commands: Commands,
     mut events: MessageReader<RoundEvent>,
-    local: Query<Entity, With<LocalPlayer>>,
+    local: Query<(Entity, Option<&Squad>), With<LocalPlayer>>,
     round: Res<Round>,
     sfx: Res<Sfx>,
     tuning: Res<Tuning>,
 ) {
-    let me = local.single().ok();
+    let me = local.single().ok().map(|(e, _)| e);
+    // Networked players can be in either squad (solo: Blue).
+    let my_squad = local.single().ok().and_then(|(_, s)| s.copied()).unwrap_or(Squad::Blue);
     for event in events.read() {
         let sound = match event {
             RoundEvent::PlantStarted { entity, .. } if Some(*entity) == me => Some(&sfx.plant_start),
@@ -90,7 +92,7 @@ fn round_event_sounds(
                 ..
             } => Some(&sfx.phase),
             RoundEvent::RoundWon { result, .. } => {
-                if round.squad_on(result.winner) == Squad::Blue {
+                if round.squad_on(result.winner) == my_squad {
                     Some(&sfx.win)
                 } else {
                     Some(&sfx.lose)

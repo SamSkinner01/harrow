@@ -11,12 +11,14 @@ use std::f32::consts::FRAC_PI_2;
 
 use bevy::{color::palettes::css, prelude::*};
 
-use super::{GadgetEvent, Reveal, RevealSource};
+#[cfg(feature = "client")]
+use super::GadgetEvent;
+use super::{Reveal, RevealSource};
 use crate::{
     combat::Team,
     config::Tuning,
-    player::{AutomatedRun, LocalPlayer},
-    round::{RoundSettings, sound::{Sfx, play}},
+    player::LocalPlayer,
+    round::RoundSettings,
 };
 
 pub struct IntelPlugin;
@@ -26,11 +28,13 @@ impl Plugin for IntelPlugin {
         app.init_gizmo_group::<IntelGizmos>()
             .init_resource::<IntelMarkers>()
             .add_systems(Startup, configure_gizmos)
-            .add_systems(Update, (collect_reveals, draw_markers).chain())
-            .add_systems(
-                Update,
-                gadget_sounds.run_if(not(resource_exists::<AutomatedRun>)),
-            );
+            .add_systems(Update, (collect_reveals, draw_markers).chain());
+        // No audio in the dedicated-server build.
+        #[cfg(feature = "client")]
+        app.add_systems(
+            Update,
+            gadget_sounds.run_if(not(resource_exists::<crate::player::AutomatedRun>)),
+        );
     }
 }
 
@@ -82,13 +86,22 @@ fn collect_reveals(
         m.age
             < match m.source {
                 RevealSource::SensorDart => intel.ripple_time,
-                RevealSource::SeismicStake => intel.ping_time,
+                RevealSource::SeismicStake | RevealSource::ProximityAlarm => intel.ping_time,
             }
     });
 }
 
-fn draw_markers(markers: Res<IntelMarkers>, tuning: Res<Tuning>, mut gizmos: Gizmos<IntelGizmos>) {
+fn draw_markers(
+    markers: Res<IntelMarkers>,
+    tuning: Res<Tuning>,
+    cameras: Query<(&Camera, &GlobalTransform)>,
+    mut gizmos: Gizmos<IntelGizmos>,
+) {
     let flat = Quat::from_rotation_x(FRAC_PI_2);
+    // Sideways for the current view (alarm brackets face the viewer).
+    let side = super::remote_view::view_camera(&cameras)
+        .map(|c| c.right().with_y(0.0).normalize_or(Vec3::X))
+        .unwrap_or(Vec3::X);
     let intel = &tuning.round.intel;
     for m in &markers.items {
         let ground = m.position + Vec3::Y * 0.05;
@@ -117,19 +130,32 @@ fn draw_markers(markers: Res<IntelMarkers>, tuning: Res<Tuning>, mut gizmos: Giz
                 gizmos.line(top - Vec3::Y * h, ground, color.with_alpha(0.4 * (1.0 - life)));
                 gizmos.circle(Isometry3d::new(ground, flat), 0.2 + life * 0.6, color);
             }
+            RevealSource::ProximityAlarm => {
+                // A red square bracket around the intruder, pulsing.
+                let life = (m.age / intel.ping_time).clamp(0.0, 1.0);
+                let color = Color::from(css::RED).with_alpha(1.0 - life * 0.8);
+                let c = m.position;
+                let s = 0.35 + 0.1 * (life * 12.0).sin().abs();
+                let (x, y) = (side * s, Vec3::Y * s * 2.4);
+                let corners = [c - x - y, c + x - y, c + x + y, c - x + y, c - x - y];
+                gizmos.linestrip(corners, color);
+                gizmos.circle(Isometry3d::new(ground - Vec3::Y * 0.9, flat), 0.4 + life * 0.8, color);
+            }
         }
     }
 }
 
 /// Launcher pop for the shooter, hiss for defenders near a landing dart,
 /// a thunk when placing a stake, a tick for every stake ping.
+#[cfg(feature = "client")]
 fn gadget_sounds(
     mut commands: Commands,
     mut events: MessageReader<GadgetEvent>,
     local: Query<(Entity, &Transform, &Team), With<LocalPlayer>>,
-    sfx: Res<Sfx>,
+    sfx: Res<crate::round::sound::Sfx>,
     tuning: Res<Tuning>,
 ) {
+    use crate::round::sound::play;
     let Ok((me, at, my_team)) = local.single() else {
         return;
     };

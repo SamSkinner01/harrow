@@ -25,9 +25,15 @@ impl Plugin for TuningPlugin {
             .init_asset::<Tuning>()
             .register_asset_loader(TuningLoader)
             .add_systems(Startup, load_tuning)
-            .add_systems(PreUpdate, apply_tuning_changes);
+            .add_systems(PreUpdate, apply_tuning_changes.in_set(TuningSystems));
     }
 }
+
+/// Where a changed tuning file is applied (`PreUpdate`). Systems that
+/// override tuning values (a joined server's movement values, a dedicated
+/// server's round settings) run after it.
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct TuningSystems;
 
 #[derive(Asset, Resource, TypePath, Deserialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
@@ -203,6 +209,7 @@ pub struct WeaponEffectsTuning {
     pub impact_time: f32,
     pub max_impacts: usize,
     pub hit_marker_time: f32,
+    #[cfg_attr(not(feature = "client"), allow(dead_code))] // sounds only
     pub volume: f32,
 }
 
@@ -354,7 +361,11 @@ pub struct RoundTuning {
     pub darts: DartTuning,
     pub stakes: StakeTuning,
     pub intel: IntelTuning,
+    #[cfg_attr(not(feature = "client"), allow(dead_code))] // sounds only
     pub volume: f32,
+    /// Ring cutter, backplate charges, shared secondaries, drones, CCTV
+    /// (M6 part two). Defined in `src/gadgets/tuning.rs`.
+    pub gadgets: crate::gadgets::tuning::GadgetTuning,
     /// Which site pair each round uses (maps with several pairs).
     pub site_pairs: Rotation,
     /// Which of the pair's attacker spawn areas each round uses.
@@ -500,7 +511,8 @@ pub struct ViewTuning {
     pub bob_roll: f32,
 }
 
-#[derive(Deserialize, Clone, Debug)]
+// Serialize: the server sends it to clients (`net/tuning_sync.rs`).
+#[derive(Deserialize, serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct FootstepTuning {
     pub walk_stride: f32,
@@ -529,7 +541,8 @@ pub enum ButtonMode {
     Toggle,
 }
 
-#[derive(Deserialize, Clone, Debug)]
+// Serialize: the server sends it to clients (`net/tuning_sync.rs`).
+#[derive(Deserialize, serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct LeanTuning {
     /// Camera roll at full lean, degrees.
@@ -550,7 +563,8 @@ pub struct LookTuning {
     pub fov: f32,
 }
 
-#[derive(Deserialize, Clone, Debug)]
+// Serialize: the server sends it to clients (`net/tuning_sync.rs`).
+#[derive(Deserialize, serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct MovementTuning {
     pub walk_speed: f32,
@@ -565,7 +579,8 @@ pub struct MovementTuning {
     pub ground_snap: f32,
 }
 
-#[derive(Deserialize, Clone, Debug)]
+// Serialize: the server sends it to clients (`net/tuning_sync.rs`).
+#[derive(Deserialize, serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct BodyTuning {
     pub radius: f32,

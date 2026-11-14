@@ -17,7 +17,11 @@ use super::{
 use crate::{
     combat::{Dead, Team},
     config::Tuning,
-    gadgets::{GadgetEvent, UniqueGadget},
+    destruction::BreachCharges,
+    gadgets::{
+        CctvCamera, GadgetEvent, ReconStock, RemoteViewCamera, SecondaryGadget, SecondaryStock,
+        UniqueGadget,
+    },
     player::LocalPlayer,
 };
 
@@ -383,12 +387,18 @@ fn update_operator_card(
             Option<&UniqueGadget>,
             Option<&DefuserCarrier>,
             Option<&Loadout>,
+            (
+                Option<&SecondaryStock>,
+                Option<&BreachCharges>,
+                Option<&ReconStock>,
+            ),
         ),
         With<LocalPlayer>,
     >,
+    cameras: Query<(), With<CctvCamera>>,
     mut card: Single<(&mut Text, &mut Visibility), With<CardText>>,
 ) {
-    let Ok((team, operator, gadget, carrier, loadout)) = local.single() else {
+    let Ok((team, operator, gadget, carrier, loadout, (stock, breach, recon))) = local.single() else {
         return;
     };
     let Some(Operator(op)) = operator.filter(|_| round.phase != RoundPhase::OperatorSelect) else {
@@ -406,11 +416,30 @@ fn update_operator_card(
         lines.push(format!("[1] {}  [2] {}", l.primary, l.sidearm));
     }
     if let Some(g) = gadget {
-        let built = if g.kind.is_built() { "" } else { "  (not built yet)" };
-        lines.push(format!("[3] {}  {}/{}{built}", g.kind.name(), g.remaining, g.max));
+        lines.push(format!("[3] {}  {}/{}", g.kind.name(), g.remaining, g.max));
     }
     if let Some(l) = loadout {
-        lines.push(format!("[4] {}  (not built yet)", l.secondary.name()));
+        let count = match (l.secondary, stock, breach) {
+            (SecondaryGadget::SoftBreachCharge, _, Some(b)) => {
+                format!("{}/{}", b.0, tuning.destruction.breach_charge.count)
+            }
+            (_, Some(s), _) if s.kind == l.secondary => format!("{}/{}", s.remaining, s.max),
+            _ => String::new(),
+        };
+        lines.push(format!("[4] {}  {count}", l.secondary.name()));
+    }
+    match team {
+        Team::Attackers => {
+            if let Some(r) = recon {
+                lines.push(format!("[G] Recon drones  {}/{}", r.drones, r.max));
+            }
+        }
+        Team::Defenders => {
+            let live = cameras.iter().count();
+            if live > 0 {
+                lines.push(format!("[G] Cameras  {live}"));
+            }
+        }
     }
     if let Some(c) = carrier {
         lines.push(format!(
@@ -461,7 +490,7 @@ fn update_prompt(
         format!("{verb}  {:.0}%", (i.progress * 100.0).min(100.0))
     } else {
         match (round.phase, attacker) {
-            (RoundPhase::Prep, true) => "Prep: hold at spawn (recon drones not built yet)".into(),
+            (RoundPhase::Prep, true) => "Prep: scout with your recon drones (G)".into(),
             (RoundPhase::Prep, false) => "Prep: set up your defences".into(),
             (RoundPhase::Action, true) => match (carrier, layout.site_at(feet)) {
                 (Some(_), Some(site)) => format!("Hold F to plant the defuser (site {})", site.id.letter()),
@@ -634,20 +663,21 @@ fn update_select_panel(
         let info = op.info();
         let n = op.numbers(&tuning.round);
         let mark = if choice.locked == Some(op) { ">" } else { " " };
-        let built = if info.gadget.is_built() { "" } else { "  (not built yet)" };
         lines.push(format!("{mark} [{}] {:<8} {}", i + 1, info.callsign, info.role));
         lines.push(format!(
-            "      Armour {}  Speed {}   {} x{}{built}",
+            "      Armour {}  Speed {}   {} x{}   [4] {}",
             n.armour,
             n.speed,
             info.gadget.name(),
-            n.gadgets
+            n.gadgets,
+            choice.secondary_for(op).name()
         ));
     }
     if let Some(first) = OperatorId::for_side(*team).next() {
         let options: Vec<_> = first.info().secondaries.iter().map(|g| g.name()).collect();
         lines.push(String::new());
         lines.push(format!("Secondary gadgets: {}", options.join(", ")));
+        lines.push("Press 4 to change the picked operator's secondary".into());
     }
     if let Some(op) = choice.locked {
         lines.push(String::new());
@@ -660,15 +690,20 @@ fn update_select_panel(
 fn update_world_labels(
     round: Res<Round>,
     layout: Res<KeepLayout>,
-    // The player's world camera (the weapon viewmodel has its own camera).
-    camera: Query<(&Camera, &GlobalTransform), With<crate::player::PlayerCamera>>,
+    // The player's world camera (the weapon viewmodel has its own camera),
+    // or the drone / CCTV camera while looking through one.
+    camera: Query<
+        (&Camera, &GlobalTransform),
+        Or<(With<crate::player::PlayerCamera>, With<RemoteViewCamera>)>,
+    >,
     local: Query<(&Transform, &Team), With<LocalPlayer>>,
     devices: Query<(&GlobalTransform, &DefuserDevice)>,
     dropped: Query<&GlobalTransform, With<DroppedDefuser>>,
     mut labels: Query<(&WorldLabel, &mut Node, &mut Visibility, &Children)>,
     mut texts: Query<(&mut Text, &mut TextColor), With<LabelText>>,
 ) {
-    let (Ok((camera, eye)), Ok((me, team))) = (camera.single(), local.single()) else {
+    let active = camera.iter().find(|(c, _)| c.is_active);
+    let (Some((camera, eye)), Ok((me, team))) = (active, local.single()) else {
         return;
     };
     let planted = devices

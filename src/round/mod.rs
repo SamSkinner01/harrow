@@ -36,6 +36,8 @@ mod input;
 pub mod operators;
 mod script;
 pub mod sites;
+// Synthesised sounds; not in the dedicated-server build (no audio).
+#[cfg(feature = "client")]
 pub mod sound;
 
 use bevy::prelude::*;
@@ -74,12 +76,6 @@ impl Plugin for RoundPlugin {
             .add_observer(add_round_components)
             .add_observer(join_local_squad)
             .add_systems(Update, (mirror_phase_state, log_round_events))
-            .add_systems(
-                RunFixedMainLoop,
-                apply_movement_lock
-                    .in_set(RunFixedMainLoopSystems::BeforeFixedMainLoop)
-                    .after(script::ScriptInputSystems),
-            )
             .add_plugins((
                 sites::SitesPlugin,
                 flow::FlowPlugin,
@@ -87,9 +83,10 @@ impl Plugin for RoundPlugin {
                 defuser::DefuserPlugin,
                 input::RoundInputPlugin,
                 hud::RoundHudPlugin,
-                sound::RoundSoundPlugin,
                 script::RoundScriptPlugin,
             ));
+        #[cfg(feature = "client")]
+        app.add_plugins(sound::RoundSoundPlugin);
     }
 }
 
@@ -109,7 +106,7 @@ pub enum RoundSystems {
 }
 
 /// Where the round is. Mirrors [`Round::phase`] as a Bevy state.
-#[derive(States, Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[derive(States, Debug, Clone, Copy, PartialEq, Eq, Hash, Default, serde::Serialize, serde::Deserialize)]
 pub enum RoundPhase {
     /// No round loop (not on a map with bomb sites, or not started yet).
     #[default]
@@ -158,7 +155,7 @@ impl RoundPhase {
 
 /// A persistent team for the whole match. Squads swap between attack and
 /// defence; each character's [`Team`] says which side it plays this round.
-#[derive(Component, Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive(Component, Clone, Copy, PartialEq, Eq, Hash, Debug, serde::Serialize, serde::Deserialize)]
 pub enum Squad {
     /// The local player's squad.
     Blue,
@@ -188,7 +185,7 @@ pub fn team_label(team: Team) -> &'static str {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum WinReason {
     DefuserCompleted,
     DefuserDisabled,
@@ -207,7 +204,7 @@ impl WinReason {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct RoundResult {
     pub winner: Team,
     pub reason: WinReason,
@@ -215,7 +212,8 @@ pub struct RoundResult {
 
 /// The whole match state as plain data. Owned by the fixed-tick simulation
 /// (later: the server); everything else only reads it.
-#[derive(Resource, Clone, Debug)]
+/// Networked as `net::RoundSync` (the server's copy wins on clients).
+#[derive(Resource, Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Round {
     pub phase: RoundPhase,
     /// 1-based. 0 before the first round starts.
@@ -317,7 +315,8 @@ pub struct RoundReset {
 
 /// Things that happened in the round, for presentation (HUD, sounds) and the
 /// log. Written by the simulation.
-#[derive(Message, Clone, Debug)]
+/// Forwarded to clients by the server (`net/events.rs`).
+#[derive(Message, Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub enum RoundEvent {
     PhaseStarted {
         round: u32,
@@ -336,7 +335,8 @@ pub enum RoundEvent {
     },
     PlantRefused {
         entity: Entity,
-        reason: &'static str,
+        /// A `Cow` so the event can be sent over the network.
+        reason: std::borrow::Cow<'static, str>,
     },
     PlantStarted {
         entity: Entity,
@@ -382,7 +382,7 @@ pub enum RoundEvent {
     },
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum InterruptReason {
     /// Let go of F.
     Released,
@@ -410,19 +410,19 @@ pub struct RoundIntent {
 /// at the attacker spawn during prep, choosing an operator. Movement should
 /// treat move input as zero (look still works).
 ///
-/// Until movement reads it, `apply_movement_lock` zeroes the move input of
-/// locked characters just before the fixed tick (see the M6 report).
-#[derive(Component, Debug)]
+/// Movement reads it (`player/movement.rs`); replicated, so a client
+/// predicts its own character with the server's lock.
+#[derive(Component, Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct MovementLock;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum InteractionKind {
     Plant,
     Disable,
 }
 
 /// On a character that is planting or disabling the defuser.
-#[derive(Component, Clone, Debug)]
+#[derive(Component, Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct ObjectiveInteraction {
     pub kind: InteractionKind,
     /// 0..1.
@@ -499,14 +499,17 @@ impl RoundSettings {
 
 /// Every character takes part in rounds.
 fn add_round_components(add: On<Add<Player>>, mut commands: Commands) {
+    // `if_new`: on a client the choice may already have been replicated.
     commands
         .entity(add.entity)
-        .insert((RoundIntent::default(), operators::OperatorChoice::default()));
+        .insert(RoundIntent::default())
+        .insert_if_new(operators::OperatorChoice::default());
 }
 
 /// The local player is in squad Blue. (Bots get their squad from M7.)
 fn join_local_squad(add: On<Add<LocalPlayer>>, mut commands: Commands) {
-    commands.entity(add.entity).insert(Squad::Blue);
+    // `if_new`: a networked character already has its squad.
+    commands.entity(add.entity).insert_if_new(Squad::Blue);
 }
 
 /// Keep the Bevy state in step with the simulation's phase.
@@ -517,16 +520,6 @@ fn mirror_phase_state(
 ) {
     if *state.get() != round.phase {
         next.set_if_different(round.phase);
-    }
-}
-
-/// Bridge until movement reads [`MovementLock`]: zero the move input of
-/// locked characters right before the fixed tick. Delete once movement
-/// checks the lock itself.
-fn apply_movement_lock(mut locked: Query<&mut crate::player::PlayerInput, With<MovementLock>>) {
-    for mut input in &mut locked {
-        input.move_axis = Vec2::ZERO;
-        input.sprint = false;
     }
 }
 

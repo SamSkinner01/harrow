@@ -14,6 +14,10 @@
 //! - anything else (hard, or no `SurfaceKind`): reported, the bullet stops.
 //!
 //! The shooter's own hit zones are skipped (the eye sits inside the head).
+//!
+//! Lag compensation (multiplayer, M8): with `rewound` set, characters' live
+//! hit-zone colliders are ignored and the hit zones as the shooter saw them
+//! (`net::lag_comp`) are tested along every ray segment instead.
 
 use avian3d::prelude::*;
 use bevy::prelude::*;
@@ -21,6 +25,7 @@ use bevy::prelude::*;
 use crate::{
     combat::{Health, ImpactKind, SurfaceImpact, SurfaceKind},
     config::PenetrationTuning,
+    net::lag_comp::RewoundHitboxes,
     physics::GameLayer,
     player::HitZone,
 };
@@ -33,6 +38,9 @@ pub struct TraceWorld<'a, 'w, 's> {
     pub surfaces: &'a Query<'w, 's, &'static SurfaceKind>,
     pub layers: &'a Query<'w, 's, &'static CollisionLayers>,
     pub damageable: &'a Query<'w, 's, (), With<Health>>,
+    /// Hit zones rewound to the shooter's view (lag compensation); `None`
+    /// tests the live ones.
+    pub rewound: Option<&'a RewoundHitboxes>,
 }
 
 /// Something with health struck by a bullet: a character's hit zone
@@ -100,13 +108,33 @@ pub fn trace(
         }
         let predicate = |collider: Entity| {
             let body = body_of(collider);
-            body != shooter && !passed.contains(&body)
+            // Rewinding: live hit zones are replaced by the rewound ones.
+            let live_zone = world.rewound.is_some() && world.zones.contains(collider);
+            body != shooter && !passed.contains(&body) && !live_zone
         };
-        let Some(hit) =
+        let spatial_hit =
             world
                 .spatial
-                .cast_ray_predicate(start, direction, remaining, true, &filter, &predicate)
-        else {
+                .cast_ray_predicate(start, direction, remaining, true, &filter, &predicate);
+        // A rewound hit zone nearer than whatever the ray met.
+        if let Some(rewound) = world.rewound {
+            let reach = spatial_hit.as_ref().map_or(remaining, |h| h.distance);
+            if let Some(zone_hit) = rewound.cast_ray(start, direction, reach, Some(shooter)) {
+                return Trace {
+                    end: zone_hit.point,
+                    hit: Some(TargetHit {
+                        target: zone_hit.character,
+                        zone: Some(zone_hit.zone),
+                        point: zone_hit.point,
+                        distance: travelled + zone_hit.distance,
+                        damage_scale,
+                        layers,
+                    }),
+                    impacts,
+                };
+            }
+        }
+        let Some(hit) = spatial_hit else {
             break;
         };
         let point = start + *direction * hit.distance;

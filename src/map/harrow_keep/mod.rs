@@ -25,7 +25,11 @@ use super::{
     environment::DesertHoles,
     lamps::{LampAssets, spawn_lantern},
 };
-use crate::{config::Tuning, player::SpawnPoint};
+use crate::{
+    config::Tuning,
+    gadgets::{CctvLayout, CctvSpot},
+    player::SpawnPoint,
+};
 
 /// Floor heights.
 pub const BASEMENT: f32 = -3.2;
@@ -52,9 +56,11 @@ impl Plugin for HarrowKeepPlugin {
             // The sunken cellar steps outside its north face.
             Rect::new(kx + 20.0, kz - 6.0, kx + 22.0, kz),
         ]))
-        .add_systems(Startup, build_map);
-        // `--no-batch` keeps every kit piece as its own mesh (to compare).
-        if !std::env::args().any(|a| a == "--no-batch") {
+        .add_systems(Startup, (build_map, insert_cctv_layout));
+        // `--no-batch` keeps every kit piece as its own mesh (to compare);
+        // a headless server (no render app) draws nothing, so skips it.
+        let renders = app.get_sub_app(bevy::render::RenderApp).is_some();
+        if renders && !std::env::args().any(|a| a == "--no-batch") {
             app.init_resource::<StaticBatching>();
         }
     }
@@ -78,4 +84,43 @@ fn build_map(commands: Commands, assets: Res<AssetServer>, lamp_assets: Res<Lamp
         "Harrow Keep: {pieces} kit pieces, {} lamps ({shadowed} with shadows)",
         lamps.len()
     );
+}
+
+/// Defender CCTV spots: three per site pair (both sites and the way in
+/// between them) and four outside. Lens positions are just under the
+/// ceilings, in room corners. Yaw in degrees: 0 faces north (-Z), 90 west.
+/// Inserted at startup so it replaces the gadgets' default layout before
+/// the cameras spawn (`PostStartup`).
+fn insert_cctv_layout(mut commands: Commands) {
+    let spot = |name, x, y, z, yaw, pitch| CctvSpot {
+        name,
+        position: Vec3::new(x, y, z),
+        yaw,
+        pitch,
+    };
+    commands.insert_resource(CctvLayout {
+        spots: vec![
+            // Basement.
+            spot("CISTERN (1A)", 15.5, -0.45, -29.5, 125.0, -20.0),
+            spot("POWDER STORE (1B)", 11.5, -0.45, -8.5, 35.0, -20.0),
+            spot("UNDERCROFT", -15.5, -0.45, -21.5, 253.0, -15.0),
+            // Ground floor.
+            spot("GREAT HALL (2A)", 7.5, 2.7, -14.5, 65.0, -18.0),
+            spot("ARMOURY (2B)", -2.5, 2.7, -29.5, 142.0, -24.0),
+            spot("ENTRANCE", 3.5, 2.7, -8.5, 45.0, -20.0),
+            // Second floor.
+            spot("MAP ROOM (3A)", -2.5, 5.9, -22.5, 62.0, -18.0),
+            spot("RECORDS (3B)", 15.5, 5.9, -22.5, 59.0, -18.0),
+            spot("LONG GALLERY", 15.5, 5.9, -21.5, 101.0, -12.0),
+            // Third floor.
+            spot("SIGNAL ROOM (4A)", -7.5, 9.1, -18.5, 335.0, -22.0),
+            spot("STUDY (4B)", 7.5, 9.1, -18.5, 25.0, -22.0),
+            spot("LANDING", 1.5, 9.1, -18.5, 10.0, -25.0),
+            // Outside: the keep's facades and the gate passage.
+            spot("MAIN YARD", 3.0, 5.0, -7.6, 180.0, -12.0),
+            spot("WELL COURT", -16.4, 5.0, -12.0, 120.0, -15.0),
+            spot("EAST YARD", 16.4, 5.0, -24.0, 260.0, -15.0),
+            spot("GATE", 1.5, 2.6, 26.3, 180.0, -8.0),
+        ],
+    });
 }

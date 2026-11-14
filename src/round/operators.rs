@@ -9,7 +9,8 @@
 //! - [`Armour`] (combat): damage scale from the armour rating,
 //! - [`OperatorSpeed`]: movement multiplier from the speed rating,
 //! - [`UniqueGadget`] (gadgets): the unique gadget and its count,
-//! - [`Loadout`]: weapon and secondary-gadget slots (data for M3/M4).
+//! - [`Loadout`]: weapon slots and the shared secondary gadget (chosen with
+//!   4 on the selection screen, see [`OperatorChoice::secondary_for`]).
 
 use bevy::prelude::*;
 
@@ -37,7 +38,7 @@ impl Plugin for OperatorsPlugin {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum OperatorId {
     Auger,
     Lark,
@@ -148,7 +149,7 @@ impl OperatorId {
 }
 
 /// The operator a character plays this round.
-#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Operator(pub OperatorId);
 
 /// Movement speed multiplier from the operator's speed rating (1.0 =
@@ -158,7 +159,8 @@ pub struct Operator(pub OperatorId);
 pub struct OperatorSpeed(pub f32);
 
 /// Loadout slots. Weapon ids refer to M3's weapons (one rifle, one sidearm
-/// for now); the secondary gadget is data until M4/later builds it.
+/// for now). The secondary gadget answers key 4 (destruction's breach
+/// charge, or `gadgets` for the rest).
 #[derive(Component, Clone, Debug)]
 pub struct Loadout {
     pub primary: &'static str,
@@ -167,16 +169,32 @@ pub struct Loadout {
 }
 
 /// Operator selection state for one character.
-#[derive(Component, Default, Debug, Clone)]
+#[derive(Component, Default, Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct OperatorChoice {
     /// Last pick on each side, reused as the default next time.
     pub attacker: Option<OperatorId>,
     pub defender: Option<OperatorId>,
     /// Locked in for the coming round.
     pub locked: Option<OperatorId>,
+    /// Secondary gadget picked per operator (4 on the selection screen);
+    /// operators not listed carry their default.
+    pub secondaries: Vec<(OperatorId, SecondaryGadget)>,
 }
 
 impl OperatorChoice {
+    /// The secondary gadget `op` will carry.
+    pub fn secondary_for(&self, op: OperatorId) -> SecondaryGadget {
+        self.secondaries
+            .iter()
+            .find(|(o, g)| *o == op && op.info().secondaries.contains(g))
+            .map_or(op.info().default_secondary, |(_, g)| *g)
+    }
+
+    pub fn set_secondary(&mut self, op: OperatorId, gadget: SecondaryGadget) {
+        self.secondaries.retain(|(o, _)| *o != op);
+        self.secondaries.push((op, gadget));
+    }
+
     pub fn preferred(&self, side: Team) -> Option<OperatorId> {
         match side {
             Team::Attackers => self.attacker,
@@ -274,12 +292,20 @@ fn apply_operators(
                 .unwrap_or_else(|| OperatorId::default_for(*team)),
         };
         choice.lock(op);
-        equip_operator(&mut commands, entity, op, round);
+        equip_operator(&mut commands, entity, op, round, choice.secondary_for(op));
     }
 }
 
-/// Give `entity` everything that comes with playing `op`.
-fn equip_operator(commands: &mut Commands, entity: Entity, op: OperatorId, round: &RoundTuning) {
+/// Give `entity` everything that comes with playing `op`, carrying the
+/// `secondary` gadget (falls back to the operator's default if `op` can't
+/// carry it).
+pub(crate) fn equip_operator(
+    commands: &mut Commands,
+    entity: Entity,
+    op: OperatorId,
+    round: &RoundTuning,
+    secondary: SecondaryGadget,
+) {
     let info = op.info();
     let numbers = op.numbers(round);
     commands.entity(entity).insert((
@@ -296,7 +322,11 @@ fn equip_operator(commands: &mut Commands, entity: Entity, op: OperatorId, round
         Loadout {
             primary: "rifle",
             sidearm: "sidearm",
-            secondary: info.default_secondary,
+            secondary: if info.secondaries.contains(&secondary) {
+                secondary
+            } else {
+                info.default_secondary
+            },
         },
     ));
     info!(
@@ -314,17 +344,17 @@ fn equip_operator(commands: &mut Commands, entity: Entity, op: OperatorId, round
 fn free_play_operator(
     settings: Res<RoundSettings>,
     tuning: Res<Tuning>,
-    mut local: Query<(Entity, &mut Team), With<LocalPlayer>>,
+    mut local: Query<(Entity, &mut Team, &OperatorChoice), With<LocalPlayer>>,
     mut done: Local<bool>,
     mut commands: Commands,
 ) {
     if *done || settings.enabled {
         return;
     }
-    let (Some(op), Ok((entity, mut team))) = (settings.operator, local.single_mut()) else {
+    let (Some(op), Ok((entity, mut team, choice))) = (settings.operator, local.single_mut()) else {
         return;
     };
     *done = true;
     *team = op.info().side;
-    equip_operator(&mut commands, entity, op, &tuning.round);
+    equip_operator(&mut commands, entity, op, &tuning.round, choice.secondary_for(op));
 }

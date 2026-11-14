@@ -31,15 +31,26 @@ impl Plugin for MapPlugin {
             batch::BatchPlugin,
             props::PropsPlugin,
         ));
-        match MapChoice::from_args() {
+        // A dedicated server's config file can choose the map (`MapOverride`,
+        // inserted before this plugin); otherwise `--map`.
+        let choice = match app.world().get_resource::<MapOverride>() {
+            Some(name) => MapChoice::from_name(&name.0),
+            None => MapChoice::parse_args(),
+        };
+        CHOICE.get_or_init(|| choice);
+        match choice {
             MapChoice::Greybox => app.add_plugins(greybox::GreyboxPlugin),
             MapChoice::SectionA => app.add_plugins(keep::KeepPlugin),
             MapChoice::Keep => app.add_plugins(harrow_keep::HarrowKeepPlugin),
         };
+        CURRENT_MAP.get_or_init(|| choice.name().to_string());
     }
 }
 
-/// Which map `--map` asks for.
+/// Which map is played. `MapPlugin` settles it once.
+static CHOICE: std::sync::OnceLock<MapChoice> = std::sync::OnceLock::new();
+
+/// Which map `--map` (or the server config) asks for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MapChoice {
     /// Harrow Keep, the full map (default).
@@ -51,10 +62,10 @@ pub enum MapChoice {
 }
 
 impl MapChoice {
-    /// The map chosen on the command line (worked out once).
+    /// The map being played: the dedicated server's config (`MapOverride`)
+    /// or `--map`. Settled when `MapPlugin` builds; before that, `--map`.
     pub fn from_args() -> Self {
-        static CHOICE: std::sync::OnceLock<MapChoice> = std::sync::OnceLock::new();
-        *CHOICE.get_or_init(Self::parse_args)
+        CHOICE.get().copied().unwrap_or_else(Self::parse_args)
     }
 
     fn parse_args() -> Self {
@@ -74,6 +85,7 @@ impl MapChoice {
             "--lineup-crowd",
             "--m4",
             "--screenshot-on-hit",
+            "--gadget-test",
         ];
         if value.is_none()
             && !args.iter().any(|a| a == "--map")
@@ -82,14 +94,27 @@ impl MapChoice {
             info!("{flag} uses section A's layout: loading --map section_a");
             return MapChoice::SectionA;
         }
-        match value.map(String::as_str) {
-            None | Some("keep") => MapChoice::Keep,
-            Some("section_a") => MapChoice::SectionA,
-            Some("greybox") => MapChoice::Greybox,
-            Some(other) => {
-                warn!("unknown --map {other:?} (keep, section_a or greybox); loading the keep");
+        value.map_or(MapChoice::Keep, |name| MapChoice::from_name(name))
+    }
+
+    /// `keep`, `section_a` or `greybox` (unknown names load the keep).
+    pub fn from_name(name: &str) -> Self {
+        match name {
+            "keep" => MapChoice::Keep,
+            "section_a" => MapChoice::SectionA,
+            "greybox" => MapChoice::Greybox,
+            other => {
+                warn!("unknown map {other:?} (keep, section_a or greybox); loading the keep");
                 MapChoice::Keep
             }
+        }
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            MapChoice::Keep => "keep",
+            MapChoice::SectionA => "section_a",
+            MapChoice::Greybox => "greybox",
         }
     }
 
@@ -97,4 +122,16 @@ impl MapChoice {
     pub fn has_objectives(self) -> bool {
         self != MapChoice::Greybox
     }
+}
+
+/// Use this map instead of `--map` (dedicated server config).
+#[derive(Resource, Debug, Clone)]
+pub struct MapOverride(pub String);
+
+static CURRENT_MAP: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
+/// The loaded map (`keep`, `section_a`, `greybox`). Networked players must
+/// agree on it.
+pub fn current_map_name() -> String {
+    CURRENT_MAP.get().cloned().unwrap_or_else(|| "keep".into())
 }

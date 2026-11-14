@@ -20,6 +20,7 @@ use crate::{
         SurfaceKind,
     },
     config::{Tuning, WeaponDef},
+    net::lag_comp::LagCompensation,
     player::{CharacterState, HitZone, PlayerInput},
     round::defuser::DefuserCarrier,
 };
@@ -157,6 +158,7 @@ fn simulate_weapons(
         Option<&DefuserCarrier>,
     )>,
     world: Targets,
+    lag: LagCompensation,
     mut out: Outputs,
     tuning: Res<Tuning>,
     time: Res<Time>,
@@ -170,6 +172,7 @@ fn simulate_weapons(
         surfaces: &world.surfaces,
         layers: &world.layers,
         damageable: &world.damageable,
+        rewound: None,
     };
 
     for (entity, input, look, body, transform, velocity, mut state, mut speed_scale, dead, defuser) in
@@ -351,7 +354,21 @@ fn simulate_weapons(
                     body,
                     horizontal_speed: velocity.0.with_y(0.0).length(),
                 };
-                fire_one(&shot, &def, &mut state, &trace_world, &world.health, &mut out, &tuning);
+                // Multiplayer: a client's shot is tested against the hit
+                // zones as that client saw them (lag compensation). Solo,
+                // the host and bots shoot at the live ones.
+                let view = lag.view_time(entity);
+                if view == lag.now() {
+                    fire_one(&shot, &def, &mut state, &trace_world, &world.health, &mut out, &tuning);
+                } else {
+                    lag.with_rewound_hitboxes(view, |rewound| {
+                        let rewound_world = TraceWorld {
+                            rewound: Some(rewound),
+                            ..trace_world
+                        };
+                        fire_one(&shot, &def, &mut state, &rewound_world, &world.health, &mut out, &tuning);
+                    });
+                }
                 state.cooldown += 60.0 / def.rpm.max(1.0);
             }
         }
