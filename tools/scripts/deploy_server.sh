@@ -18,6 +18,7 @@
 # Needs: your SSH access to the VPS (a key or password), and sudo there
 # (you'll be asked for the sudo password if it needs one). The VPS needs
 # x86_64 Linux with glibc 2.35+ (Ubuntu 22.04+, Debian 12+) and systemd.
+# Extra ssh/scp options: SSH_OPTS="-i ~/.ssh/my_vps_key" tools/scripts/...
 
 set -euo pipefail
 cd "$(dirname "$0")/../.."
@@ -56,13 +57,14 @@ fi
 NAME=$(basename "$BUNDLE" .tar.gz)
 echo "== deploying $NAME to $TARGET"
 
-SSH=(ssh -p "$SSH_PORT" -o ConnectTimeout=15)
+read -r -a EXTRA <<< "${SSH_OPTS:-}"
+SSH=(ssh -p "$SSH_PORT" -o ConnectTimeout=15 "${EXTRA[@]}")
 # A terminal for sudo's password prompt.
-SSH_TTY=(ssh -t -p "$SSH_PORT" -o ConnectTimeout=15)
+SSH_TTY=(ssh -t -p "$SSH_PORT" -o ConnectTimeout=15 "${EXTRA[@]}")
 
 # --- 2. Copy ------------------------------------------------------------------------
 REMOTE_DIR=$("${SSH[@]}" "$TARGET" 'mktemp -d /tmp/harrow-deploy.XXXXXX')
-scp -P "$SSH_PORT" -q "$BUNDLE" "$TARGET:$REMOTE_DIR/"
+scp -P "$SSH_PORT" -q "${EXTRA[@]}" "$BUNDLE" "$TARGET:$REMOTE_DIR/"
 echo "copied to $TARGET:$REMOTE_DIR"
 
 # --- 3. Install (and set the port), restart ------------------------------------------
