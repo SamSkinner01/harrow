@@ -1,0 +1,47 @@
+# FATHOM: defender, roamer. Armour 1 / speed 3.
+# Lean and watchful. Soft cap and headset, ballistic glasses, a neck
+# gaiter, a light chest rig, a sidearm on the thigh and the Seismic Stakes
+# quiver across her back.
+# Rebuild with tools/scripts/build_characters.sh --only fathom
+
+id = "fathom"
+name = "Fathom"
+team = "defenders"
+role = "roamer"
+armour = 1
+speed = 3
+
+[body]
+gender = 0.0
+age = 0.5
+muscle = 0.6
+weight = 0.42
+proportions = 0.55
+height = 0.55
+height_m = 1.74
+cupsize = 0.4
+race = { african = 0.1, asian = 0.1, caucasian = 0.8 }
+
+[face]
+eyebrows = "eyebrow007"
+eyes = "bluegreen"
+targets = { "nose-point-width-decr" = 0.3, "nose-trans-up" = 0.2, "chin-height-incr" = 0.3, "l-eye-scale-incr" = 0.2, "r-eye-scale-incr" = 0.2, "head-angle-out" = 0.2 }
+
+[skin]
+texture = "young_caucasian_female2"
+tint = [1.0, 0.95, 0.9]
+hair = "short"
+hair_colour = "#5a4030"
+stubble = 0.0
+
+[gear]
+helmet = "cap"
+headset = true
+eyewear = "glasses"
+carrier = "chest_rig"
+pouches = ["mags_triple", "stake_quiver", "thigh_holster", "grenades"]
+gloves = "fingerless"
+boots = "low"
+pads = ["knees"]
+neck = "gaiter"
+sleeves = "rolled"

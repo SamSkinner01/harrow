@@ -49,7 +49,7 @@ Bevy's API changes between releases, so everything is pinned with `=` in
 | bevy_enhanced_input | 0.27.2 | Input. Context-based actions (on foot / gadget placement / menus) and Lightyear supports it directly (`input_bei` feature). |
 | Lightyear | 0.31.0 *(planned, M8)* | Networking. Not added yet; 0.31.0 targets Bevy 0.20 + Avian 0.8 + bevy_enhanced_input 0.27. |
 | Blender | 5.2.4 LTS | Asset pipeline. LTS chosen over 5.3.0, which was only days old. |
-| MPFB | 2.0.18 *(planned, M5)* | Character bodies. Supports Blender 4.2+. |
+| MPFB | 2.0.18 | Character bodies (Blender extension, installed per user by `build_characters.sh --setup`). |
 
 ## Controls
 
@@ -94,6 +94,11 @@ tools/scripts/build_kit.sh                       # Blender -> assets/models/kit/
 tools/scripts/build_kit.sh --only stone_wall_2m  # rebuild one piece
 tools/scripts/build_kit.sh --preview sheet.png   # render all pieces to an image
 python3 tools/scripts/fetch_textures.py          # re-download CC0 textures (Poly Haven)
+tools/scripts/build_characters.sh --setup        # once: install MPFB 2.0.18 + MakeHuman CC0 assets
+tools/scripts/build_characters.sh                # Blender -> assets/models/characters/*.glb
+tools/scripts/build_characters.sh --only lark    # rebuild one operator
+tools/scripts/build_characters.sh --preview DIR  # also render each operator and some poses to DIR
+python3 tools/scripts/fetch_character_textures.py  # re-download CC0 cloth/leather detail maps
 ```
 
 On Windows use `tools/scripts/build_kit.ps1`. Kit conventions are documented
@@ -110,6 +115,11 @@ grip, `SIGHT`/`MUZZLE` empties, `MAGAZINE`/`SLIDE` nodes) are at the top of
 `tools/blender/weapons/models.py`. To use a different weapon model, change
 its `model` block in the tuning file (path, scale, rotation, sight and muzzle
 points or node names, magazine/slide node names) and its `pose`; no code.
+
+Characters: one config per operator in `tools/blender/characters/operators/`
+(body, face, skin, gear; commented). `--setup` changes only your Blender user
+configuration (the MPFB extension and its asset folder). On Windows use
+`tools/scripts/build_characters.ps1`. See DESIGN.md, "M5 characters".
 
 ## Developer flags
 
@@ -136,6 +146,9 @@ cargo run -- --fire-at 90 --reload-at 120      # pull the trigger / press reload
 cargo run -- --screenshot-on-hit out.png --dummies --fire-at 90  # screenshot just after your first hit, then quit
 cargo run -- --dump-weapon-sounds sounds/      # also write the synthesised weapon sounds as .wav files
 cargo run -- --no-viewmodel                    # don't draw the weapon in your hands (look/performance comparisons)
+cargo run -- --lineup                          # the four operators in the courtyard, cycling animations
+cargo run -- --lineup-state crouch_walk        # ... all holding one state (names in src/characters/lineup.rs)
+cargo run -- --lineup-crowd --no-vsync         # 12 operators, for checking what a full match costs
 ```
 
 Used for automated checks: e.g. spawn at the stairs, auto-move forward, and
