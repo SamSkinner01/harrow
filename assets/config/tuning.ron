@@ -61,6 +61,25 @@
         // Tilt, degrees.
         bob_roll: 0.35,
     ),
+    lighting: (
+        // Camera exposure (EV100). Lower = brighter image. 15 = bright sun.
+        exposure: 15.0,
+        // Direct sun, lux. Real desert sun is ~100000.
+        sun: 100000.0,
+        // Sky fill light in shade, cd/m2. Lower = deeper shadows.
+        ambient: 3500.0,
+    ),
+    // Per-surface look. scale = metres one texture repeat covers.
+    // tint multiplies the texture colour (1.0 = unchanged; above 1 brightens).
+    surfaces: {
+        "stone": (scale: 2.4, tint: (1.5, 1.4, 1.2)),
+        "plaster": (scale: 2.0, tint: (1.1, 1.07, 1.0)),
+        "flagstone": (scale: 1.8, tint: (1.35, 1.28, 1.12)),
+        "sand": (scale: 15.0, tint: (1.4, 1.3, 1.1)),
+        "wood": (scale: 1.57, tint: (1.0, 1.0, 1.0)),
+        "metal": (scale: 1.0, tint: (1.0, 1.0, 1.0)),
+        "burlap": (scale: 0.27, tint: (1.0, 1.0, 1.0)),
+    },
     footsteps: (
         // Metres travelled per footstep.
         walk_stride: 0.75,

@@ -7,8 +7,9 @@ external asset is logged in [ASSETS.md](ASSETS.md).
 ## Build and run
 
 ```sh
-cargo run              # dev build (first build takes a few minutes)
-cargo run --release    # optimised build, use this for judging performance
+cargo run                      # Harrow Keep (dev build; first build takes a few minutes)
+cargo run -- --map greybox     # the grey-box movement test area
+cargo run --release            # optimised build, use this for judging performance
 ```
 
 Use `cargo build -j 4` (or any number) to leave CPU cores free while compiling.
@@ -71,9 +72,21 @@ Hold vs. toggle for sprint, crouch and lean is set in the tuning file.
 
 ## Tuning
 
-Movement, look and body values live in `assets/config/tuning.ron`. Edit and
-save while the game is running and the changes apply immediately. A mistake in
-the file is logged and ignored.
+Movement, look, lighting and per-surface look (texture scale and tint) live in
+`assets/config/tuning.ron`. Edit and save while the game is running and the
+changes apply immediately. A mistake in the file is logged and ignored.
+
+## Asset pipeline
+
+```sh
+tools/scripts/build_kit.sh                       # Blender -> assets/models/kit/*.glb
+tools/scripts/build_kit.sh --only stone_wall_2m  # rebuild one piece
+tools/scripts/build_kit.sh --preview sheet.png   # render all pieces to an image
+python3 tools/scripts/fetch_textures.py          # re-download CC0 textures (Poly Haven)
+```
+
+On Windows use `tools/scripts/build_kit.ps1`. Kit conventions are documented
+at the top of `tools/blender/kit/pieces.py`; the piece list is in DESIGN.md.
 
 ## Developer flags
 
@@ -85,6 +98,7 @@ cargo run -- --auto-move 0,1,sprint            # hold strafe,forward[,sprint]
 cargo run -- --stance crouch --lean left       # hold a stance / lean
 cargo run -- --third-person --hitboxes         # start with debug views on
 cargo run -- --trace-player                    # log position 4x per second, and every footstep
+cargo run -- --no-vsync                        # uncapped frame rate (performance checks)
 ```
 
 Used for automated checks: e.g. spawn at the stairs, auto-move forward, and

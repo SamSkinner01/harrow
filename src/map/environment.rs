@@ -5,7 +5,12 @@
 //! real map.
 
 use avian3d::prelude::*;
-use bevy::{camera::Exposure, light::CascadeShadowConfigBuilder, prelude::*};
+use bevy::{
+    camera::Exposure, light::CascadeShadowConfigBuilder, mesh::VertexAttributeValues, prelude::*,
+};
+
+use super::materials::MaterialLibrary;
+use crate::config::Tuning;
 
 /// Pale, slightly warm desert sky.
 const SKY: Color = Color::srgb(0.66, 0.74, 0.82);
@@ -20,12 +25,15 @@ impl Plugin for EnvironmentPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(ClearColor(SKY))
             .insert_resource(GlobalAmbientLight {
-                // Sky fill. Kept low on purpose so shade reads as deep shadow.
+                // Sky fill (bluish). Brightness comes from the tuning file.
                 color: Color::srgb(0.75, 0.82, 1.0),
-                brightness: 2500.0,
                 ..default()
             })
             .add_systems(Startup, (spawn_sun, spawn_desert_floor))
+            .add_systems(
+                PreUpdate,
+                apply_lighting_tuning.run_if(resource_changed::<Tuning>),
+            )
             .add_observer(configure_camera);
     }
 }
@@ -35,7 +43,7 @@ fn spawn_sun(mut commands: Commands) {
         Name::new("Sun"),
         DirectionalLight {
             color: Color::srgb(1.0, 0.95, 0.86),
-            illuminance: light_consts::lux::DIRECT_SUNLIGHT,
+            illuminance: light_consts::lux::DIRECT_SUNLIGHT, // see tuning
             shadow_maps_enabled: true,
             ..default()
         },
@@ -53,17 +61,23 @@ fn spawn_sun(mut commands: Commands) {
 fn spawn_desert_floor(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    library: Res<MaterialLibrary>,
 ) {
     const SIZE: f32 = 2000.0;
+    let mut mesh = Plane3d::default().mesh().size(SIZE, SIZE).build();
+    // Plane UVs run 0..1 across the whole plane; the material library expects
+    // metres.
+    if let Some(VertexAttributeValues::Float32x2(uvs)) = mesh.attribute_mut(Mesh::ATTRIBUTE_UV_0) {
+        for uv in uvs {
+            uv[0] *= SIZE;
+            uv[1] *= SIZE;
+        }
+    }
+    mesh.generate_tangents().ok();
     commands.spawn((
         Name::new("Desert floor"),
-        Mesh3d(meshes.add(Plane3d::default().mesh().size(SIZE, SIZE))),
-        MeshMaterial3d(materials.add(StandardMaterial {
-            base_color: Color::srgb(0.76, 0.66, 0.49),
-            perceptual_roughness: 0.92,
-            ..default()
-        })),
+        Mesh3d(meshes.add(mesh)),
+        MeshMaterial3d(library.get("sand").expect("sand material")),
         Transform::from_xyz(0.0, DESERT_FLOOR_Y, 0.0),
     ));
     // Collision: a thick slab whose top is the desert floor.
@@ -74,10 +88,29 @@ fn spawn_desert_floor(
     ));
 }
 
+/// Sun, ambient and exposure from the `lighting` section of the tuning file.
+fn apply_lighting_tuning(
+    tuning: Res<Tuning>,
+    mut suns: Query<&mut DirectionalLight>,
+    mut ambient: ResMut<GlobalAmbientLight>,
+    mut exposures: Query<&mut Exposure>,
+) {
+    let l = &tuning.lighting;
+    for mut sun in &mut suns {
+        sun.illuminance = l.sun;
+    }
+    ambient.brightness = l.ambient;
+    for mut exposure in &mut exposures {
+        exposure.ev100 = l.exposure;
+    }
+}
+
 /// Every 3D camera gets sunlight exposure and the dusty haze.
-fn configure_camera(add: On<Add<Camera3d>>, mut commands: Commands) {
+fn configure_camera(add: On<Add<Camera3d>>, mut commands: Commands, tuning: Res<Tuning>) {
     commands.entity(add.entity).insert((
-        Exposure::SUNLIGHT,
+        Exposure {
+            ev100: tuning.lighting.exposure,
+        },
         DistanceFog {
             color: SKY,
             directional_light_color: Color::srgba(1.0, 0.93, 0.80, 0.35),

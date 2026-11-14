@@ -10,6 +10,7 @@ use bevy::{
     prelude::*,
 };
 use serde::Deserialize;
+use std::collections::HashMap;
 
 const TUNING_PATH: &str = "config/tuning.ron";
 const EMBEDDED_TUNING: &str = include_str!("../assets/config/tuning.ron");
@@ -37,7 +38,29 @@ pub struct Tuning {
     pub body: BodyTuning,
     pub lean: LeanTuning,
     pub view: ViewTuning,
+    pub lighting: LightingTuning,
+    pub surfaces: HashMap<String, SurfaceTuning>,
     pub footsteps: FootstepTuning,
+}
+
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct LightingTuning {
+    /// Camera exposure, EV100.
+    pub exposure: f32,
+    /// Sun illuminance, lux.
+    pub sun: f32,
+    /// Ambient (sky fill) brightness, cd/m2.
+    pub ambient: f32,
+}
+
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct SurfaceTuning {
+    /// Metres covered by one texture repeat.
+    pub scale: f32,
+    /// Linear multiplier on the texture colour.
+    pub tint: (f32, f32, f32),
 }
 
 #[derive(Deserialize, Clone, Debug)]

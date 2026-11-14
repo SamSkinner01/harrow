@@ -13,6 +13,7 @@
 //! controller does not step up ledges, so every staircase needs a ramp.
 
 use avian3d::prelude::*;
+use crate::player::SpawnPoint;
 use bevy::{
     asset::RenderAssetUsages,
     image::{ImageAddressMode, ImageFilterMode, ImageSampler, ImageSamplerDescriptor},
@@ -25,7 +26,8 @@ pub struct GreyboxPlugin;
 
 impl Plugin for GreyboxPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, spawn_greybox);
+        app.insert_resource(SpawnPoint::default())
+            .add_systems(Startup, spawn_greybox);
     }
 }
 

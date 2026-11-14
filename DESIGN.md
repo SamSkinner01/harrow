@@ -152,6 +152,20 @@ walls, courtyards, narrow stairwells, rooftop access, hatches, a basement.
 The reference season shipped its own desert-fortress map; Harrow Keep's
 layout must not be modelled on it.
 
+**Section A (M2):** the first playable piece, in `src/map/keep.rs`.
+- A two-storey building (12 x 8 m) on the north side of a walled courtyard
+  (16 x 12 m) with an arched gate to the south.
+- Ground floor: a west hall with an arched door to the courtyard and stairs
+  up along the west wall; a stone wall to the east rooms; a plaster wall
+  between the courtyard-side room and a storeroom. Both outer doors of the
+  east rooms are barricaded.
+- Upper floor: two rooms split by a plaster wall; a railed stairwell; a
+  wooden floor with a hatch over the storeroom.
+- Roof with battlements (no access yet).
+- Not yet: rooftop access, basement, interior lamps (interiors are very dark
+  with only window light), a proper sky (a physically based atmosphere was
+  tried and looked grey; needs a lighting pass).
+
 ## Open questions
 
 - Vault action (see Movement).

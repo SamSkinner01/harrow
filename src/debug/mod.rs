@@ -14,6 +14,8 @@
 //! - `--stance stand|crouch|prone`, `--lean left|right`: hold a stance/lean.
 //! - `--third-person`, `--hitboxes`: start with those views on.
 //! - `--trace-player`: log the player's feet position 4 times a second.
+//! - `--no-vsync`: uncapped frame rate, for performance measurements.
+//! - `--map keep|greybox` is handled by the map module.
 
 use std::path::PathBuf;
 
@@ -61,6 +63,9 @@ impl Plugin for DebugPlugin {
         if forced.is_active() {
             app.insert_resource(forced)
                 .add_systems(FixedPreUpdate, apply_forced_input);
+        }
+        if has_flag("--no-vsync") {
+            app.add_systems(Startup, disable_vsync);
         }
         if has_flag("--trace-player") {
             app.add_systems(FixedPostUpdate, trace_player)
@@ -144,6 +149,11 @@ fn trace_player(
             *ticks, transform.translation, state.height, state.lean, state.stance
         );
     }
+}
+
+/// `--no-vsync`: render as fast as possible, for measuring performance.
+fn disable_vsync(mut window: Single<&mut Window>) {
+    window.present_mode = bevy::window::PresentMode::AutoNoVsync;
 }
 
 /// `--trace-player`: log every footstep.
