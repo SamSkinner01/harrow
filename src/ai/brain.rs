@@ -643,7 +643,7 @@ fn think(
         };
         let goal = match round.phase {
             RoundPhase::Prep if *team == Team::Defenders => {
-                defender_jobs(&ctx, &mut state, &mut bot, gadget, reinforcements)
+                defender_jobs(&ctx, &mut state, gadget, reinforcements)
                     .unwrap_or_else(|| defend(&ctx, &mut state, &mut bot))
             }
             RoundPhase::Prep => idle_towards_objective(&ctx),
@@ -652,7 +652,7 @@ fn think(
                 // phase, for a little while.
                 state.mind.jobs.retain(|j| matches!(j, Job::Reinforce(_)));
                 let late = round.elapsed > 15.0;
-                let jobs = if late { None } else { defender_jobs(&ctx, &mut state, &mut bot, gadget, reinforcements) };
+                let jobs = if late { None } else { defender_jobs(&ctx, &mut state, gadget, reinforcements) };
                 jobs.unwrap_or_else(|| defend(&ctx, &mut state, &mut bot))
             }
             RoundPhase::Action => {
@@ -660,7 +660,7 @@ fn think(
                 attack(&ctx, &mut state, &mut bot, carrier, gadget, secondary, charges)
             }
             RoundPhase::Planted if *team == Team::Defenders => retake(&ctx, &mut state),
-            RoundPhase::Planted => guard_plant(&ctx, &mut state, &mut bot),
+            RoundPhase::Planted => guard_plant(&ctx, &mut bot),
             // `--ai-breach-test` (free play): breach into the first site
             // through its nearest soft wall.
             RoundPhase::Inactive if breach_test => ctx
@@ -738,7 +738,6 @@ fn idle_towards_objective(ctx: &Ctx) -> Goal {
 fn defender_jobs(
     ctx: &Ctx,
     state: &mut BotState,
-    bot: &mut Bot,
     gadget: Option<&UniqueGadget>,
     reinforcements: Option<&Reinforcements>,
 ) -> Option<Goal> {
@@ -804,7 +803,6 @@ fn defender_jobs(
         if at.distance(ctx.feet) <= radius + 0.35 {
             state.mind.job_arrived.get_or_insert(ctx.now);
         }
-        let _ = bot;
         return Some(Goal {
             kind,
             at: Some(at),
@@ -819,7 +817,6 @@ fn defender_jobs(
 
 /// Defenders without jobs: anchors hold, roamers roam and hunt.
 fn defend(ctx: &Ctx, state: &mut BotState, bot: &mut Bot) -> Goal {
-    let b = &ctx.tuning.ai.behaviour;
     // Rotate: if attackers are reported at or near another site and none
     // near mine, about half the anchors go to help (once a round).
     if state.mind.role == Role::Anchor && !state.mind.rotated && ctx.tactics.sites.len() > 1 {
@@ -927,7 +924,6 @@ fn defend(ctx: &Ctx, state: &mut BotState, bot: &mut Bot) -> Goal {
         watch = c.pos + Vec3::Y * 1.2;
     }
     let crouch = (bot.index as f32 * 0.37 + state.mind.hold as f32 * 0.61).fract() < ctx.crouch_chance;
-    let _ = b;
     Goal {
         kind: GoalKind::Hold,
         at: Some(spot.pos),
@@ -1000,7 +996,7 @@ fn attack(
             return Goal { kind: GoalKind::Plant, at: Some(at), watch: Some(watch), radius: 1.0, ..default() };
         }
         let target = site.inside_point(ctx.grid, site.inside.len() / 2);
-        return approach(ctx, state, site.centre, target, false);
+        return approach(ctx, site.centre, target, false);
     }
     // A dropped defuser: one attacker (claimed, so they don't take turns)
     // fetches it.
@@ -1043,7 +1039,7 @@ fn attack(
     }
     if site.contains(ctx.feet + Vec3::Y * 0.05) || dist < 3.0 {
         // In: cover an entrance from a hold spot.
-        return hold_site(ctx, state, bot, site);
+        return hold_site(ctx, bot, site);
     }
     let pick = (bot.index as usize * 5) % site.inside.len().max(1);
     let mut target = site.inside_point(ctx.grid, pick);
@@ -1059,15 +1055,14 @@ fn attack(
     {
         target = wall.inside;
     }
-    approach(ctx, state, site.centre, target, state.mind.alt_route)
+    approach(ctx, site.centre, target, state.mind.alt_route)
 }
 
 /// Move towards a site: run far out, walk carefully close in.
-fn approach(ctx: &Ctx, state: &BotState, centre: Vec3, target: Vec3, alt: bool) -> Goal {
+fn approach(ctx: &Ctx, centre: Vec3, target: Vec3, alt: bool) -> Goal {
     let careful = ctx.tuning.ai.behaviour.careful_range;
     let dist = ctx.feet.distance(centre);
     let pace = if dist > careful + 6.0 { Pace::Run } else { Pace::Careful };
-    let _ = state;
     Goal {
         kind: GoalKind::Move,
         at: Some(target),
@@ -1080,7 +1075,7 @@ fn approach(ctx: &Ctx, state: &BotState, centre: Vec3, target: Vec3, alt: bool) 
 }
 
 /// Hold an entrance of `site` from inside it.
-fn hold_site(ctx: &Ctx, state: &mut BotState, bot: &mut Bot, site: &super::tactics::SiteTactics) -> Goal {
+fn hold_site(ctx: &Ctx, bot: &mut Bot, site: &super::tactics::SiteTactics) -> Goal {
     if site.holds.is_empty() {
         let at = site.inside_point(ctx.grid, bot.index as usize * 3);
         return Goal {
@@ -1093,7 +1088,6 @@ fn hold_site(ctx: &Ctx, state: &mut BotState, bot: &mut Bot, site: &super::tacti
     let rank = ctx.site_rank.get(&ctx.me).copied().unwrap_or(bot.index as usize);
     let spot = &site.holds[rank % site.holds.len()];
     let crouch = (bot.index as f32 * 0.53).fract() < ctx.crouch_chance;
-    let _ = state;
     Goal {
         kind: GoalKind::Hold,
         at: Some(spot.pos),
@@ -1153,14 +1147,14 @@ fn retake(ctx: &Ctx, state: &mut BotState) -> Goal {
 }
 
 /// Attackers once planted: hold spots covering the defuser's site.
-fn guard_plant(ctx: &Ctx, state: &mut BotState, bot: &mut Bot) -> Goal {
+fn guard_plant(ctx: &Ctx, bot: &mut Bot) -> Goal {
     let Some((device, _, site_id)) = ctx.device else {
         return Goal::default();
     };
     let Some(site) = ctx.tactics.site(site_id) else {
         return Goal { kind: GoalKind::Move, at: Some(device), radius: 2.5, ..default() };
     };
-    let mut goal = hold_site(ctx, state, bot, site);
+    let mut goal = hold_site(ctx, bot, site);
     if goal.at.is_some_and(|p| p.distance(device) > 9.0) {
         goal.at = Some(device);
         goal.radius = 3.0;

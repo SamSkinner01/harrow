@@ -669,6 +669,19 @@ impl Sampler<'_, '_, '_> {
         })
     }
 
+    /// A standing body fits all the way from `from` to `to` (same floor
+    /// height): a capsule swept between them hits nothing (catches low
+    /// ceilings and stringers the link rays pass between).
+    fn body_clear(&self, from: Vec3, to: Vec3) -> bool {
+        let delta = (to - from).with_y(0.0);
+        let Ok(dir) = Dir3::new(delta) else { return true };
+        let start = from + Vec3::Y * self.stand_centre;
+        let config = ShapeCastConfig::from_max_distance(delta.length());
+        self.spatial
+            .cast_shape(&self.stand, start, Quat::IDENTITY, dir, &config, &self.filter)
+            .is_none()
+    }
+
     /// A body-sized hole from `upper` down to the floor at `lower`.
     fn can_drop(&self, upper: Vec3, lower_y: f32) -> bool {
         let start = upper + Vec3::Y * 0.6;
@@ -774,7 +787,10 @@ impl NavGrid {
                     let above_hole = Vec3::new(pa.x, a.y, pa.z)
                         + Vec3::new(DIRS[d].x as f32, 0.0, DIRS[d].y as f32) * cell;
                     let heights = LINK_RAYS_STAND;
-                    if s.clear_between(pa, above_hole, heights) && s.can_drop(above_hole, y) {
+                    if s.clear_between(pa, above_hole, heights)
+                        && s.body_clear(pa, above_hole)
+                        && s.can_drop(above_hole, y)
+                    {
                         self.nodes[id as usize].links[d] = KIND_DROP << 4 | nl as u8;
                     }
                 }

@@ -196,22 +196,18 @@ fn fight(
             if let Some(z) = cache.zones.get(&seen.entity) {
                 c.aim_point = z[c.zone];
             }
-        } else if let Some(target) = c.target {
-            // Lost sight: hold the angle for a moment.
-            if now - c.last_seen > 1.6 {
-                c.target = None;
-                c.lost_at = now;
-                c.crouch = false;
-                c.lean = Lean::Center;
-            } else if let Some(z) = cache.zones.get(&target) {
-                // Keep tracking the last known spot, not the live one.
-                let _ = z;
-            }
+        } else if c.target.is_some() && now - c.last_seen > 1.6 {
+            // Lost sight: the aim stays on the last known spot for a
+            // moment, then the target is forgotten.
+            c.target = None;
+            c.lost_at = now;
+            c.crouch = false;
+            c.lean = Lean::Center;
         }
 
         // --- Aim and fire ------------------------------------------------------
         let visible_now = pick.is_some();
-        if let Some(target) = c.target {
+        if c.target.is_some() {
             let to = c.aim_point - eye;
             let distance = to.length().max(0.5);
             let (yaw0, pitch0) = angles_to(to);
@@ -263,7 +259,12 @@ fn fight(
                     c.pause_until = now + d.burst_pause * (0.7 + 0.6 * bot.rng.f32());
                 }
             }
-            let may_fire = visible_now && now >= c.react_at && ready && !c.ff_blocked && off <= tolerance;
+            let mut may_fire = visible_now && now >= c.react_at && ready && !c.ff_blocked && off <= tolerance;
+            // Sightings are a tenth of a second old at worst: check the
+            // line again before shooting (never into stone).
+            if may_fire && stone_between(&spatial, &world, &colliders, &surfaces, eye, c.aim_point) {
+                may_fire = false;
+            }
             if may_fire {
                 if def.full_auto {
                     if c.burst_left == 0 && now >= c.pause_until {
@@ -288,7 +289,6 @@ fn fight(
                 c.burst_left = 0;
                 c.pause_until = now + d.burst_pause;
             }
-            let _ = target;
         } else {
             c.burst_left = 0;
         }

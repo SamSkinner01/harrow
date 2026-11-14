@@ -839,10 +839,20 @@ replicated; nothing else is required.
 `ai.test_timers`, logging every kill, plant, defuse, reinforcement,
 breach and stuck bot, a summary per round and match, and the frame rate;
 `--ai-matches N`, `--ai-speed X` (game clock speed), `--ai-site A|B`
-(force the attack target), `--ai-shots DIR`
+(force the attack target), `--ai-no-reinforce` (defenders leave walls
+soft), `--ai-breach-test` (free play: breach into site A), `--ai-shots DIR`
 (screenshots from a chase camera on a bot that is fighting), and
 `--ai-spectate`. Bot cost is measured every frame and logged every 10 s
 (`ai: cost ...`).
+
+**Not yet:** bots don't use the ring cutter, backplate charges, drones,
+CCTV, razor wire or proximity alarms (the M6 part two gadgets), and never
+go prone or vault. Breach charges only open plain soft walls into a site,
+which the keep's defenders usually reinforce in prep, so in full matches
+they are rare (`--ai-no-reinforce` / `--ai-breach-test` show them).
+Callouts are made on the server only (not forwarded to clients yet).
+Place names in callouts are generic (site, floor, compass); a map could
+provide named areas later.
 
 ## M8 networking (implemented 2026-11-14)
 

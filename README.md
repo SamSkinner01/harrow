@@ -265,6 +265,8 @@ cargo run -- --ai-test                # automated bot-only match: logs kills, pl
 cargo run -- --ai-test --ai-matches 3 --ai-speed 2 --ai-shots shots/   # 3 matches at 2x, screenshots
 cargo run -- --ai-test --ai-spectate --ai-cam front   # chase camera on a bot, from the front
 cargo run -- --ai-test --ai-site B   # attackers always go for site B (testing)
+cargo run -- --ai-test --ai-no-reinforce   # defenders don't reinforce (to see breach charges used)
+cargo run -- --no-round --ai-player --ai-breach-test --ai-spectate   # a bot breaches into site A
 cargo run -- --no-round --ai-navtest  # plan every spawn-to-site path, log them, quit
 cargo run -- --no-round --ai-navtest --ai-navdump 0.8,-7.6,0.8,0.4   # dump grid columns on a line
 ```

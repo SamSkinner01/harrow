@@ -158,7 +158,6 @@ fn drive(
     charges: Query<(&BreachCharge, &Transform), Without<Player>>,
     spatial: SpatialQuery,
     mut stats: ResMut<AiStats>,
-    settings: Res<AiSettings>,
     tuning: Res<Tuning>,
     time: Res<Time>,
 ) {
@@ -170,7 +169,6 @@ fn drive(
         .collect();
     let mut searches = 0;
     let filter = SpatialQueryFilter::from_mask(GameLayer::World);
-    let _ = &settings;
 
     for (me, name, mut bot, mut state, transform, body, input, team, dead, charges_left, locked) in &mut bots {
         let feet = transform.translation;
@@ -620,7 +618,6 @@ fn turn(
     time: Res<Time>,
 ) {
     let dt = time.delta_secs();
-    let now = time.elapsed_secs();
     let d = tuning.ai.preset(settings.level(&tuning));
     let max_turn = d.turn_speed.to_radians() * dt;
     for (mut state, transform, body, input, dead) in &mut bots {
@@ -673,7 +670,6 @@ fn turn(
         let step = max_turn * speed;
         state.look.yaw = (state.look.yaw + (dy * ease.max(0.35)).clamp(-step, step)).rem_euclid(std::f32::consts::TAU);
         state.look.pitch = (state.look.pitch + (dp * ease.max(0.35)).clamp(-step, step)).clamp(-1.4, 1.4);
-        let _ = now;
     }
 }
 

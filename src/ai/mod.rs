@@ -87,7 +87,23 @@ impl Plugin for AiPlugin {
             settings.difficulty,
             if settings.local_bot { ", the local player is a bot too" } else { "" }
         );
+        // Rounds teleport everyone to the spawns as soon as a session
+        // starts; when the menu is skipped (command-line flags) the level's
+        // colliders may still be loading, and characters put on an upper
+        // floor would fall into it. Hold the round loop until the nav grid
+        // (built once the map has settled) is ready.
+        let hold_rounds = settings.nav_wanted()
+            && settings.bots + u32::from(settings.local_bot) > 0
+            && app
+                .world()
+                .get_resource::<NetMode>()
+                .is_some_and(|m| matches!(m, NetMode::Offline | NetMode::Host { .. }));
+        if hold_rounds {
+            app.add_systems(PostStartup, hold_rounds_for_map)
+                .add_systems(Update, start_rounds_when_ready);
+        }
         app.insert_resource(settings)
+            .init_resource::<RoundsHeld>()
             .configure_sets(
                 FixedPreUpdate,
                 (AiSystems::Senses, AiSystems::Think, AiSystems::Act)
@@ -427,6 +443,28 @@ fn spawn_bot(
         // networking) see everything above.
         .insert(Player)
         .with_children(spawn_hitboxes);
+}
+
+/// After startup (so start-up work that checks the flag still ran): hold
+/// the round loop until the map is ready.
+fn hold_rounds_for_map(mut round: ResMut<RoundSettings>, mut held: ResMut<RoundsHeld>) {
+    if round.enabled {
+        round.enabled = false;
+        held.0 = true;
+    }
+}
+
+/// Whether `hold_rounds_for_map` paused the round loop.
+#[derive(Resource, Default)]
+struct RoundsHeld(bool);
+
+/// The map is loaded (the nav grid is built): let the round loop start.
+fn start_rounds_when_ready(grid: Res<nav::NavGrid>, mut round: ResMut<RoundSettings>, mut held: ResMut<RoundsHeld>) {
+    if held.0 && grid.ready {
+        held.0 = false;
+        round.enabled = true;
+        info!("ai: map ready, starting the round loop");
+    }
 }
 
 /// On the selection screen every bot picks an operator, spreading each
