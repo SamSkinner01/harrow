@@ -51,13 +51,37 @@ pub enum MapChoice {
 }
 
 impl MapChoice {
+    /// The map chosen on the command line (worked out once).
     pub fn from_args() -> Self {
+        static CHOICE: std::sync::OnceLock<MapChoice> = std::sync::OnceLock::new();
+        *CHOICE.get_or_init(Self::parse_args)
+    }
+
+    fn parse_args() -> Self {
         let args: Vec<String> = std::env::args().collect();
         let value = args
             .iter()
             .position(|a| a == "--map")
             .and_then(|i| args.get(i + 1))
             .filter(|v| !v.starts_with("--"));
+        // Test flags written against section A's geometry (fixed positions
+        // in its courtyard and rooms) load it unless a map is named.
+        const SECTION_A_TESTS: &[&str] = &[
+            "--weapon-test",
+            "--dummies",
+            "--lineup",
+            "--lineup-state",
+            "--lineup-crowd",
+            "--m4",
+            "--screenshot-on-hit",
+        ];
+        if value.is_none()
+            && !args.iter().any(|a| a == "--map")
+            && let Some(flag) = args.iter().find(|a| SECTION_A_TESTS.contains(&a.as_str()))
+        {
+            info!("{flag} uses section A's layout: loading --map section_a");
+            return MapChoice::SectionA;
+        }
         match value.map(String::as_str) {
             None | Some("keep") => MapChoice::Keep,
             Some("section_a") => MapChoice::SectionA,
