@@ -28,6 +28,7 @@ PREFERRED_MODULE = "bl_ext.user_default.mpfb"
 
 RIG = "game_engine"
 EYES = "low-poly"
+EYELASHES = "eyelashes01"
 
 
 class MpfbMissing(Exception):
@@ -84,7 +85,8 @@ def check_target(name):
 
 
 def build_human(cfg):
-    """Build the rigged human for an operator. Returns (rig, body, eyes, eyebrows)."""
+    """Build the rigged human for an operator.
+    Returns (rig, body, eyes, eyebrows, eyelashes)."""
     S = services()
     body_cfg, face = cfg["body"], cfg["face"]
     for name in face["targets"]:
@@ -102,7 +104,7 @@ def build_human(cfg):
         "rig": RIG,
         "eyes": f"{EYES}/{EYES}.mhclo",
         "eyebrows": f"{face['eyebrows']}/{face['eyebrows']}.mhclo",
-        "eyelashes": "",
+        "eyelashes": f"{EYELASHES}/{EYELASHES}.mhclo",
         "tongue": "",
         "teeth": "",
         "hair": "",
@@ -125,22 +127,21 @@ def build_human(cfg):
         raise RuntimeError("MPFB did not create a rig")
     S.TargetService.bake_targets(body)
 
-    eyes = eyebrows = None
+    parts = {}
     for obj in rig.children:
         if obj is body or obj.type != "MESH":
             continue
-        if obj.name.endswith(EYES):
-            eyes = obj
-        elif obj.name.endswith(face["eyebrows"]):
-            eyebrows = obj
-    if eyes is None or eyebrows is None:
-        raise RuntimeError(f"MPFB eyes/eyebrows missing: {[o.name for o in rig.children]}")
+        for key, suffix in (("eyes", EYES), ("eyebrows", face["eyebrows"]), ("eyelashes", EYELASHES)):
+            if obj.name.endswith(suffix):
+                parts[key] = obj
+    if len(parts) != 3:
+        raise RuntimeError(f"MPFB eyes/eyebrows/eyelashes missing: {[o.name for o in rig.children]}")
     _remove_helpers(body)
-    for obj in (body, eyes, eyebrows):
+    for obj in (body, *parts.values()):
         for mod in list(obj.modifiers):
             if mod.type != "ARMATURE":
                 obj.modifiers.remove(mod)
-    return rig, body, eyes, eyebrows
+    return rig, body, parts["eyes"], parts["eyebrows"], parts["eyelashes"]
 
 
 def _remove_helpers(body):

@@ -27,6 +27,15 @@ from . import body as body_mod
 
 ARMS = ("upperarm", "lowerarm", "clavicle", "hand") + body_mod.HAND_BONES[1:]
 
+# Material slots of the gear mesh, and which palette roles use which.
+GEAR_MATERIALS = ("webbing", "hard", "leather", "uniform")
+ROLE_MATERIAL = {
+    "helmet": "hard", "metal": "hard", "dark": "hard", "lens": "hard", "pads": "hard",
+    "sole": "hard", "accent": "hard",
+    "gloves": "leather", "boots": "leather",
+    "shirt": "uniform", "trousers": "uniform",
+}
+
 
 def _smooth01(t):
     t = max(0.0, min(1.0, t))
@@ -139,18 +148,23 @@ class Gear:
         self.bm = bmesh.new()
         self.col = self.bm.loops.layers.float_color.new("Color")
         self.dl = self.bm.verts.layers.deform.verify()
+        self.uv = self.bm.loops.layers.uv.new("UVMap")
         self.bones = [b.name for b in ch.rig.data.bones]
         self.bone_index = {n: i for i, n in enumerate(self.bones)}
         self.anchors = {}
+        # Material from the colour's palette role; `force_material` overrides.
+        self.role_of = {tuple(v): k for k, v in ch.colours.items()}
+        self.force_material = None
 
     # ------------------------------------------------------------ output
 
-    def to_object(self, name, material):
+    def to_object(self, name, materials):
         mesh = bpy.data.meshes.new(name)
         self.bm.normal_update()
         self.bm.to_mesh(mesh)
         self.bm.free()
-        mesh.materials.append(material)
+        for m in GEAR_MATERIALS:
+            mesh.materials.append(materials[m])
         obj = bpy.data.objects.new(name, mesh)
         bpy.context.scene.collection.objects.link(obj)
         for bone in self.bones:
@@ -178,10 +192,15 @@ class Gear:
             dv.clear()
             for bone, bw in w.items():
                 dv[self.bone_index[bone]] = bw
+        role = self.role_of.get(tuple(colour), "gear")
+        material = GEAR_MATERIALS.index(self.force_material or ROLE_MATERIAL.get(role, "webbing"))
         for f in faces:
             if smooth is not None:
                 f.smooth = smooth
             f.normal_update()
+            f.material_index = material
+            for loop in f.loops:
+                loop[self.uv].uv = body_mod.box_uv(loop.vert.co, f.normal)
             k = 1.0
             if shade:
                 # Baked hint of occlusion: undersides a little darker.
@@ -440,8 +459,10 @@ def build(ch, s):
     if gear["neck"] == "gaiter":
         g.limb_band("head", Vector((0, m.neck.y, m.collar_z - 0.015)), Vector((0, 0.05, 1)), 0.0,
                     m.eye.z - 0.10 - m.collar_z, 0.006, 0.006, g.c["gear_alt"], nu=16, nv=3)
+    uniform_details(g, gear)
     belt(g)
     carrier(g, gear["carrier"])
+    molle(g)
     for name in gear["pouches"]:
         if name not in POUCHES:
             raise ValueError(f"{ch.cfg['path']}: unknown pouch {name!r} (have {sorted(POUCHES)})")
@@ -451,7 +472,7 @@ def build(ch, s):
     if gear["gloves"] != "none":
         gloves(g)
     boots(g, gear["boots"])
-    return g.to_object("gear", ch.materials["gear"])
+    return g.to_object("gear", ch.materials)
 
 
 def measure(g):
@@ -599,16 +620,16 @@ def helmet(g, kind):
     if kind == "full":
         # Mandible guard: a curved plate around the jaw, ear to ear.
         c = g.head_centre
-        lo, hi = g.m.eye.z - 0.135, g.m.eye.z - 0.045
+        lo, hi = g.m.eye.z - 0.15, g.m.eye.z - 0.085
 
         def rays(i, j):
-            phi = math.radians(-78 + 156 * i / 10)
+            phi = math.radians(-72 + 144 * i / 10)
             z = lo + (hi - lo) * j / 2
             d = Vector((math.sin(phi), math.cos(phi), 0))
             o = Vector((0, c.y - 0.01, z))
             return o + d * 0.4, -d
 
-        g.shell("head", rays, 11, 3, 0.03, 0.012, col["helmet"], weights={"head": 1.0}, smooth_iters=3)
+        g.shell("head", rays, 11, 3, 0.02, 0.01, col["helmet"], weights={"head": 1.0}, smooth_iters=3)
         # Visor, raised: smoked lens across the brow.
         def vrays(i, j):
             phi = math.radians(-62 + 124 * i / 8)
@@ -706,6 +727,66 @@ def eyewear(g, kind, helmet_kind):
 # ----------------------------------------------------------------- torso
 
 
+def uniform_details(g, gear):
+    """Combat-shirt sleeve pockets (blank hook-and-loop panels, no
+    insignia) and trouser cargo pockets."""
+    m, col = g.m, g.c
+    for s in "lr":
+        sign = -1 if s == "l" else 1
+        sh, el = m.shoulder[s], m.elbow[s]
+        d = (el - sh).normalized()
+        out = Vector((sign, 0.15, 0))
+        out = (out - d * out.dot(d)).normalized()
+        side = d.cross(out).normalized()
+
+        def rays(i, j, sh=sh, d=d, out=out, side=side):
+            p = sh + d * (0.07 + 0.1 * j / 3) + side * (i / 3 - 0.5) * 0.075
+            return p + out * 0.3, -out
+
+        g.shell("arms_" + s, rays, 4, 4, 0.004, 0.007, col["shirt"], weights={f"upperarm_{s}": 1.0})
+        p, n = g.surface("arms_" + s, sh + d * 0.1 + out * 0.3, -out, 0.012)
+        if p is not None:
+            f = Matrix((side, n, d)).transposed().to_4x4()
+            f.translation = p + n * 0.001
+            g.box(f, (0.05, 0.002, 0.035), col["gear_alt"], weights={f"upperarm_{s}": 1.0})
+    for s in "lr":
+        if s == "r" and "thigh_holster" in gear["pouches"]:
+            continue
+        sign = -1 if s == "l" else 1
+        hip, knee = m.hip[s], m.knee[s]
+        d = (knee - hip).normalized()
+        out = Vector((sign, 0.2, 0))
+        out = (out - d * out.dot(d)).normalized()
+        side = d.cross(out).normalized()
+
+        def rays(i, j, hip=hip, d=d, out=out, side=side, length=(knee - hip).length):
+            p = hip + d * (length * (0.38 + 0.3 * j / 3)) + side * (i / 3 - 0.5) * 0.13
+            return p + out * 0.3, -out
+
+        w = {f"thigh_{s}": 1.0}
+        g.shell("legs_" + s, rays, 4, 4, 0.004, 0.012, col["trousers"], weights=w)
+        # Flap over the top of the pocket.
+        def flap(i, j, hip=hip, d=d, out=out, side=side, length=(knee - hip).length):
+            p = hip + d * (length * (0.36 + 0.06 * j)) + side * (i / 3 - 0.5) * 0.14
+            return p + out * 0.3, -out
+
+        g.shell("legs_" + s, flap, 4, 2, 0.016, 0.004, col["trousers"], weights=w)
+
+
+def molle(g):
+    """Rows of webbing across the front and back of plate carriers."""
+    col = g.c
+    for attr, side in (("carrier_front", 1), ("carrier_back", -1)):
+        mount = getattr(g, attr, None)
+        if mount is None:
+            continue
+        z0, z1, w, extra = mount
+        rows = 4 if side < 0 else 3
+        for k in range(rows):
+            zc = z0 + 0.03 + k * 0.038
+            g.panel(side, -w * 0.9, w * 0.9, zc, zc + 0.022, extra, 0.003, col["straps"], nu=7, nv=2)
+
+
 def belt(g):
     m, col = g.m, g.c
     g.torso_band(m.waist_z - 0.035, m.waist_z + 0.022, 0.006, 0.012, col["straps"], nu=28, nv=2)
@@ -752,6 +833,11 @@ def carrier(g, kind):
     for side in (-1, 1):
         g.torso_band(bot, cb_top, 0.012, 0.03 if heavy else 0.02, col["gear"],
                      phi0=side * math.radians(40), phi1=side * math.radians(140), nu=7, nv=3)
+        # Side-release buckle where it meets the front plate.
+        a = math.radians(side * 46)
+        d = Vector((math.sin(a), math.cos(a), 0))
+        f = g.place("torso", Vector((0, 0, bot + 0.05)) + d * 0.6, -d, 0.012 + (0.03 if heavy else 0.02), 0.012)
+        g.box(f, (0.035, 0.012, 0.03), col["dark"], bevel=0.003)
     for side in (-1, 1):
         _shoulder_strap(g, side * 0.1, 0.05 if heavy else 0.045, col["gear"], front_z=top, back_z=top + 0.02,
                         thickness=0.02 if heavy else 0.014)

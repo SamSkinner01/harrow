@@ -604,6 +604,7 @@ def add_weapon_bones(ch):
 def build_prop(ch, gear_mod, surfaces):
     """A generic carbine blockout skinned to weapon_r / weapon_mag."""
     g = gear_mod.Gear(ch, surfaces)
+    g.force_material = "hard"
     rest = {b.name: b.matrix_local.copy() for b in ch.rig.data.bones}
     W = rest["weapon_r"]
     c = ch.colours
@@ -625,7 +626,7 @@ def build_prop(ch, gear_mod, surfaces):
     M = rest["weapon_mag"]
     g.box(M @ T((0, 0.0, -0.065)) @ Matrix.Rotation(math.radians(12), 4, "X"), (0.026, 0.06, 0.13),
           c["dark"], weights={"weapon_mag": 1.0}, bevel=0.003)
-    return g.to_object("weapon", ch.materials["gear"])
+    return g.to_object("weapon", ch.materials)
 
 
 def build(ch, gear_mod, surfaces):

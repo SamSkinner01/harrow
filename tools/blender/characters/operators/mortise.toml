@@ -27,7 +27,7 @@ eyes = "brown"
 targets = { "head-square" = 0.7, "chin-width-incr" = 0.6, "nose-scale-horiz-incr" = 0.5, "nose-flaring-incr" = 0.3, "neck-scale-horiz-incr" = 0.8, "mouth-lowerlip-volume-incr" = 0.3 }
 
 [skin]
-texture = "middleage_african_male"
+texture = "mindfront_skin_male_african_middleage"
 tint = [1.0, 0.98, 0.96]
 hair = "buzz"
 hair_colour = "#151210"

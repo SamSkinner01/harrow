@@ -1,11 +1,25 @@
 //! Wires up a character once its glTF scene has spawned: finds the
-//! animation player and the bones, fixes up the shared materials (eyebrow
-//! alpha, mipmaps), and shows or hides the prop weapon.
+//! animation player and the bones, finishes the materials, and shows or
+//! hides the prop weapon.
+//!
+//! Materials come from the .glb by name (see
+//! `tools/blender/characters/materials.py`). Colour textures (skin, eyes,
+//! brows) are embedded per operator; the detail maps every operator shares
+//! (skin pores, cloth weave, leather grain: normal + occlusion/roughness)
+//! are loaded once here from `assets/textures/characters/` and plugged in,
+//! like the fortress kit's material library.
 
 use std::collections::{HashMap, HashSet};
 
 use bevy::{
-    gltf::GltfMaterialName, prelude::*, render::render_resource::TextureFormat,
+    gltf::GltfMaterialName,
+    image::{
+        ImageAddressMode, ImageFilterMode, ImageLoaderSettings, ImageSampler,
+        ImageSamplerDescriptor,
+    },
+    math::Affine2,
+    prelude::*,
+    render::render_resource::TextureFormat,
     world_serialization::WorldInstanceReady,
 };
 
@@ -16,10 +30,21 @@ pub(super) struct SetupPlugin;
 impl Plugin for SetupPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<PreparedAssets>()
+            .init_resource::<DetailTextures>()
             .add_observer(prepare_character)
-            .add_systems(Update, sync_prop_weapon);
+            .add_systems(Update, (sync_prop_weapon, mip_detail_textures));
     }
 }
+
+/// Shared detail maps: (material name, folder, real-world width of one
+/// texture repeat in metres; `None` = MakeHuman UVs, no tiling). Widths
+/// are printed by `tools/scripts/fetch_character_textures.py`.
+const DETAIL_TEXTURES: [(&str, &str, Option<f32>); 4] = [
+    ("skin", "skin", None),
+    ("uniform", "uniform", Some(0.291)),
+    ("webbing", "webbing", Some(0.273)),
+    ("leather", "leather", Some(0.5)),
+];
 
 /// A spawned character's animation player and bones.
 #[derive(Component, Debug)]
@@ -46,6 +71,60 @@ struct PreparedAssets {
     images: HashSet<AssetId<Image>>,
 }
 
+struct Detail {
+    normal: Handle<Image>,
+    arm: Handle<Image>,
+    width: Option<f32>,
+}
+
+#[derive(Resource)]
+struct DetailTextures {
+    by_material: HashMap<&'static str, Detail>,
+    /// Images that still need mipmaps.
+    pending: HashSet<AssetId<Image>>,
+}
+
+impl FromWorld for DetailTextures {
+    fn from_world(world: &mut World) -> Self {
+        let server = world.resource::<AssetServer>();
+        let mut pending = HashSet::new();
+        let mut load = |path: String| {
+            let handle: Handle<Image> = server
+                .load_builder()
+                .with_settings(|s: &mut ImageLoaderSettings| {
+                    s.is_srgb = false;
+                    s.sampler = ImageSampler::Descriptor(ImageSamplerDescriptor {
+                        address_mode_u: ImageAddressMode::Repeat,
+                        address_mode_v: ImageAddressMode::Repeat,
+                        mag_filter: ImageFilterMode::Linear,
+                        min_filter: ImageFilterMode::Linear,
+                        mipmap_filter: ImageFilterMode::Linear,
+                        anisotropy_clamp: 8,
+                        ..default()
+                    });
+                })
+                .load(path);
+            pending.insert(handle.id());
+            handle
+        };
+        let by_material = DETAIL_TEXTURES
+            .iter()
+            .map(|&(material, folder, width)| {
+                let detail = Detail {
+                    normal: load(format!("textures/characters/{folder}/normal.jpg")),
+                    arm: load(format!("textures/characters/{folder}/arm.jpg")),
+                    width,
+                };
+                (material, detail)
+            })
+            .collect();
+        Self {
+            by_material,
+            pending,
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn prepare_character(
     ready: On<WorldInstanceReady>,
@@ -57,6 +136,7 @@ fn prepare_character(
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut images: ResMut<Assets<Image>>,
     mut prepared: ResMut<PreparedAssets>,
+    details: Res<DetailTextures>,
     mut commands: Commands,
 ) {
     let Ok(character) = characters.get(ready.entity) else {
@@ -78,6 +158,7 @@ fn prepare_character(
                 &mut materials,
                 &mut images,
                 &mut prepared,
+                &details,
             );
         }
     }
@@ -120,6 +201,7 @@ fn prepare_material(
     materials: &mut Assets<StandardMaterial>,
     images: &mut Assets<Image>,
     prepared: &mut PreparedAssets,
+    details: &DetailTextures,
 ) {
     if !prepared.materials.insert(handle.id()) {
         return;
@@ -127,12 +209,24 @@ fn prepare_material(
     let Some(mut material) = materials.get_mut(handle) else {
         return;
     };
+    material.metallic = 0.0;
     match name {
-        // Eyebrow cards: cut out rather than blended (no sorting issues).
-        "eyebrows" => material.alpha_mode = AlphaMode::Mask(0.5),
-        "skin" => material.perceptual_roughness = 0.62,
-        "gear" => material.perceptual_roughness = 0.85,
+        // Eyebrow and eyelash cards: cut out rather than blended.
+        "brows" => material.alpha_mode = AlphaMode::Mask(0.5),
+        "eyes" => material.perceptual_roughness = 0.2,
+        // Helmet shells, hardware, lenses, the prop carbine.
+        "hard" => material.perceptual_roughness = 0.45,
         _ => {}
+    }
+    if let Some(detail) = details.by_material.get(name) {
+        material.normal_map_texture = Some(detail.normal.clone());
+        // ARM: occlusion in R, roughness in G (metal in B is 0).
+        material.occlusion_texture = Some(detail.arm.clone());
+        material.metallic_roughness_texture = Some(detail.arm.clone());
+        material.perceptual_roughness = 1.0;
+        if let Some(width) = detail.width {
+            material.uv_transform = Affine2::from_scale(Vec2::splat(1.0 / width));
+        }
     }
     // glTF textures arrive without mipmaps and shimmer at a distance.
     if let Some(texture) = material.base_color_texture.clone()
@@ -140,6 +234,23 @@ fn prepare_material(
         && let Some(mut image) = images.get_mut(&texture)
     {
         add_mip_chain(&mut image);
+    }
+}
+
+fn mip_detail_textures(
+    mut events: MessageReader<AssetEvent<Image>>,
+    mut details: ResMut<DetailTextures>,
+    mut images: ResMut<Assets<Image>>,
+) {
+    for event in events.read() {
+        let AssetEvent::LoadedWithDependencies { id } = event else {
+            continue;
+        };
+        if details.pending.remove(id)
+            && let Some(mut image) = images.get_mut(*id)
+        {
+            add_mip_chain(&mut image);
+        }
     }
 }
 

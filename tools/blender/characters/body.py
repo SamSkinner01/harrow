@@ -35,11 +35,12 @@ INFLATE = {
 MATERIAL_OF = {
     "skin": "skin",
     "scalp": "skin",
-    "shirt": "gear",
-    "trousers": "gear",
-    "glove": "gear",
-    "boot": "gear",
+    "shirt": "uniform",
+    "trousers": "uniform",
+    "glove": "leather",
+    "boot": "leather",
 }
+BODY_MATERIALS = ("skin", "uniform", "leather")
 
 
 def apply_modifier(obj, mod):
@@ -275,10 +276,19 @@ def dress(body, marks, cfg, colours, materials):
 
     # Materials.
     mesh.materials.clear()
-    for name in ("skin", "gear"):
+    for name in BODY_MATERIALS:
         mesh.materials.append(materials[name])
     for poly, region in zip(mesh.polygons, regions):
-        poly.material_index = 0 if MATERIAL_OF[region] == "skin" else 1
+        poly.material_index = BODY_MATERIALS.index(MATERIAL_OF[region])
+
+    # Cloth and leather get metre-scale UVs for the game's tiling detail
+    # maps; skin keeps MakeHuman's UVs (its texture).
+    uv = mesh.uv_layers.active
+    for poly, region in zip(mesh.polygons, regions):
+        if MATERIAL_OF[region] == "skin":
+            continue
+        for li in poly.loop_indices:
+            uv.data[li].uv = box_uv(mesh.vertices[mesh.loops[li].vertex_index].co, poly.normal)
 
     # Vertex colours (per corner, linear).
     attr = mesh.color_attributes.new("Color", "FLOAT_COLOR", "CORNER")
@@ -298,6 +308,16 @@ def dress(body, marks, cfg, colours, materials):
     mesh.color_attributes.render_color_index = 0
     mesh.update()
     return regions
+
+
+def box_uv(co, normal):
+    """Planar UV in metres, projected along the face normal's main axis."""
+    n = (abs(normal.x), abs(normal.y), abs(normal.z))
+    if n[2] >= n[0] and n[2] >= n[1]:
+        return (co.x, co.y)
+    if n[0] >= n[1]:
+        return (co.y, co.z)
+    return (co.x, co.z)
 
 
 def _skin_colour(co, marks, tint, hair, skin):

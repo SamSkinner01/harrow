@@ -4,9 +4,9 @@
 1. Downloads MPFB 2.0.18 from the Blender extensions platform and installs
    it into the *user* extension repository with Blender's own CLI
    (`blender --command extension install-file -r user_default -e`).
-2. Downloads the MakeHuman system asset pack (CC0: skins, eyes, eyebrows,
-   proxies...) and installs it with MPFB's own "load pack" operator into
-   MPFB's user data folder.
+2. Downloads the MakeHuman system asset pack and the "skins02" pack (both
+   CC0: skins, eyes, eyebrows, eyelashes...) and installs them with MPFB's
+   own "load pack" operator into MPFB's user data folder.
 
 Only your Blender user configuration is changed. Both downloads are checked
 against the SHA-256 recorded here. Nothing needs a login.
@@ -30,6 +30,9 @@ ASSETS_URL = (
     "https://files.makehumancommunity.org/asset_packs/makehuman_system_assets/makehuman_system_assets_cc0.zip"
 )
 ASSETS_SHA256 = "b542127a8e25547c7c29c19f2d1d2adb9a664c80396ecd694095dbc8028a0107"
+# Natural male skins (CC0); the Mindfront skins in it have normal maps.
+SKINS_URL = "https://files.makehumancommunity.org/asset_packs/skins02/skins02_cc0.zip"
+SKINS_SHA256 = "1613f1ef3afca53094511d26620ed7cf1d2dedc29ed3d384d60bdebe250698ae"
 
 LOAD_PACK = """
 import addon_utils, bpy, sys
@@ -58,10 +61,11 @@ def main():
         mpfb_zip = download(MPFB_URL, MPFB_SHA256, folder)
         subprocess.run([blender, "--command", "extension", "install-file", "-r", "user_default", "-e", mpfb_zip],
                        check=True)
-        assets_zip = download(ASSETS_URL, ASSETS_SHA256, folder)
-        subprocess.run([blender, "--background", "--factory-startup", "--python-expr", LOAD_PACK, "--", assets_zip],
-                       check=True)
-    print("MPFB and the MakeHuman CC0 system assets are installed.")
+        for url, sha in ((ASSETS_URL, ASSETS_SHA256), (SKINS_URL, SKINS_SHA256)):
+            pack = download(url, sha, folder)
+            subprocess.run([blender, "--background", "--factory-startup", "--python-expr", LOAD_PACK, "--", pack],
+                           check=True)
+    print("MPFB and the MakeHuman CC0 asset packs are installed.")
 
 
 main()
