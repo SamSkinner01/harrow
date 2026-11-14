@@ -7,7 +7,7 @@
 #
 # Output: dist/harrow-server-<BUILD_ID>-linux-x86_64.tar.gz (BUILD_ID is
 # what `harrow --version` prints: version + git commit), containing the
-# binary, the assets the server loads (kit models, tuning), the example
+# binary, the assets the server loads (models, tuning), the example
 # settings, the systemd unit, install.sh and README-VPS.md.
 #
 # Why a container: a binary built on a new distro (Fedora 44: glibc 2.43)
@@ -108,10 +108,11 @@ mkdir -p "$STAGE/assets/models" "$STAGE/assets/config"
 echo "== packing $NAME"
 install -m 0755 "$BIN" "$STAGE/harrow"
 strip "$STAGE/harrow" 2>/dev/null || true
-# Only what the server loads: kit models (the map's collision) and the
-# tuning file. Textures, sounds and character models are presentation: the
-# dedicated server doesn't read them (net/dedicated.rs, "lean assets").
-cp -r assets/models/kit "$STAGE/assets/models/kit"
+# Only what the server loads: models (kit and props are the map's
+# collision; characters carry skeletons and animations) and the tuning
+# file. No textures or sounds: a dedicated server never loads real images
+# (net/dedicated.rs, "lean assets").
+cp -r assets/models/. "$STAGE/assets/models/"
 cp assets/config/tuning.ron "$STAGE/assets/config/tuning.ron"
 cp assets/config/server.ron "$STAGE/assets/config/server.ron"
 cp assets/config/server.ron "$STAGE/server.example.ron"

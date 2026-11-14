@@ -1,7 +1,9 @@
 // Dedicated server settings (example). Use with:
 //   harrow --server --config assets/config/server.ron
 // Every field is optional; these are the defaults. Command-line flags win:
-// `--server <port>`, `--map`, `--no-round`, `--round-test`.
+// `--server <port>`, `--map`, `--no-round`, `--round-test`, `--key` (and the
+// HARROW_KEY environment variable).
+// On a VPS this file lives in /etc/harrow-server/server.ron (deploy/README-VPS.md).
 (
     // Shown to players when they join.
     name: "Harrow server",
@@ -15,6 +17,10 @@
     log_level: "info",
     // Play rounds (keep and section_a). false: free play.
     round_loop: true,
+    // Shared secret: Some("a long random string") lets in only players who
+    // start the game with the same key (HARROW_KEY=... or --key ...).
+    // None: the development key every copy of the game has (anyone can join).
+    key: None,
     round: (
         // The short timers from `round.test_timers` in tuning.ron.
         test_timers: false,

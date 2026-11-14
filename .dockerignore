@@ -5,5 +5,5 @@
 !Cargo.lock
 !build.rs
 !src/
-!assets/models/kit/
+!assets/models/
 !assets/config/

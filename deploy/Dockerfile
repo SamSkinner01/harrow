@@ -35,9 +35,9 @@ FROM docker.io/library/debian:bookworm-slim
 RUN useradd --system --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin harrow
 WORKDIR /opt/harrow-server
 COPY --from=build /harrow ./harrow
-# Kit models (the map's collision) and tuning; textures, sounds and
-# characters are presentation, which a dedicated server doesn't load.
-COPY assets/models/kit ./assets/models/kit
+# Models (kit and props: the map's collision; characters' skeletons) and
+# tuning. No textures: a dedicated server never loads real images.
+COPY assets/models ./assets/models
 COPY assets/config/tuning.ron ./assets/config/tuning.ron
 COPY assets/config/server.ron /etc/harrow-server/server.ron
 ENV BEVY_ASSET_ROOT=/opt/harrow-server

@@ -170,10 +170,12 @@ cargo run -- --connect my-pc --name Alice  # name shown to the server
 cargo run -- --server          # dedicated server, headless, UDP 5888 (or --server 6000)
 cargo run -- --server --config assets/config/server.ron   # with a config file
 cargo run -- --solo            # straight into solo (skip the menu)
+cargo run -- --key 'secret' --connect my-vps   # a server with a shared secret (or HARROW_KEY=...)
+cargo run -- --version         # print the build id and exit
 ```
 
 Any other flag (`--map`, `--no-round`, `--round-test`, `--screenshot`...)
-also skips the menu and works in every mode (`--menu` forces the menu).
+except `--key` also skips the menu and works in every mode (`--menu` forces the menu).
 Join late and you watch (dead) until the next round starts; players are
 put on the smaller squad as they join.
 
@@ -193,9 +195,40 @@ cargo build --release --no-default-features --features dedicated
 ./target/release/harrow --server --config assets/config/server.ron
 ```
 
-It needs the `assets/` folder (the map's collision comes from the kit
-models): run it from the repository, or set `BEVY_ASSET_ROOT` to the
-folder that contains `assets/`.
+It needs the `assets/` folder (the map's collision comes from the kit and
+prop models): run it from the repository, or set `BEVY_ASSET_ROOT` to the
+folder that contains `assets/`. A server never loads real textures: every
+image (texture files and the pictures inside `.glb` models) is served as
+a 1x1 stand-in, so it needs no `textures/` folder and little memory
+(`tools/scripts/server_memory.sh` measures it).
+
+`harrow --version` prints the build (version + git commit): players and
+server must match.
+
+### On a VPS (Linux server on the internet)
+
+```sh
+tools/scripts/package_server.sh                 # dist/harrow-server-<build>-linux-x86_64.tar.gz
+tools/scripts/deploy_server.sh you@your-vps     # copy, install, start, show the log
+tools/scripts/deploy_server.sh you@your-vps --port 6000
+```
+
+`package_server.sh` builds the lean server inside an Ubuntu 22.04
+container (podman or docker; your own Rust toolchain and crates are
+mounted, so it builds offline), so the binary runs on Ubuntu 22.04+,
+Debian 12+ and newer (glibc 2.35+), and packs it with the assets the
+server loads, the example settings, a systemd unit, `install.sh` and
+[README-VPS.md](deploy/README-VPS.md) (settings, logs, firewall, keys,
+security). `deploy_server.sh` copies it over your SSH access, runs
+`sudo ./install.sh` there (system user `harrow`, `/opt/harrow-server`,
+settings in `/etc/harrow-server/server.ron`, kept on updates; service
+`harrow-server`, started at boot) and prints the firewall commands. A
+container image is the other option: `deploy/Dockerfile`.
+
+No container tool? Build on the VPS itself (install Rust with rustup,
+plus `gcc`), from a checkout of the same commit:
+`cargo build --release --no-default-features --features dedicated`, then
+`HARROW_BUILD_COMMIT=<commit> ...` if the checkout has no `.git`.
 
 ### Firewall and router
 
@@ -221,10 +254,15 @@ changes) put everyone on the same virtual LAN with
 [Tailscale](https://tailscale.com) or [ZeroTier](https://www.zerotier.com)
 and join with the host's Tailscale/ZeroTier IP or name.
 
-**Security note:** connections use a fixed development key built into
-the game. It keeps other programs' packets out but is not a password:
-only run servers for people you trust, and don't expose one to the whole
-internet for long.
+**Keys:** by default connections use a development key built into the
+game: it keeps other programs' packets out but anyone with the game can
+join. Give a server a shared secret and only players who know it can
+join: `key: Some("...")` in the server's config (or `--key` /
+`HARROW_KEY` on the server), and players start the game with
+`HARROW_KEY='...'` (the menu's Join uses it) or
+`--key '...' --connect host`. A wrong key looks like an unreachable
+server ("Server not responding"). There are no accounts and no
+anti-cheat: play with people you trust (README-VPS.md, "Security").
 
 ### Testing on one machine
 
@@ -232,6 +270,7 @@ internet for long.
 tools/scripts/net_test.sh                              # dedicated server + 2 clients, free play
 tools/scripts/net_test.sh --latency 80 --jitter 10 --loss 2   # with a bad network
 tools/scripts/net_test.sh --round                      # round loop: phases stay in sync
+tools/scripts/net_test.sh --gadgets frag               # gadgets: frag smoke flash drone wire cutter (or all)
 ```
 
 Two game windows open for about 20 s. Logs and screenshots go to
@@ -242,10 +281,18 @@ joined and left, the lag-compensation test shots, what each client sees
 
 Network test flags: `--net-latency MS --net-jitter MS --net-loss PCT`
 (simulated on everything that instance receives), `--net-trace` (log
-state once a second), `--net-shoot-test` (server fires lag-compensated
-test rays between players and logs rewound vs live results), `--look
-yaw[,pitch]`, `--auto-fire SECONDS`, `--screenshot-secs S`,
-`--exit-after S`.
+state once a second; on clients it also counts other players' private
+gadget state, which must stay 0; on a dedicated server a memory
+footprint line every 10 s), `--net-shoot-test` (server fires
+lag-compensated test rays between players and logs rewound vs live
+results), `--look yaw[,pitch]`, `--auto-fire SECONDS`,
+`--screenshot-secs S`, `--exit-after S`.
+
+Gadget scenarios (`--gadgets NAME`, on section A): the server sets them
+up with `--net-script` (`equip`, `tp`, `reinforce`, `log` by player
+name: `src/net/test_script.rs`); each client presses keys with its own
+`--gadget-test` script, which goes to the server as real input, and logs
+what it sees. Screenshots: `$OUT/<scenario>-*.png`.
 
 ## Developer flags
 

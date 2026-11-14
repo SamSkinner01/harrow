@@ -773,6 +773,66 @@ or interpolated) state.
   code: identical holes, debris and dust. Late joiners get the round's
   edit log. Not yet: barricades and breach charges placed at runtime
   (their effect on walls is synced, the entities aren't).
+- Gadgets (M6 part two, `net/gadget_sync.rs`), below.
+
+### Gadgets over the network (M8 part two, 2026-11-14)
+
+The server runs every gadget's simulation, as in solo; clients show it.
+
+- **World objects, everyone sees them:** ring cutters (state, progress,
+  angle, the exposed blade as its own entity), backplate charges, grenades
+  in flight, smoke clouds, razor wire, ballistic cover, proximity alarms,
+  drones and CCTV cameras, each with its `Transform`. Grenades and drones
+  carry `InterpolationTarget`, so their `Transform` is interpolated like
+  other players (and their model stays hidden for the ~100 ms until
+  interpolation starts). The cut-out plug is sent once (`replicate_once`)
+  and falls on each client by itself; alarms are sent once too (their
+  beeps are events). Clients pour their own smoke puffs from the cloud's
+  state. The gadget model code dresses everything on `Added<..>`, on every
+  machine. Server-only entity fields (the wall a cutter or backplate sits
+  on: map entities aren't networked) are `#[serde(skip)]`.
+- **Ballistic cover is world geometry on clients too:** they add the same
+  body (`gadgets::cover_body`: name, static collider, `SurfaceKind::Hard`),
+  so predicted movement bumps into it and bullet impacts on it (surface
+  edits keyed by name and place) find it.
+- **CCTV:** the cameras exist on every machine from startup (map spots).
+  A client drops its own while connected and uses the server's (their
+  health and destruction are the server's); they come back at the menu.
+- **Per-player state, sent only to its player:** `Flashed` (blind/deaf:
+  the white-out and muffle happen on that client only), `Loadout`,
+  `SecondaryStock`, `BreachCharges`, `ReconStock`, `GadgetActivity` (HUD
+  progress bars; sent without its server-side entity targets),
+  `RemoteView`, `ViewSerial`. A replicon visibility filter (`PrivateTo`,
+  the owning link, on every client's character) hides that scope from
+  everyone else; `--net-trace` counts other players' private state on
+  clients (must be 0). Clients don't recompute what a loadout implies
+  (stock, breach charges): they get the server's.
+- **One-off happenings:** forwarded `GadgetEvent`s (sounds, notices). The
+  blast, flashbang and backplate visuals and the cut-through dust are
+  drawn from the events (or the plug's arrival), so clients get them too.
+  Events can name an entity that hasn't been replicated yet (a drone
+  thrown this tick): on the client that field is a placeholder.
+- **Remote views:** the server puts `RemoteView` on the viewer; it counts
+  as a `MovementLock` reason in the round flow. The viewer's client
+  freezes its own body exactly like the server (`FrozenInput`, so the
+  predicted character holds still and no shots go out), and the server
+  re-freezes after applying a client's input, which would otherwise undo
+  it. Drone look angles are absolute: a client resets them when a new
+  view arrives and echoes `ViewSerial` (bumped by the server on every view
+  change) in its input; the server ignores angles meant for an older view.
+  Driving is server-side: the owner sees its drone move one round trip
+  plus the interpolation delay late (prediction is a later step); looking
+  around is immediate.
+- **Razor wire is predicted:** `GadgetSpeedScale` is set after every tick
+  (`FixedPostUpdate`, before prediction history) on every machine that
+  simulates the character, from the replicated wire placements and the
+  server's wire tuning (sent in `Welcome`); movement multiplies it in and
+  allows no sprint below 1. It is replicated with `.predict()`, so a
+  rollback restores it. Walking through wire at 80 ms RTT gives no
+  rollbacks.
+- **Tests:** `tools/scripts/net_test.sh --gadgets frag|smoke|flash|drone|
+  wire|cutter|all` (server `--net-script` sets up; clients drive
+  themselves with `--gadget-test`).
 
 ### Lag compensation
 
@@ -810,6 +870,27 @@ Same binary with `--server` (Bevy without window/audio/gamepad plugins,
 the render plugin with no backend, a 64 Hz loop), or a lean build without
 those libraries (`--no-default-features --features dedicated`). Config
 file: `--config` (RON). Logs to stdout; SIGTERM exits cleanly.
+
+**Lean assets.** Without a render world Bevy keeps every decoded image in
+RAM. A headless server reads `assets/` through `LeanAssetReader`
+(`net/dedicated.rs`): files under `textures/` and the images inside
+`.glb` models become a 1x1 stand-in, everything else (kit and prop
+meshes: collision; character skeletons and animations; tuning) loads
+normally. Soft surfaces build no render meshes without a render app
+(like the map's static batching). Memory, dev build: section A 755 ->
+277 MB; full map 1136 -> 522 MB. Release lean build: see README-VPS.md.
+
+**Keys.** `netcode_key(secret)`: no secret, the development key; a
+secret (server config `key`, `--key`, `HARROW_KEY`) becomes the netcode
+private key through BLAKE3 key derivation. Clients make their own connect
+tokens, so it is a shared secret: only clients with it can connect.
+
+**Packaging.** `tools/scripts/package_server.sh` builds the lean server
+in an Ubuntu 22.04 container (glibc 2.35, so it runs on Ubuntu 22.04+ and
+Debian 12+), and packs it with the server's assets (no textures), the
+example config, a systemd unit and an install script
+(`deploy/`). `deploy_server.sh user@host` installs it over SSH.
+`build.rs` takes `HARROW_BUILD_COMMIT` when there's no git repository.
 
 ## Fortress kit (M2)
 
