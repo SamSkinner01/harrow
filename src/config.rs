@@ -355,6 +355,9 @@ pub struct RoundTuning {
     pub stakes: StakeTuning,
     pub intel: IntelTuning,
     pub volume: f32,
+    /// Ring cutter, backplate charges, shared secondaries, drones, CCTV
+    /// (M6 part two). Defined in `src/gadgets/tuning.rs`.
+    pub gadgets: crate::gadgets::tuning::GadgetTuning,
 }
 
 /// Seconds for each part of a round.

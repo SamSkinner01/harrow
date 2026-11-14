@@ -82,7 +82,7 @@ fn collect_reveals(
         m.age
             < match m.source {
                 RevealSource::SensorDart => intel.ripple_time,
-                RevealSource::SeismicStake => intel.ping_time,
+                RevealSource::SeismicStake | RevealSource::ProximityAlarm => intel.ping_time,
             }
     });
 }
@@ -116,6 +116,22 @@ fn draw_markers(markers: Res<IntelMarkers>, tuning: Res<Tuning>, mut gizmos: Giz
                 gizmos.linestrip(points, color);
                 gizmos.line(top - Vec3::Y * h, ground, color.with_alpha(0.4 * (1.0 - life)));
                 gizmos.circle(Isometry3d::new(ground, flat), 0.2 + life * 0.6, color);
+            }
+            RevealSource::ProximityAlarm => {
+                // A red square bracket around the intruder, pulsing.
+                let life = (m.age / intel.ping_time).clamp(0.0, 1.0);
+                let color = Color::from(css::RED).with_alpha(1.0 - life * 0.8);
+                let c = m.position;
+                let s = 0.35 + 0.1 * (life * 12.0).sin().abs();
+                let corners = [
+                    c + Vec3::new(-s, -s * 2.4, 0.0),
+                    c + Vec3::new(s, -s * 2.4, 0.0),
+                    c + Vec3::new(s, s * 2.4, 0.0),
+                    c + Vec3::new(-s, s * 2.4, 0.0),
+                    c + Vec3::new(-s, -s * 2.4, 0.0),
+                ];
+                gizmos.linestrip(corners, color);
+                gizmos.circle(Isometry3d::new(ground - Vec3::Y * 0.9, flat), 0.4 + life * 0.8, color);
             }
         }
     }
